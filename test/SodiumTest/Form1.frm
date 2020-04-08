@@ -29,6 +29,7 @@ Begin VB.Form Form1
    End
    Begin VB.CommandButton Command1 
       Caption         =   "Connect"
+      Default         =   -1  'True
       Height          =   348
       Left            =   3864
       TabIndex        =   2
@@ -95,7 +96,7 @@ Private Const TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS     As Long = 43
 Private Const TLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES As Long = 45
 Private Const TLS_EXTENSION_TYPE_KEY_SHARE              As Long = 51
 'Private Const TLS_CIPHER_SUITE_AES_128_GCM_SHA256       As Long = &H1301
-'Private Const TLS_CIPHER_SUITE_AES_256_GCM_SHA384       As Long = &H1302
+Private Const TLS_CIPHER_SUITE_AES_256_GCM_SHA384       As Long = &H1302
 Private Const TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 As Long = &H1303
 'Private Const TLS_GROUP_SECP256R1                       As Long = 23
 'Private Const TLS_GROUP_SECP384R1                       As Long = 24
@@ -114,17 +115,17 @@ Private Const TLS_PSK_KE_MODE_PSK_DHE                   As Long = 1
 Private Const TLS_PROTOCOL_VERSION_TLS13_FINAL          As Long = &H304
 Private Const TLS_CHACHA20_KEY_SIZE                     As Long = 32
 Private Const TLS_CHACHA20POLY1305_IV_SIZE              As Long = 12
-'Private Const TLS_CHACHA20POLY1305_TAG_SIZE             As Long = 16
-'Private Const TLS_AES256_KEY_SIZE                       As Long = 32
-'Private Const TLS_AESGCM_IV_SIZE                        As Long = 12
-'Private Const TLS_AESGCM_TAG_SIZE                       As Long = 16
+Private Const TLS_CHACHA20POLY1305_TAG_SIZE             As Long = 16
+Private Const TLS_AES256_KEY_SIZE                       As Long = 32
+Private Const TLS_AESGCM_IV_SIZE                        As Long = 12
+Private Const TLS_AESGCM_TAG_SIZE                       As Long = 16
 Private Const TLS_COMPRESS_NULL                         As Long = 0
 Private Const TLS_SERVER_NAME_TYPE_HOSTNAME             As Long = 0
-'--- libsodium
-Private Const crypto_scalarmult_curve25519_BYTES        As Long = 32
-Private Const crypto_hash_sha256_BYTES                  As Long = 32
-Private Const crypto_auth_hmacsha256_BYTES              As Long = 32
-Private Const crypto_auth_hmacsha256_KEYBYTES           As Long = 32
+Private Const TLS_ALERT_LEVEL_WARNING                   As Long = 1
+Private Const TLS_ALERT_LEVEL_FATAL                     As Long = 2
+Private Const TLS_SHA256_DIGEST_SIZE                    As Long = 32
+Private Const TLS_SHA384_DIGEST_SIZE                    As Long = 48
+Private Const TLS_X25519_KEY_SIZE                       As Long = 32
 
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Function GetModuleHandle Lib "kernel32" Alias "GetModuleHandleA" (ByVal lpModuleName As String) As Long
@@ -139,8 +140,8 @@ Private Declare Function sodium_init Lib "libsodium" () As Long
 'Private Declare Function crypto_aead_aes256gcm_is_available Lib "libsodium" () As Long
 Private Declare Function randombytes_buf Lib "libsodium" (lpOut As Any, ByVal lSize As Long) As Long
 Private Declare Function crypto_scalarmult_curve25519 Lib "libsodium" (lpOut As Any, lpConstN As Any, lpConstP As Any) As Long
-Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpN As Any) As Long
-Private Declare Function crypto_hash_sha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, ByVal lHighSize As Long) As Long
+Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpConstN As Any) As Long
+Private Declare Function crypto_hash_sha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
 Private Declare Function crypto_auth_hmacsha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, ByVal lHighSize As Long, lpConstKey As Any) As Long
 Private Declare Function crypto_aead_chacha20poly1305_ietf_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
 Private Declare Function crypto_aead_chacha20poly1305_ietf_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
@@ -150,13 +151,6 @@ Private Declare Function crypto_aead_chacha20poly1305_ietf_encrypt Lib "libsodiu
 ' Constants and member variables
 '=========================================================================
 
-Private Const LNG_KEY_SIZE              As Long = crypto_scalarmult_curve25519_BYTES
-Private Const LNG_HASH_SIZE             As Long = crypto_hash_sha256_BYTES
-Private Const LNG_SALT_SIZE             As Long = crypto_auth_hmacsha256_KEYBYTES
-Private Const LNG_HELLO_RANDOM_SIZE     As Long = 32
-Private Const LNG_IV_SIZE               As Long = 12
-Private Const LNG_TAG_SIZE              As Long = 16
-
 Private Enum UcsClientStateEnum
     ucsStateHandshakeStart
     ucsStateExpectServerHello
@@ -164,21 +158,34 @@ Private Enum UcsClientStateEnum
     ucsStatePostHandshake
 End Enum
 
+Private Enum UcsCryptoAlgorithmEnum
+    '--- key exchange
+    ucsAlgoKeyX25519
+    '--- authenticated encryption w/ additional data
+    ucsAlgoAeadAes128
+    ucsAlgoAeadChacha20Poly1305
+    ucsAlgoAeadAes256
+    '--- digest
+    ucsAlgoDigestSha256
+    ucsAlgoDigestSha384
+End Enum
+
 Private Type UcsClientContextType
-    State                       As UcsClientStateEnum
-    ClientRandom()              As Byte
     ServerName                  As String
-    LegacySessionID()           As Byte
+    DebugBox                    As TextBox
+    
+    LegacySessionID()           As Byte '--- not used
+    ClientRandom()              As Byte
     ClientPrivate()             As Byte
     ClientPublic()              As Byte
     ServerRandom()              As Byte '--- not used
-    CipherSuite                 As Long
     ServerPublic()              As Byte
     ServerSupportedVersion      As Long '--- not used
+    ServerCertificate()         As Byte
+    
     HandshakeMessages()         As Byte
     HandshakeSecret()           As Byte
     MasterSecret()              As Byte
-    
     ServerTrafficSecret()       As Byte
     ServerTrafficKey()          As Byte
     ServerTrafficIV()           As Byte
@@ -188,23 +195,22 @@ Private Type UcsClientContextType
     ClientTrafficIV()           As Byte
     ClientTrafficSeqNo          As Long
     
-    ServerApplicationSecret()   As Byte
-    ServerApplicationKey()      As Byte
-    ServerApplicationIV()       As Byte
-    ServerApplicationSeqNo      As Long
-    ClientApplicationSecret()   As Byte
-    ClientApplicationKey()      As Byte
-    ClientApplicationIV()       As Byte
-    ClientApplicationSeqNo      As Long
+    State                       As UcsClientStateEnum
     
-    ServerCertificate()         As Byte
+    KxAlgo                      As UcsCryptoAlgorithmEnum
+    SecretSize                  As Long
+    CipherSuite                 As Long
+    AeadAlgo                    As UcsCryptoAlgorithmEnum
+    KeySize                     As Long
+    IvSize                      As Long
+    TagSize                     As Long
+    DigestAlgo                  As UcsCryptoAlgorithmEnum
+    DigestSize                  As Long
 
     SendBuffer()                As Byte
     SendPos                     As Long
     RecvBuffer()                As Byte
     RecvPos                     As Long
-    
-    DebugBox                    As TextBox
 End Type
 
 '=========================================================================
@@ -215,18 +221,23 @@ Private Function pvInitClient(sServerName As String, oDebugBox As TextBox) As Uc
     Dim uRetVal         As UcsClientContextType
     
     With uRetVal
-        ReDim .ClientRandom(0 To LNG_HELLO_RANDOM_SIZE - 1) As Byte
-        Call randombytes_buf(.ClientRandom(0), UBound(.ClientRandom) + 1)
-'        ReDim .LegacySessionID(0 To 31) As Byte
-'        Call randombytes_buf(.LegacySessionID(0), UBound(.LegacySessionID) + 1)
-        ReDim .ClientPrivate(0 To LNG_KEY_SIZE - 1) As Byte
-        Call randombytes_buf(.ClientPrivate(0), UBound(.ClientPrivate) + 1)
-        .ClientPrivate(0) = .ClientPrivate(0) And 248
-        .ClientPrivate(UBound(.ClientPrivate)) = (.ClientPrivate(UBound(.ClientPrivate)) And 127) Or 64
-        ReDim .ClientPublic(0 To LNG_KEY_SIZE - 1) As Byte
-        Call crypto_scalarmult_curve25519_base(.ClientPublic(0), .ClientPrivate(0))
         .ServerName = sServerName
         Set .DebugBox = oDebugBox
+'        .LegacySessionID = pvCryptoRandomBytes(32)
+        '--- setup key exchange ephemeral priv/pub keys
+        .KxAlgo = ucsAlgoKeyX25519
+        .SecretSize = TLS_X25519_KEY_SIZE
+        .ClientRandom = pvCryptoRandomBytes(.SecretSize)
+        If .KxAlgo = ucsAlgoKeyX25519 Then
+            .ClientPrivate = pvCryptoRandomBytes(TLS_X25519_KEY_SIZE)
+            '--- fix some issues w/ specific privkeys
+            .ClientPrivate(0) = .ClientPrivate(0) And 248
+            .ClientPrivate(UBound(.ClientPrivate)) = (.ClientPrivate(UBound(.ClientPrivate)) And 127) Or 64
+            ReDim .ClientPublic(0 To TLS_X25519_KEY_SIZE - 1) As Byte
+            Call crypto_scalarmult_curve25519_base(.ClientPublic(0), .ClientPrivate(0))
+        Else
+            Err.Raise vbObjectError, "Unsupported key-exchange type"
+        End If
     End With
     pvInitClient = uRetVal
 End Function
@@ -329,8 +340,7 @@ Private Function pvGetClientHandshakeFinished(uCtx As UcsClientContextType, sErr
     Dim lMessageSize    As Long
     Dim baVerifyData()  As Byte
     Dim baClientIV()    As Byte
-    Dim baClientKey()   As Byte
-    Dim lResult         As Long
+    Dim baHandshakeHash() As Byte
     
     '--- Legacy Change Cipher Spec
     baVerifyData = FromHex("140303000101")
@@ -344,46 +354,33 @@ Private Function pvGetClientHandshakeFinished(uCtx As UcsClientContextType, sErr
         '--- Handshake Finish
         lPos = pvAppendLong(baRetVal, lPos, TLS_HANDSHAKE_TYPE_FINISHED)
         lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=3)
-            ReDim baHandshakeHash(0 To LNG_HASH_SIZE - 1) As Byte
-            Call crypto_hash_sha256(baHandshakeHash(0), uCtx.HandshakeMessages(0), pvArraySize(uCtx.HandshakeMessages), 0)
-            baVerifyData = pvHkdfExpand(uCtx.ClientTrafficSecret, "finished", EmptyByteArray, LNG_HASH_SIZE)
-            baVerifyData = pvHkdfExtract(baVerifyData, baHandshakeHash)
+            baHandshakeHash = pvCryptoHash(uCtx.DigestAlgo, uCtx.HandshakeMessages, 0)
+            baVerifyData = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ClientTrafficSecret, "finished", EmptyByteArray, uCtx.DigestSize)
+            baVerifyData = pvHkdfExtract(uCtx.DigestAlgo, baVerifyData, baHandshakeHash)
             lPos = pvAppendArray(baRetVal, lPos, baVerifyData)
         lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
         lPos = pvAppendLong(baRetVal, lPos, TLS_CONTENT_TYPE_HANDSHAKE)
         lMessageSize = lPos - lMessagePos
-        lPos = pvAppendReserve(baRetVal, lPos, LNG_TAG_SIZE)
+        lPos = pvAppendReserve(baRetVal, lPos, uCtx.TagSize)
     lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
     Debug.Assert cBlocks.Count = 0
     baClientIV = pvArrayXor(uCtx.ClientTrafficIV, uCtx.ClientTrafficSeqNo)
     uCtx.ClientTrafficSeqNo = uCtx.ClientTrafficSeqNo + 1
-    baClientKey = uCtx.ClientTrafficKey
-    If uCtx.CipherSuite = TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 Then
-        Debug.Assert UBound(baClientIV) + 1 = TLS_CHACHA20POLY1305_IV_SIZE
-        Debug.Assert UBound(baClientKey) + 1 = TLS_CHACHA20_KEY_SIZE
-        lResult = crypto_aead_chacha20poly1305_ietf_encrypt(baRetVal(lMessagePos), ByVal 0, baRetVal(lMessagePos), lMessageSize, 0, baRetVal(lRecordPos), 5, 0, 0, baClientIV(0), baClientKey(0))
-        Debug.Assert lResult = 0
-        If lResult <> 0 Then
-            sError = "crypto_aead_chacha20poly1305_ietf_encrypt failed: " & lResult
-            GoTo QH
-        End If
-    Else
-        sError = "Invalid cipher suite (0x" & Hex$(uCtx.CipherSuite) & ")"
+    If Not pvCryptoEncrypt(uCtx.AeadAlgo, baClientIV, uCtx.ClientTrafficKey, baRetVal, lRecordPos, 5, baRetVal, lMessagePos, lMessageSize) Then
+        sError = "Encryption failed"
         GoTo QH
     End If
     pvGetClientHandshakeFinished = baRetVal
 QH:
 End Function
 
-Private Function pvGetClientApplicationData(uCtx As UcsClientContextType, baData() As Byte, sError As String) As Byte()
+Private Function pvGetClientTrafficData(uCtx As UcsClientContextType, baData() As Byte, sError As String) As Byte()
     Dim baRetVal()      As Byte
     Dim lPos            As Long
     Dim cBlocks         As Collection
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
     Dim baClientIV()    As Byte
-    Dim baClientKey()   As Byte
-    Dim lResult         As Long
     
     '--- Record Header
     lPos = pvAppendLong(baRetVal, lPos, TLS_CONTENT_TYPE_APPDATA)
@@ -393,26 +390,16 @@ Private Function pvGetClientApplicationData(uCtx As UcsClientContextType, baData
         lPos = pvAppendArray(baRetVal, lPos, baData)
         lPos = pvAppendLong(baRetVal, lPos, TLS_CONTENT_TYPE_APPDATA)
         lMessageSize = lPos - lMessagePos
-        lPos = pvAppendReserve(baRetVal, lPos, LNG_TAG_SIZE)
+        lPos = pvAppendReserve(baRetVal, lPos, uCtx.TagSize)
     lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
     Debug.Assert cBlocks.Count = 0
-    baClientIV = pvArrayXor(uCtx.ClientApplicationIV, uCtx.ClientApplicationSeqNo)
-    uCtx.ClientApplicationSeqNo = uCtx.ClientApplicationSeqNo + 1
-    baClientKey = uCtx.ClientApplicationKey
-    If uCtx.CipherSuite = TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 Then
-        Debug.Assert UBound(baClientIV) + 1 = TLS_CHACHA20POLY1305_IV_SIZE
-        Debug.Assert UBound(baClientKey) + 1 = TLS_CHACHA20_KEY_SIZE
-        lResult = crypto_aead_chacha20poly1305_ietf_encrypt(baRetVal(lMessagePos), ByVal 0, baRetVal(lMessagePos), lMessageSize, 0, baRetVal(0), 5, 0, 0, baClientIV(0), baClientKey(0))
-        Debug.Assert lResult = 0
-        If lResult <> 0 Then
-            sError = "crypto_aead_chacha20poly1305_ietf_encrypt failed: " & lResult
-            GoTo QH
-        End If
-    Else
-        sError = "Invalid cipher suite (0x" & Hex$(uCtx.CipherSuite) & ")"
+    baClientIV = pvArrayXor(uCtx.ClientTrafficIV, uCtx.ClientTrafficSeqNo)
+    uCtx.ClientTrafficSeqNo = uCtx.ClientTrafficSeqNo + 1
+    If Not pvCryptoEncrypt(uCtx.AeadAlgo, baClientIV, uCtx.ClientTrafficKey, baRetVal, 0, 5, baRetVal, lMessagePos, lMessageSize) Then
+        sError = "Encryption failed"
         GoTo QH
     End If
-    pvGetClientApplicationData = baRetVal
+    pvGetClientTrafficData = baRetVal
 QH:
 End Function
 
@@ -425,8 +412,6 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
     Dim lLegacyProtocol As Long
     Dim lHandshakeType  As Long
     Dim baServerIV()    As Byte
-    Dim baServerKey()   As Byte
-    Dim lResult         As Long
     Dim lEnd            As Long
     Dim baVerifyData()  As Byte
     Dim baMessage()     As Byte
@@ -468,32 +453,12 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                     End Select
                 lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
             Case TLS_CONTENT_TYPE_APPDATA
-                If uCtx.State < ucsStatePostHandshake Then
-                    baServerIV = pvArrayXor(uCtx.ServerTrafficIV, uCtx.ServerTrafficSeqNo)
-                    uCtx.ServerTrafficSeqNo = uCtx.ServerTrafficSeqNo + 1
-                    baServerKey = uCtx.ServerTrafficKey
-                Else
-                    baServerIV = pvArrayXor(uCtx.ServerApplicationIV, uCtx.ServerApplicationSeqNo)
-                    uCtx.ServerApplicationSeqNo = uCtx.ServerApplicationSeqNo + 1
-                    baServerKey = uCtx.ServerApplicationKey
-                End If
-                If uCtx.CipherSuite = TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 Then
-                    Debug.Assert UBound(baServerIV) + 1 = TLS_CHACHA20POLY1305_IV_SIZE
-                    Debug.Assert UBound(baServerKey) + 1 = TLS_CHACHA20_KEY_SIZE
-                    lResult = crypto_aead_chacha20poly1305_ietf_decrypt(baInput(lPos), ByVal 0, 0, baInput(lPos), lRecordSize, 0, baInput(lRecordPos), 5, 0, baServerIV(0), baServerKey(0))
-                    Debug.Assert lResult = 0
-                    If lResult <> 0 Then
-                        sError = "crypto_aead_chacha20poly1305_ietf_decrypt failed: " & lResult
-                        GoTo QH
-                    End If
-                    If Not uCtx.DebugBox Is Nothing Then
-                        uCtx.DebugBox.Text = uCtx.DebugBox.Text & vbCrLf & "Decrypted: " & lRecordSize - LNG_TAG_SIZE & vbCrLf & DesignDumpMemory(VarPtr(baInput(lPos)), lRecordSize - LNG_TAG_SIZE)
-                    End If
-                Else
-                    sError = "Invalid cipher suite (0x" & Hex$(uCtx.CipherSuite) & ")"
+                baServerIV = pvArrayXor(uCtx.ServerTrafficIV, uCtx.ServerTrafficSeqNo)
+                uCtx.ServerTrafficSeqNo = uCtx.ServerTrafficSeqNo + 1
+                If Not pvCryptoDecrypt(uCtx.AeadAlgo, baServerIV, uCtx.ServerTrafficKey, baInput, lRecordPos, 5, baInput, lPos, lRecordSize) Then
                     GoTo QH
                 End If
-                lEnd = lPos + lRecordSize - LNG_TAG_SIZE - 1
+                lEnd = lPos + lRecordSize - uCtx.TagSize - 1
                 '--- trim zero padding at the end of decrypted record
                 Do While baInput(lEnd) = 0
                     lEnd = lEnd - 1
@@ -516,17 +481,15 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                             Case TLS_HANDSHAKE_TYPE_CERTIFICATE
                                 uCtx.ServerCertificate = baMessage
                             Case TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY
-                                ReDim baHandshakeHash(0 To LNG_HASH_SIZE - 1) As Byte
-                                Call crypto_hash_sha256(baHandshakeHash(0), uCtx.HandshakeMessages(0), pvArraySize(uCtx.HandshakeMessages), 0)
+                                baHandshakeHash = pvCryptoHash(uCtx.DigestAlgo, uCtx.HandshakeMessages, 0)
                                 lVerifyPos = pvAppendString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
                                 lVerifyPos = pvAppendArray(baVerifyData, lVerifyPos, baHandshakeHash)
                                 '--- ToDo: verify uCtx.ServerCertificate signature
                                 '--- ShellExecute("openssl x509 -pubkey -noout -in server.crt > server.pub")
                             Case TLS_HANDSHAKE_TYPE_FINISHED
-                                ReDim baHandshakeHash(0 To LNG_HASH_SIZE - 1) As Byte
-                                Call crypto_hash_sha256(baHandshakeHash(0), uCtx.HandshakeMessages(0), pvArraySize(uCtx.HandshakeMessages), 0)
-                                baVerifyData = pvHkdfExpand(uCtx.ServerTrafficSecret, "finished", EmptyByteArray, LNG_HASH_SIZE)
-                                baVerifyData = pvHkdfExtract(baVerifyData, baHandshakeHash)
+                                baHandshakeHash = pvCryptoHash(uCtx.DigestAlgo, uCtx.HandshakeMessages, 0)
+                                baVerifyData = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ServerTrafficSecret, "finished", EmptyByteArray, uCtx.DigestSize)
+                                baVerifyData = pvHkdfExtract(uCtx.DigestAlgo, baVerifyData, baHandshakeHash)
                                 Debug.Assert StrConv(baVerifyData, vbUnicode) = StrConv(baMessage, vbUnicode)
                                 If StrConv(baVerifyData, vbUnicode) <> StrConv(baMessage, vbUnicode) Then
                                     sError = "Server Handshake verification failed"
@@ -561,16 +524,13 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                                 End If
                                 Select Case lRequestUpdate
                                 Case 0, 1
-                                    If Not pvDeriveServerKeyUpdate(uCtx, sError) Then
+                                    If Not pvDeriveKeyUpdate(uCtx, lRequestUpdate <> 0, sError) Then
                                         GoTo QH
                                     End If
                                     If lRequestUpdate = 1 Then
-                                        If Not pvDeriveClientKeyUpdate(uCtx, sError) Then
-                                            GoTo QH
-                                        End If
                                         '--- ack by TLS_HANDSHAKE_TYPE_KEY_UPDATE w/ update_not_requested(0)
                                         baMessage = FromHex("1800000100")
-                                        baMessage = pvGetClientApplicationData(uCtx, baMessage, sError)
+                                        baMessage = pvGetClientTrafficData(uCtx, baMessage, sError)
                                         If pvArraySize(baMessage) = 0 Then
                                             GoTo QH
                                         End If
@@ -595,7 +555,9 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                 Case TLS_CONTENT_TYPE_ALERT
                     If Not uCtx.DebugBox Is Nothing Then
                         uCtx.DebugBox.Text = uCtx.DebugBox.Text & vbCrLf & _
-                            Switch(baInput(lPos) = 1, "Warning alert: ", baInput(lPos) = 2, "Fatal alert: ", True, "Unknown alert: ") & baInput(lPos + 1)
+                            Switch(baInput(lPos) = TLS_ALERT_LEVEL_WARNING, "Warning alert: ", _
+                                   baInput(lPos) = TLS_ALERT_LEVEL_FATAL, "Fatal alert: ", _
+                                   True, "Unknown alert: ") & baInput(lPos + 1)
                     End If
                     lPos = lPos + lRecordSize
                 Case TLS_CONTENT_TYPE_APPDATA
@@ -610,6 +572,15 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                 Case Else
                     lPos = lPos + lRecordSize
                 End Select
+            Case TLS_CONTENT_TYPE_ALERT
+                If Not uCtx.DebugBox Is Nothing Then
+                    uCtx.DebugBox.Text = uCtx.DebugBox.Text & vbCrLf & _
+                        Switch(baInput(lPos) = 1, "Warning alert: ", baInput(lPos) = 2, "Fatal alert: ", True, "Unknown alert: ") & baInput(lPos + 1)
+                End If
+                If baInput(lPos) = 2 Then
+                    GoTo QH
+                End If
+                lPos = lPos + lRecordSize
             Case Else
                 sError = "Unexpected record type (" & lRecordType & ")"
                 GoTo QH
@@ -631,11 +602,30 @@ Private Function pvDecodeServerHello(uCtx As UcsClientContextType, baInput() As 
     Dim lExchangeGroup  As Long
     
     lPos = pvDecodeLong(baInput, lPos, lLegacyVersion, Size:=2)
-    lPos = pvDecodeArray(baInput, lPos, uCtx.ServerRandom, LNG_HELLO_RANDOM_SIZE)
+    lPos = pvDecodeArray(baInput, lPos, uCtx.ServerRandom, uCtx.SecretSize)
     lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, BlockSize:=lBlockSize)
         lPos = pvDecodeArray(baInput, lPos, uCtx.LegacySessionID, lBlockSize)
     lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
     lPos = pvDecodeLong(baInput, lPos, uCtx.CipherSuite, Size:=2)
+    Select Case uCtx.CipherSuite
+    Case TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256
+        uCtx.AeadAlgo = ucsAlgoAeadChacha20Poly1305
+        uCtx.KeySize = TLS_CHACHA20_KEY_SIZE
+        uCtx.IvSize = TLS_CHACHA20POLY1305_IV_SIZE
+        uCtx.TagSize = TLS_CHACHA20POLY1305_TAG_SIZE
+        uCtx.DigestAlgo = ucsAlgoDigestSha256
+        uCtx.DigestSize = TLS_SHA256_DIGEST_SIZE
+    Case TLS_CIPHER_SUITE_AES_256_GCM_SHA384
+        uCtx.AeadAlgo = ucsAlgoAeadChacha20Poly1305
+        uCtx.KeySize = TLS_AES256_KEY_SIZE
+        uCtx.IvSize = TLS_AESGCM_IV_SIZE
+        uCtx.TagSize = TLS_AESGCM_TAG_SIZE
+        uCtx.DigestAlgo = ucsAlgoDigestSha384
+        uCtx.DigestSize = TLS_SHA384_DIGEST_SIZE
+    Case Else
+        sError = "Unsupported cipher suite (0x" & Hex$(uCtx.CipherSuite) & ")"
+        GoTo QH
+    End Select
     lPos = pvDecodeLong(baInput, lPos, lLegacyCompression)
     Debug.Assert lLegacyCompression = 0
     lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, Size:=2)
@@ -647,12 +637,12 @@ Private Function pvDecodeServerHello(uCtx As UcsClientContextType, baInput() As 
                     lPos = pvDecodeLong(baInput, lPos, lExchangeGroup, Size:=2)
                     Debug.Assert lExchangeGroup = TLS_GROUP_X25519
                     lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, Size:=2, BlockSize:=lBlockSize)
-                        Debug.Assert lBlockSize = LNG_KEY_SIZE
-                        If lBlockSize <> LNG_KEY_SIZE Then
+                        Debug.Assert lBlockSize = uCtx.KeySize
+                        If lBlockSize <> uCtx.KeySize Then
                             sError = "Invalid server key size"
                             GoTo QH
                         End If
-                        lPos = pvDecodeArray(baInput, lPos, uCtx.ServerPublic, LNG_KEY_SIZE)
+                        lPos = pvDecodeArray(baInput, lPos, uCtx.ServerPublic, uCtx.KeySize)
                     lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
                 Case TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS
                     If lBlockSize >= 2 Then
@@ -671,9 +661,7 @@ QH:
 End Function
 
 Private Function pvDeriveHandshakeSecrets(uCtx As UcsClientContextType, sError As String) As Boolean
-    Dim baHelloHash()   As Byte
-    Dim baZeroKey()     As Byte
-    Dim baZeroSalt()    As Byte
+    Dim baHandshakeHash() As Byte
     Dim baEarlySecret() As Byte
     Dim baEmptyHash()   As Byte
     Dim baDerivedSecret() As Byte
@@ -683,25 +671,23 @@ Private Function pvDeriveHandshakeSecrets(uCtx As UcsClientContextType, sError A
         sError = "Missing handshake records"
         GoTo QH
     End If
-    ReDim baHelloHash(0 To LNG_HASH_SIZE - 1) As Byte
-    Call crypto_hash_sha256(baHelloHash(0), uCtx.HandshakeMessages(0), pvArraySize(uCtx.HandshakeMessages), 0)
-    ReDim baZeroKey(0 To LNG_KEY_SIZE - 1) As Byte
-    ReDim baZeroSalt(0 To LNG_SALT_SIZE - 1) As Byte
-    baEarlySecret = pvHkdfExtract(baZeroSalt, baZeroKey)                                    ' 33AD0A1C607EC03B09E6CD9893680CE210ADF300AA1F2660E1B22E10F170F92A
-    ReDim baEmptyHash(0 To LNG_HASH_SIZE - 1) As Byte
-    Call crypto_hash_sha256(baEmptyHash(0), ByVal 0, 0, 0)                                  ' E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
-    baDerivedSecret = pvHkdfExpand(baEarlySecret, "derived", baEmptyHash, LNG_HASH_SIZE)    ' 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
-    ReDim baSharedSecret(0 To LNG_KEY_SIZE - 1) As Byte
-    Call crypto_scalarmult_curve25519(baSharedSecret(0), uCtx.ClientPrivate(0), uCtx.ServerPublic(0))
-    uCtx.HandshakeSecret = pvHkdfExtract(baDerivedSecret, baSharedSecret)
+    baHandshakeHash = pvCryptoHash(uCtx.DigestAlgo, uCtx.HandshakeMessages, 0)
+    '--- for ucsAlgoDigestSha256 always 33AD0A1C607EC03B09E6CD9893680CE210ADF300AA1F2660E1B22E10F170F92A
+    baEarlySecret = pvHkdfExtract(uCtx.DigestAlgo, EmptyByteArray(uCtx.DigestSize), EmptyByteArray(uCtx.KeySize))
+    '--- for ucsAlgoDigestSha256 always  E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
+    baEmptyHash = pvCryptoHash(uCtx.DigestAlgo, EmptyByteArray, 0)
+    '--- for ucsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
+    baDerivedSecret = pvHkdfExpand(uCtx.DigestAlgo, baEarlySecret, "derived", baEmptyHash, uCtx.DigestSize)
+    baSharedSecret = pvCryptoDeriveSecret(uCtx.KxAlgo, uCtx.ClientPrivate, uCtx.ServerPublic)
+    uCtx.HandshakeSecret = pvHkdfExtract(uCtx.DigestAlgo, baDerivedSecret, baSharedSecret)
     
-    uCtx.ServerTrafficSecret = pvHkdfExpand(uCtx.HandshakeSecret, "s hs traffic", baHelloHash, LNG_HASH_SIZE)
-    uCtx.ServerTrafficKey = pvHkdfExpand(uCtx.ServerTrafficSecret, "key", EmptyByteArray, LNG_KEY_SIZE)
-    uCtx.ServerTrafficIV = pvHkdfExpand(uCtx.ServerTrafficSecret, "iv", EmptyByteArray, LNG_IV_SIZE)
+    uCtx.ServerTrafficSecret = pvHkdfExpand(uCtx.DigestAlgo, uCtx.HandshakeSecret, "s hs traffic", baHandshakeHash, uCtx.DigestSize)
+    uCtx.ServerTrafficKey = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ServerTrafficSecret, "key", EmptyByteArray, uCtx.KeySize)
+    uCtx.ServerTrafficIV = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ServerTrafficSecret, "iv", EmptyByteArray, uCtx.IvSize)
     uCtx.ServerTrafficSeqNo = 0
-    uCtx.ClientTrafficSecret = pvHkdfExpand(uCtx.HandshakeSecret, "c hs traffic", baHelloHash, LNG_HASH_SIZE)
-    uCtx.ClientTrafficKey = pvHkdfExpand(uCtx.ClientTrafficSecret, "key", EmptyByteArray, LNG_KEY_SIZE)
-    uCtx.ClientTrafficIV = pvHkdfExpand(uCtx.ClientTrafficSecret, "iv", EmptyByteArray, LNG_IV_SIZE)
+    uCtx.ClientTrafficSecret = pvHkdfExpand(uCtx.DigestAlgo, uCtx.HandshakeSecret, "c hs traffic", baHandshakeHash, uCtx.DigestSize)
+    uCtx.ClientTrafficKey = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ClientTrafficSecret, "key", EmptyByteArray, uCtx.KeySize)
+    uCtx.ClientTrafficIV = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ClientTrafficSecret, "iv", EmptyByteArray, uCtx.IvSize)
     uCtx.ClientTrafficSeqNo = 0
     '--- success
     pvDeriveHandshakeSecrets = True
@@ -710,7 +696,6 @@ End Function
 
 Private Function pvDeriveApplicationSecrets(uCtx As UcsClientContextType, sError As String) As Boolean
     Dim baHandshakeHash() As Byte
-    Dim baZeroKey()     As Byte
     Dim baEmptyHash()   As Byte
     Dim baDerivedSecret() As Byte
     
@@ -718,84 +703,55 @@ Private Function pvDeriveApplicationSecrets(uCtx As UcsClientContextType, sError
         sError = "Missing handshake records"
         GoTo QH
     End If
-    ReDim baHandshakeHash(0 To LNG_HASH_SIZE - 1) As Byte
-    Call crypto_hash_sha256(baHandshakeHash(0), uCtx.HandshakeMessages(0), pvArraySize(uCtx.HandshakeMessages), 0)
-    ReDim baZeroKey(0 To LNG_KEY_SIZE - 1) As Byte
-    ReDim baEmptyHash(0 To LNG_HASH_SIZE - 1) As Byte
-    Call crypto_hash_sha256(baEmptyHash(0), ByVal 0, 0, 0)                                      ' E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
-    baDerivedSecret = pvHkdfExpand(uCtx.HandshakeSecret, "derived", baEmptyHash, LNG_HASH_SIZE) ' 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
-    uCtx.MasterSecret = pvHkdfExtract(baDerivedSecret, baZeroKey)
+    baHandshakeHash = pvCryptoHash(uCtx.DigestAlgo, uCtx.HandshakeMessages, 0)
+    '--- for ucsAlgoDigestSha256 always E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
+    baEmptyHash = pvCryptoHash(uCtx.DigestAlgo, EmptyByteArray, 0)
+    '--- for ucsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
+    baDerivedSecret = pvHkdfExpand(uCtx.DigestAlgo, uCtx.HandshakeSecret, "derived", baEmptyHash, uCtx.DigestSize)
+    uCtx.MasterSecret = pvHkdfExtract(uCtx.DigestAlgo, baDerivedSecret, EmptyByteArray(uCtx.KeySize))
     
-    uCtx.ServerApplicationSecret = pvHkdfExpand(uCtx.MasterSecret, "s ap traffic", baHandshakeHash, LNG_HASH_SIZE)
-    uCtx.ServerApplicationKey = pvHkdfExpand(uCtx.ServerApplicationSecret, "key", EmptyByteArray, LNG_KEY_SIZE)
-    uCtx.ServerApplicationIV = pvHkdfExpand(uCtx.ServerApplicationSecret, "iv", EmptyByteArray, LNG_IV_SIZE)
-    uCtx.ServerApplicationSeqNo = 0
-    uCtx.ClientApplicationSecret = pvHkdfExpand(uCtx.MasterSecret, "c ap traffic", baHandshakeHash, LNG_HASH_SIZE)
-    uCtx.ClientApplicationKey = pvHkdfExpand(uCtx.ClientApplicationSecret, "key", EmptyByteArray, LNG_KEY_SIZE)
-    uCtx.ClientApplicationIV = pvHkdfExpand(uCtx.ClientApplicationSecret, "iv", EmptyByteArray, LNG_IV_SIZE)
-    uCtx.ClientApplicationSeqNo = 0
-    pvCopySecrets uCtx
+    uCtx.ServerTrafficSecret = pvHkdfExpand(uCtx.DigestAlgo, uCtx.MasterSecret, "s ap traffic", baHandshakeHash, uCtx.DigestSize)
+    uCtx.ServerTrafficKey = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ServerTrafficSecret, "key", EmptyByteArray, uCtx.KeySize)
+    uCtx.ServerTrafficIV = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ServerTrafficSecret, "iv", EmptyByteArray, uCtx.IvSize)
+    uCtx.ServerTrafficSeqNo = 0
+    uCtx.ClientTrafficSecret = pvHkdfExpand(uCtx.DigestAlgo, uCtx.MasterSecret, "c ap traffic", baHandshakeHash, uCtx.DigestSize)
+    uCtx.ClientTrafficKey = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ClientTrafficSecret, "key", EmptyByteArray, uCtx.KeySize)
+    uCtx.ClientTrafficIV = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ClientTrafficSecret, "iv", EmptyByteArray, uCtx.IvSize)
+    uCtx.ClientTrafficSeqNo = 0
     '--- success
     pvDeriveApplicationSecrets = True
 QH:
 End Function
 
-Private Sub pvCopySecrets(uCtx As UcsClientContextType)
-    uCtx.ServerTrafficSecret = uCtx.ServerApplicationSecret
-    uCtx.ServerTrafficKey = uCtx.ServerApplicationKey
-    uCtx.ServerTrafficIV = uCtx.ServerApplicationIV
-    uCtx.ServerTrafficSeqNo = uCtx.ServerApplicationSeqNo
-    uCtx.ClientTrafficSecret = uCtx.ClientApplicationSecret
-    uCtx.ClientTrafficKey = uCtx.ClientApplicationKey
-    uCtx.ClientTrafficIV = uCtx.ClientApplicationIV
-    uCtx.ClientTrafficSeqNo = uCtx.ClientApplicationSeqNo
-End Sub
-
-Private Function pvDeriveServerKeyUpdate(uCtx As UcsClientContextType, sError As String) As Boolean
-    Dim baTemp()        As Byte
-    
-    baTemp = uCtx.ServerApplicationSecret
-    If pvArraySize(baTemp) = 0 Then
+Private Function pvDeriveKeyUpdate(uCtx As UcsClientContextType, ByVal bUpdateClient As Boolean, sError As String) As Boolean
+    If pvArraySize(uCtx.ServerTrafficSecret) = 0 Then
         sError = "Missing previous server secret"
         GoTo QH
     End If
-    uCtx.ServerApplicationSecret = pvHkdfExpand(baTemp, "traffic upd", EmptyByteArray, LNG_HASH_SIZE)
-    uCtx.ServerApplicationKey = pvHkdfExpand(uCtx.ServerApplicationSecret, "key", EmptyByteArray, LNG_KEY_SIZE)
-    uCtx.ServerApplicationIV = pvHkdfExpand(uCtx.ServerApplicationSecret, "iv", EmptyByteArray, LNG_IV_SIZE)
-    uCtx.ServerApplicationSeqNo = 0
-    pvCopySecrets uCtx
-    '--- success
-    pvDeriveServerKeyUpdate = True
-QH:
-End Function
-
-Private Function pvDeriveClientKeyUpdate(uCtx As UcsClientContextType, sError As String) As Boolean
-    Dim baTemp()        As Byte
-    
-    baTemp = uCtx.ClientApplicationSecret
-    If pvArraySize(baTemp) = 0 Then
-        sError = "Missing previous client secret"
-        GoTo QH
+    uCtx.ServerTrafficSecret = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ServerTrafficSecret, "traffic upd", EmptyByteArray, uCtx.DigestSize)
+    uCtx.ServerTrafficKey = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ServerTrafficSecret, "key", EmptyByteArray, uCtx.KeySize)
+    uCtx.ServerTrafficIV = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ServerTrafficSecret, "iv", EmptyByteArray, uCtx.IvSize)
+    uCtx.ServerTrafficSeqNo = 0
+    If bUpdateClient Then
+        If pvArraySize(uCtx.ClientTrafficSecret) = 0 Then
+            sError = "Missing previous client secret"
+            GoTo QH
+        End If
+        uCtx.ClientTrafficSecret = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ClientTrafficSecret, "traffic upd", EmptyByteArray, uCtx.DigestSize)
+        uCtx.ClientTrafficKey = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ClientTrafficSecret, "key", EmptyByteArray, uCtx.KeySize)
+        uCtx.ClientTrafficIV = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ClientTrafficSecret, "iv", EmptyByteArray, uCtx.IvSize)
+        uCtx.ClientTrafficSeqNo = 0
     End If
-    uCtx.ClientApplicationSecret = pvHkdfExpand(baTemp, "traffic upd", EmptyByteArray, LNG_HASH_SIZE)
-    uCtx.ClientApplicationKey = pvHkdfExpand(uCtx.ClientApplicationSecret, "key", EmptyByteArray, LNG_KEY_SIZE)
-    uCtx.ClientApplicationIV = pvHkdfExpand(uCtx.ClientApplicationSecret, "iv", EmptyByteArray, LNG_IV_SIZE)
-    uCtx.ClientApplicationSeqNo = 0
-    pvCopySecrets uCtx
     '--- success
-    pvDeriveClientKeyUpdate = True
+    pvDeriveKeyUpdate = True
 QH:
 End Function
 
-Private Function pvHkdfExtract(baSalt() As Byte, baInput() As Byte) As Byte()
-    Dim baRetVal(0 To crypto_auth_hmacsha256_BYTES - 1) As Byte
-    
-    Debug.Assert pvArraySize(baSalt) = crypto_auth_hmacsha256_KEYBYTES
-    Call crypto_auth_hmacsha256(baRetVal(0), baInput(0), UBound(baInput) + 1, 0, baSalt(0))
-    pvHkdfExtract = baRetVal
+Private Function pvHkdfExtract(ByVal eHash As UcsCryptoAlgorithmEnum, baSalt() As Byte, baInput() As Byte) As Byte()
+    pvHkdfExtract = pvCryptoHmac(eHash, baSalt, baInput, 0)
 End Function
 
-Private Function pvHkdfExpand(baSalt() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Byte()
+Private Function pvHkdfExpand(ByVal eHash As UcsCryptoAlgorithmEnum, baSalt() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Byte()
     Dim baRetVal()      As Byte
     Dim lRetValPos      As Long
     Dim baInfo()        As Byte
@@ -805,10 +761,9 @@ Private Function pvHkdfExpand(baSalt() As Byte, ByVal sLabel As String, baContex
     Dim lIdx            As Long
     Dim baLast()        As Byte
     
-    Debug.Assert pvArraySize(baSalt) = crypto_auth_hmacsha256_KEYBYTES
     If LenB(sLabel) <> 0 Then
         sLabel = "tls13 " & sLabel
-        ReDim baInfo(0 To 3 + Len(sLabel) + 1 + pvArraySize(baContext) - 1) As Byte
+        pvAppendReserve baInfo, 0, 3 + Len(sLabel) + 1 + pvArraySize(baContext)
         lInfoPos = pvAppendLong(baInfo, lInfoPos, lSize, Size:=2)
         lInfoPos = pvAppendLong(baInfo, lInfoPos, Len(sLabel))
         lInfoPos = pvAppendString(baInfo, lInfoPos, sLabel)
@@ -822,8 +777,7 @@ Private Function pvHkdfExpand(baSalt() As Byte, ByVal sLabel As String, baContex
         lInputPos = pvAppendArray(baInput, 0, baLast)
         lInputPos = pvAppendArray(baInput, lInputPos, baInfo)
         lInputPos = pvAppendLong(baInput, lInputPos, lIdx)
-        ReDim baLast(0 To crypto_auth_hmacsha256_BYTES - 1) As Byte
-        Call crypto_auth_hmacsha256(baLast(0), baInput(0), lInputPos, 0, baSalt(0))
+        baLast = pvCryptoHmac(eHash, baSalt, baInput, 0, Size:=lInputPos)
         lRetValPos = pvAppendArray(baRetVal, lRetValPos, baLast)
         lIdx = lIdx + 1
     Loop
@@ -832,6 +786,121 @@ Private Function pvHkdfExpand(baSalt() As Byte, ByVal sLabel As String, baContex
     End If
     pvHkdfExpand = baRetVal
     Debug.Print "sLabel=" & sLabel & ", pvHkdfExpand=0x" & ToHex(baRetVal)
+End Function
+
+Private Function pvCryptoDecrypt(eAead As UcsCryptoAlgorithmEnum, baServerIV() As Byte, baServerKey() As Byte, baAd() As Byte, ByVal lAdPos As Long, ByVal lAdSize As Long, baInput() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
+    Dim baBuffer()      As Byte
+    Dim lResult         As Long
+    
+    If eAead = ucsAlgoAeadChacha20Poly1305 Then
+        Debug.Assert UBound(baServerIV) + 1 = TLS_CHACHA20POLY1305_IV_SIZE
+        Debug.Assert UBound(baServerKey) + 1 = TLS_CHACHA20_KEY_SIZE
+        ReDim baBuffer(0 To lSize - TLS_CHACHA20POLY1305_TAG_SIZE - 1 + 1000) As Byte
+        lResult = crypto_aead_chacha20poly1305_ietf_decrypt(baBuffer(0), ByVal 0, 0, baInput(lPos), lSize, 0, baAd(lAdPos), lAdSize, 0, baServerIV(0), baServerKey(0))
+        Debug.Assert lResult = 0
+        If lResult <> 0 Then
+            GoTo QH
+        End If
+        Debug.Assert UBound(baInput) + 1 >= lPos + lSize - TLS_CHACHA20POLY1305_TAG_SIZE
+        Call CopyMemory(baInput(lPos), baBuffer(0), lSize - TLS_CHACHA20POLY1305_TAG_SIZE)
+    Else
+        Err.Raise vbObjectError, "Unsupported aead type"
+    End If
+    '--- success
+    pvCryptoDecrypt = True
+QH:
+End Function
+
+Private Function pvCryptoEncrypt(eAead As UcsCryptoAlgorithmEnum, baClientIV() As Byte, baClientKey() As Byte, baAd() As Byte, ByVal lAdPos As Long, ByVal lAdSize As Long, baInput() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
+    Dim baBuffer()      As Byte
+    Dim lResult         As Long
+    
+    If eAead = ucsAlgoAeadChacha20Poly1305 Then
+        Debug.Assert UBound(baClientIV) + 1 = TLS_CHACHA20POLY1305_IV_SIZE
+        Debug.Assert UBound(baClientKey) + 1 = TLS_CHACHA20_KEY_SIZE
+        ReDim baBuffer(0 To lSize + TLS_CHACHA20POLY1305_TAG_SIZE - 1 + 1000) As Byte
+        lResult = crypto_aead_chacha20poly1305_ietf_encrypt(baBuffer(0), ByVal 0, baInput(lPos), lSize, 0, baAd(lAdPos), lAdSize, 0, 0, baClientIV(0), baClientKey(0))
+        Debug.Assert lResult = 0
+        If lResult <> 0 Then
+            GoTo QH
+        End If
+        Debug.Assert UBound(baInput) + 1 >= lPos + lSize + TLS_CHACHA20POLY1305_TAG_SIZE
+        Call CopyMemory(baInput(lPos), baBuffer(0), lSize + TLS_CHACHA20POLY1305_TAG_SIZE)
+    Else
+        Err.Raise vbObjectError, "Unsupported aead type"
+    End If
+    '--- success
+    pvCryptoEncrypt = True
+QH:
+End Function
+
+Private Function pvCryptoHash(eHash As UcsCryptoAlgorithmEnum, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
+    Dim baRetVal()      As Byte
+    Dim lPtr            As Long
+    
+    Select Case eHash
+    Case ucsAlgoDigestSha256
+        If Size < 0 Then
+            Size = pvArraySize(baInput) - lPos
+        Else
+            Debug.Assert pvArraySize(baInput) >= lPos + Size
+        End If
+        If Size > 0 Then
+            lPtr = VarPtr(baInput(lPos))
+        End If
+        ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
+        Call crypto_hash_sha256(baRetVal(0), ByVal lPtr, Size)
+    Case Else
+        Err.Raise vbObjectError, "Unsupported hash type"
+    End Select
+    pvCryptoHash = baRetVal
+End Function
+
+Private Function pvCryptoHmac(ByVal eHash As UcsCryptoAlgorithmEnum, baSalt() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
+    Dim baRetVal()      As Byte
+    Dim lPtr            As Long
+    
+    Select Case eHash
+    Case ucsAlgoDigestSha256
+        Debug.Assert pvArraySize(baSalt) = TLS_SHA256_DIGEST_SIZE
+        If Size < 0 Then
+            Size = pvArraySize(baInput) - lPos
+        Else
+            Debug.Assert pvArraySize(baInput) >= lPos + Size
+        End If
+        If Size > 0 Then
+            lPtr = VarPtr(baInput(lPos))
+        End If
+        ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
+        Call crypto_auth_hmacsha256(baRetVal(0), ByVal lPtr, Size, 0, baSalt(0))
+    Case Else
+        Err.Raise vbObjectError, "Unsupported hash type"
+    End Select
+    pvCryptoHmac = baRetVal
+End Function
+
+Private Function pvCryptoDeriveSecret(ByVal eKeyX As UcsCryptoAlgorithmEnum, baPriv() As Byte, baPub() As Byte) As Byte()
+    Dim baRetVal()      As Byte
+    
+    If eKeyX = ucsAlgoKeyX25519 Then
+        Debug.Assert pvArraySize(baPriv) = TLS_X25519_KEY_SIZE
+        Debug.Assert pvArraySize(baPub) = TLS_X25519_KEY_SIZE
+        ReDim baRetVal(0 To TLS_X25519_KEY_SIZE - 1) As Byte
+        Call crypto_scalarmult_curve25519(baRetVal(0), baPriv(0), baPub(0))
+    Else
+        Err.Raise vbObjectError, "Unsupported key-exchange type"
+    End If
+    pvCryptoDeriveSecret = baRetVal
+End Function
+
+Private Function pvCryptoRandomBytes(ByVal lSize As Long) As Byte()
+    Dim baRetVal()      As Byte
+    
+    If lSize > 0 Then
+        ReDim baRetVal(0 To lSize - 1) As Byte
+        Call randombytes_buf(baRetVal(0), lSize)
+    End If
+    pvCryptoRandomBytes = baRetVal
 End Function
 
 Private Function pvAppendBeginBlock(baDest() As Byte, ByVal lPos As Long, cBlocks As Collection, Optional ByVal Size As Long = 1) As Long
@@ -1059,8 +1128,13 @@ Private Function UnsignedAdd(ByVal lUnsignedPtr As Long, ByVal lSignedOffset As 
     UnsignedAdd = ((lUnsignedPtr Xor &H80000000) + lSignedOffset) Xor &H80000000
 End Function
 
-Property Get EmptyByteArray() As Byte()
-
+Property Get EmptyByteArray(Optional ByVal Size As Long) As Byte()
+    Dim baRetVal()      As Byte
+    
+    If Size > 0 Then
+        ReDim baRetVal(0 To Size - 1) As Byte
+    End If
+    EmptyByteArray = baRetVal
 End Property
 
 '=========================================================================
@@ -1129,7 +1203,7 @@ Private Sub Command1_Click()
     uCtx.State = ucsStatePostHandshake
     sRequest = "GET / HTTP/1.0" & vbCrLf & _
                "Host: localhost" & vbCrLf & vbCrLf
-    baSend = pvGetClientApplicationData(uCtx, StrConv(sRequest, vbFromUnicode), sError)
+    baSend = pvGetClientTrafficData(uCtx, StrConv(sRequest, vbFromUnicode), sError)
     If pvArraySize(baSend) = 0 Then
         GoTo QH
     End If
@@ -1152,71 +1226,3 @@ QH:
         MsgBox sError, vbCritical
     End If
 End Sub
-
-'Private Sub Command2_Click()
-'    Dim uCtx            As UcsClientContextType
-'    Dim lPos            As Long
-'    Dim baHelloHash(0 To LNG_HASH_SIZE - 1)  As Byte
-'
-'    lPos = pvAppendArray(uCtx.HandshakeMessages, 0, FromHex("010000c60303000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0006130113021303010000770000001800160000136578616d706c652e756c666865696d2e6e6574000a00080006001d00170018000d00140012040308040401050308050501080606010201003300260024001d0020358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254002d00020101002b0003020304"))
-'    lPos = pvAppendArray(uCtx.HandshakeMessages, lPos, FromHex("020000760303707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f20e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff130100002e00330024001d00209fd7ad6dcff4298dd3f96d5b1b2af910a0535b1488d7f8fabb349a982880b615002b00020304"))
-'    Call crypto_hash_sha256(baHelloHash(0), uCtx.HandshakeMessages(0), pvArraySize(uCtx.HandshakeMessages), 0)
-''    baHelloHash = FromHex("da75ce1139ac80dae4044da932350cf65c97ccc9e33f1e6f7d2d4b18b736ffd5")
-'    Debug.Print "HelloHash=0x" & ToHex(baHelloHash)
-'
-'    ReDim uCtx.ClientPrivate(0 To LNG_KEY_SIZE - 1) As Byte
-'    ReDim uCtx.ClientPublic(0 To LNG_KEY_SIZE - 1) As Byte
-'    ReDim baServerPrivate(0 To LNG_KEY_SIZE - 1) As Byte
-'    ReDim uCtx.ServerPublic(0 To LNG_KEY_SIZE - 1) As Byte
-'    ReDim baSharedSecret(0 To LNG_KEY_SIZE - 1) As Byte
-'
-''    Print "sodium_runtime_has_aesni=" & sodium_runtime_has_aesni()
-''    Print "sodium_runtime_has_pclmul=" & sodium_runtime_has_pclmul()
-''    Print "crypto_aead_aes256gcm_is_available=" & crypto_aead_aes256gcm_is_available()
-''    Call randombytes_buf(uCtx.ClientPrivate(0), UBound(uCtx.ClientPrivate) + 1)
-''    Call crypto_scalarmult_curve25519_base(uCtx.ClientPublic(0), uCtx.ClientPrivate(0))
-''    Debug.Print "uCtx.ClientPrivate=0x" & ToHex(uCtx.ClientPrivate)
-''    Debug.Print "uCtx.ClientPublic=0x" & ToHex(uCtx.ClientPublic)
-'    uCtx.ClientPrivate = FromHex("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
-'    Call crypto_scalarmult_curve25519_base(uCtx.ClientPublic(0), uCtx.ClientPrivate(0))
-'    Debug.Print "ClientPrivate=0x" & ToHex(uCtx.ClientPrivate)
-'    Debug.Print "ClientPublic=0x" & ToHex(uCtx.ClientPublic)
-'    baServerPrivate = FromHex("909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf")
-'    Call crypto_scalarmult_curve25519_base(uCtx.ServerPublic(0), baServerPrivate(0))
-'    Debug.Print "ServerPrivate=0x" & ToHex(baServerPrivate)
-'    Debug.Print "ServerPublic=0x" & ToHex(uCtx.ServerPublic)
-'    Call crypto_scalarmult_curve25519(baSharedSecret(0), uCtx.ClientPrivate(0), uCtx.ServerPublic(0))
-'    Debug.Print "SharedSecret=0x" & ToHex(baSharedSecret)
-'
-'
-'    Dim baZeroKey(0 To LNG_KEY_SIZE - 1) As Byte
-'    Dim baZeroSalt(0 To LNG_SALT_SIZE - 1) As Byte
-'    Dim baEarlySecret() As Byte
-'    Dim baEmptyHash(0 To LNG_HASH_SIZE - 1) As Byte
-'    Dim baDerivedSecret() As Byte
-'    Dim baHandshakeSecret() As Byte
-'
-'    baEarlySecret = pvHkdfExtract(baZeroSalt, baZeroKey)
-'    Debug.Print "EarlySecret=0x" & ToHex(baEarlySecret)           ' 33AD0A1C607EC03B09E6CD9893680CE210ADF300AA1F2660E1B22E10F170F92A
-'    Call crypto_hash_sha256(baEmptyHash(0), ByVal 0, 0, 0)
-'    Debug.Print "EmptyHash=0x" & ToHex(baEmptyHash)               ' E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
-'    baDerivedSecret = pvHkdfExpand(baEarlySecret, "derived", baEmptyHash, 32)
-'    Debug.Print "DerivedSecret=0x" & ToHex(baDerivedSecret)       ' 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
-'    baHandshakeSecret = pvHkdfExtract(baDerivedSecret, baSharedSecret)
-'    Debug.Print "HandshakeSecret=0x" & ToHex(baHandshakeSecret)   ' FB9FC80689B3A5D02C33243BF69A1B1B20705588A794304A6E7120155EDF149A
-'
-'
-'    uCtx.ClientTrafficSecret = pvHkdfExpand(baHandshakeSecret, "c hs traffic", baHelloHash, LNG_HASH_SIZE)
-'    Debug.Print "ClientTrafficSecret=0x" & ToHex(uCtx.ClientTrafficSecret)
-'    uCtx.ServerTrafficSecret = pvHkdfExpand(baHandshakeSecret, "s hs traffic", baHelloHash, LNG_HASH_SIZE)
-'    Debug.Print "ServerTrafficSecret=0x" & ToHex(uCtx.ServerTrafficSecret)
-'    uCtx.ClientTrafficKey = pvHkdfExpand(uCtx.ClientTrafficSecret, "key", EmptyByteArray, 16)
-'    Debug.Print "ClientTrafficKey=0x" & ToHex(uCtx.ClientTrafficKey)
-'    uCtx.ServerTrafficKey = pvHkdfExpand(uCtx.ServerTrafficSecret, "key", EmptyByteArray, 16)
-'    Debug.Print "ServerTrafficKey=0x" & ToHex(uCtx.ServerTrafficKey)
-'    uCtx.ClientTrafficIV = pvHkdfExpand(uCtx.ClientTrafficSecret, "iv", EmptyByteArray, LNG_IV_SIZE)
-'    Debug.Print "ClientTrafficIV=0x" & ToHex(uCtx.ClientTrafficIV)
-'    uCtx.ServerTrafficIV = pvHkdfExpand(uCtx.ServerTrafficSecret, "iv", EmptyByteArray, LNG_IV_SIZE)
-'    Debug.Print "ServerTrafficIV=0x" & ToHex(uCtx.ServerTrafficIV)
-'End Sub
-
