@@ -111,6 +111,9 @@ Private Sub Form_Load()
         Call LoadLibrary(App.Path & "\libsodium.dll")
         Call sodium_init
     End If
+    If txtResult.Font.Name = "Arial" Then
+        txtResult.Font.Name = "Courier New"
+    End If
 End Sub
 
 Private Sub Form_Resize()
