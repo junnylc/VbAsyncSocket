@@ -1,6 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text eol=crlf
 
-*.dll -text
-*.cmp -text
-*.cobj -text
+*.dll binary
+*.cmp binary
+*.cobj binary
