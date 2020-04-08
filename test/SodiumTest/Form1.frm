@@ -248,85 +248,85 @@ Private Function pvGetClientHello(uCtx As UcsClientContextType) As Byte()
     Dim cBlocks         As Collection
     
     '--- Record Header
-    lPos = pvAppendLong(baRetVal, lPos, TLS_CONTENT_TYPE_HANDSHAKE)
-    lPos = pvAppendLong(baRetVal, lPos, TLS_RECORD_VERSION, Size:=2)
-    lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
+    lPos = pvWriteLong(baRetVal, lPos, TLS_CONTENT_TYPE_HANDSHAKE)
+    lPos = pvWriteLong(baRetVal, lPos, TLS_RECORD_VERSION, Size:=2)
+    lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
         '--- Handshake Header
-        lPos = pvAppendLong(baRetVal, lPos, TLS_HANDSHAKE_TYPE_CLIENT_HELLO)
-        lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=3)
-            lPos = pvAppendLong(baRetVal, lPos, TLS_CLIENT_LEGACY_VERSION, Size:=2)
-            lPos = pvAppendArray(baRetVal, lPos, uCtx.ClientRandom)
+        lPos = pvWriteLong(baRetVal, lPos, TLS_HANDSHAKE_TYPE_CLIENT_HELLO)
+        lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=3)
+            lPos = pvWriteLong(baRetVal, lPos, TLS_CLIENT_LEGACY_VERSION, Size:=2)
+            lPos = pvWriteArray(baRetVal, lPos, uCtx.ClientRandom)
             '--- Legacy Session ID
-            lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks)
-                lPos = pvAppendArray(baRetVal, lPos, uCtx.LegacySessionID)
-            lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+            lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteArray(baRetVal, lPos, uCtx.LegacySessionID)
+            lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
             '--- Cipher Suites
-            lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-'                lPos = pvAppendLong(baRetVal, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
-                lPos = pvAppendLong(baRetVal, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
-            lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+            lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+'                lPos = pvWriteLong(baRetVal, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
+                lPos = pvWriteLong(baRetVal, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
+            lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
             '--- Legacy Compression Methods
-            lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks)
-                lPos = pvAppendLong(baRetVal, lPos, TLS_COMPRESS_NULL)
-            lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+            lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteLong(baRetVal, lPos, TLS_COMPRESS_NULL)
+            lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
             '--- Extensions
-            lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
+            lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
                 If LenB(uCtx.ServerName) <> 0 Then
                     '--- Extension - Server Name
-                    lPos = pvAppendLong(baRetVal, lPos, TLS_EXTENSION_TYPE_SERVER_NAME, Size:=2)
-                    lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                        lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                            lPos = pvAppendLong(baRetVal, lPos, TLS_SERVER_NAME_TYPE_HOSTNAME) '--- FQDN
-                            lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                                lPos = pvAppendString(baRetVal, lPos, uCtx.ServerName)
-                            lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-                        lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-                    lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+                    lPos = pvWriteLong(baRetVal, lPos, TLS_EXTENSION_TYPE_SERVER_NAME, Size:=2)
+                    lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                        lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                            lPos = pvWriteLong(baRetVal, lPos, TLS_SERVER_NAME_TYPE_HOSTNAME) '--- FQDN
+                            lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                                lPos = pvWriteString(baRetVal, lPos, uCtx.ServerName)
+                            lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+                        lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+                    lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
                 End If
                 '--- Extension - Supported Groups
-                lPos = pvAppendLong(baRetVal, lPos, TLS_EXTENSION_TYPE_SUPPORTED_GROUPS, Size:=2)
-                lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                    lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                        lPos = pvAppendLong(baRetVal, lPos, TLS_GROUP_X25519, Size:=2)
-                    lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-                lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteLong(baRetVal, lPos, TLS_EXTENSION_TYPE_SUPPORTED_GROUPS, Size:=2)
+                lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                    lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                        lPos = pvWriteLong(baRetVal, lPos, TLS_GROUP_X25519, Size:=2)
+                    lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
                 '--- Extension - Signature Algorithms
-                lPos = pvAppendLong(baRetVal, lPos, TLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, Size:=2)
-                lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                    lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                        lPos = pvAppendLong(baRetVal, lPos, TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, Size:=2)
-                        lPos = pvAppendLong(baRetVal, lPos, TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, Size:=2)
-                        lPos = pvAppendLong(baRetVal, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA256, Size:=2)
-                        lPos = pvAppendLong(baRetVal, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA1, Size:=2)
-                    lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-                lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteLong(baRetVal, lPos, TLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, Size:=2)
+                lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                    lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                        lPos = pvWriteLong(baRetVal, lPos, TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, Size:=2)
+                        lPos = pvWriteLong(baRetVal, lPos, TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, Size:=2)
+                        lPos = pvWriteLong(baRetVal, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA256, Size:=2)
+                        lPos = pvWriteLong(baRetVal, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA1, Size:=2)
+                    lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
                 '--- Extension - Key Share
-                lPos = pvAppendLong(baRetVal, lPos, TLS_EXTENSION_TYPE_KEY_SHARE, Size:=2)
-                lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                    lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                        lPos = pvAppendLong(baRetVal, lPos, TLS_GROUP_X25519, Size:=2)
-                        lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                            lPos = pvAppendArray(baRetVal, lPos, uCtx.ClientPublic)
-                        lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-                    lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-                lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteLong(baRetVal, lPos, TLS_EXTENSION_TYPE_KEY_SHARE, Size:=2)
+                lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                    lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                        lPos = pvWriteLong(baRetVal, lPos, TLS_GROUP_X25519, Size:=2)
+                        lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                            lPos = pvWriteArray(baRetVal, lPos, uCtx.ClientPublic)
+                        lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+                    lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
                 '--- Extension - PSK Key Exchange Modes
-                lPos = pvAppendLong(baRetVal, lPos, TLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, Size:=2)
-                lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                    lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks)
-                        lPos = pvAppendLong(baRetVal, lPos, TLS_PSK_KE_MODE_PSK_DHE)
-                    lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-                lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteLong(baRetVal, lPos, TLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES, Size:=2)
+                lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                    lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks)
+                        lPos = pvWriteLong(baRetVal, lPos, TLS_PSK_KE_MODE_PSK_DHE)
+                    lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
                 '--- Extension - Supported Versions
-                lPos = pvAppendLong(baRetVal, lPos, TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, Size:=2)
-                lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
-                    lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks)
-                        lPos = pvAppendLong(baRetVal, lPos, TLS_PROTOCOL_VERSION_TLS13_FINAL, Size:=2)
-                    lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-                lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-            lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-        lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-    lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteLong(baRetVal, lPos, TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS, Size:=2)
+                lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
+                    lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks)
+                        lPos = pvWriteLong(baRetVal, lPos, TLS_PROTOCOL_VERSION_TLS13_FINAL, Size:=2)
+                    lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+                lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+            lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+        lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+    lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
     Debug.Assert cBlocks.Count = 0
     pvGetClientHello = baRetVal
 End Function
@@ -344,25 +344,25 @@ Private Function pvGetClientHandshakeFinished(uCtx As UcsClientContextType, sErr
     
     '--- Legacy Change Cipher Spec
     baVerifyData = FromHex("140303000101")
-    lPos = pvAppendArray(baRetVal, lPos, baVerifyData)
+    lPos = pvWriteArray(baRetVal, lPos, baVerifyData)
     '--- Record Header
     lRecordPos = lPos
-    lPos = pvAppendLong(baRetVal, lPos, TLS_CONTENT_TYPE_APPDATA)
-    lPos = pvAppendLong(baRetVal, lPos, TLS_RECORD_VERSION, Size:=2)
-    lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
+    lPos = pvWriteLong(baRetVal, lPos, TLS_CONTENT_TYPE_APPDATA)
+    lPos = pvWriteLong(baRetVal, lPos, TLS_RECORD_VERSION, Size:=2)
+    lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
         lMessagePos = lPos
         '--- Handshake Finish
-        lPos = pvAppendLong(baRetVal, lPos, TLS_HANDSHAKE_TYPE_FINISHED)
-        lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=3)
+        lPos = pvWriteLong(baRetVal, lPos, TLS_HANDSHAKE_TYPE_FINISHED)
+        lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=3)
             baHandshakeHash = pvCryptoHash(uCtx.DigestAlgo, uCtx.HandshakeMessages, 0)
             baVerifyData = pvHkdfExpand(uCtx.DigestAlgo, uCtx.ClientTrafficSecret, "finished", EmptyByteArray, uCtx.DigestSize)
             baVerifyData = pvHkdfExtract(uCtx.DigestAlgo, baVerifyData, baHandshakeHash)
-            lPos = pvAppendArray(baRetVal, lPos, baVerifyData)
-        lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
-        lPos = pvAppendLong(baRetVal, lPos, TLS_CONTENT_TYPE_HANDSHAKE)
+            lPos = pvWriteArray(baRetVal, lPos, baVerifyData)
+        lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
+        lPos = pvWriteLong(baRetVal, lPos, TLS_CONTENT_TYPE_HANDSHAKE)
         lMessageSize = lPos - lMessagePos
-        lPos = pvAppendReserve(baRetVal, lPos, uCtx.TagSize)
-    lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+        lPos = pvWriteReserved(baRetVal, lPos, uCtx.TagSize)
+    lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
     Debug.Assert cBlocks.Count = 0
     baClientIV = pvArrayXor(uCtx.ClientTrafficIV, uCtx.ClientTrafficSeqNo)
     uCtx.ClientTrafficSeqNo = uCtx.ClientTrafficSeqNo + 1
@@ -383,15 +383,15 @@ Private Function pvGetClientTrafficData(uCtx As UcsClientContextType, baData() A
     Dim baClientIV()    As Byte
     
     '--- Record Header
-    lPos = pvAppendLong(baRetVal, lPos, TLS_CONTENT_TYPE_APPDATA)
-    lPos = pvAppendLong(baRetVal, lPos, TLS_RECORD_VERSION, Size:=2)
-    lPos = pvAppendBeginBlock(baRetVal, lPos, cBlocks, Size:=2)
+    lPos = pvWriteLong(baRetVal, lPos, TLS_CONTENT_TYPE_APPDATA)
+    lPos = pvWriteLong(baRetVal, lPos, TLS_RECORD_VERSION, Size:=2)
+    lPos = pvWriteBeginOfBlock(baRetVal, lPos, cBlocks, Size:=2)
         lMessagePos = lPos
-        lPos = pvAppendArray(baRetVal, lPos, baData)
-        lPos = pvAppendLong(baRetVal, lPos, TLS_CONTENT_TYPE_APPDATA)
+        lPos = pvWriteArray(baRetVal, lPos, baData)
+        lPos = pvWriteLong(baRetVal, lPos, TLS_CONTENT_TYPE_APPDATA)
         lMessageSize = lPos - lMessagePos
-        lPos = pvAppendReserve(baRetVal, lPos, uCtx.TagSize)
-    lPos = pvAppendEndBlock(baRetVal, lPos, cBlocks)
+        lPos = pvWriteReserved(baRetVal, lPos, uCtx.TagSize)
+    lPos = pvWriteEndOfBlock(baRetVal, lPos, cBlocks)
     Debug.Assert cBlocks.Count = 0
     baClientIV = pvArrayXor(uCtx.ClientTrafficIV, uCtx.ClientTrafficSeqNo)
     uCtx.ClientTrafficSeqNo = uCtx.ClientTrafficSeqNo + 1
@@ -423,25 +423,25 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
     
     Do While lPos < pvArraySize(baInput)
         lRecordPos = lPos
-        lPos = pvDecodeLong(baInput, lPos, lRecordType)
-        lPos = pvDecodeLong(baInput, lPos, lLegacyProtocol, Size:=2)
-        lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, Size:=2, BlockSize:=lRecordSize)
+        lPos = pvReadLong(baInput, lPos, lRecordType)
+        lPos = pvReadLong(baInput, lPos, lLegacyProtocol, Size:=2)
+        lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=2, BlockSize:=lRecordSize)
             Select Case lRecordType
             Case TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC
                 lPos = lPos + lRecordSize
             Case TLS_CONTENT_TYPE_HANDSHAKE
                 lMessagePos = lPos
-                lPos = pvDecodeLong(baInput, lPos, lHandshakeType)
-                lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
+                lPos = pvReadLong(baInput, lPos, lHandshakeType)
+                lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
                     Select Case uCtx.State
                     Case ucsStateExpectServerHello
                         Select Case lHandshakeType
                         Case TLS_HANDSHAKE_TYPE_SERVER_HELLO
-                            lPos = pvDecodeArray(baInput, lPos, baMessage, lMessageSize)
-                            If Not pvDecodeServerHello(uCtx, baMessage, sError) Then
+                            lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
+                            If Not pvParseServerHello(uCtx, baMessage, sError) Then
                                 GoTo QH
                             End If
-                            pvAppendBuffer uCtx.HandshakeMessages, pvArraySize(uCtx.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
+                            pvWriteBuffer uCtx.HandshakeMessages, pvArraySize(uCtx.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
                             If Not pvDeriveHandshakeSecrets(uCtx, sError) Then
                                 GoTo QH
                             End If
@@ -451,7 +451,7 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                             GoTo QH
                         End Select
                     End Select
-                lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
+                lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
             Case TLS_CONTENT_TYPE_APPDATA
                 baServerIV = pvArrayXor(uCtx.ServerTrafficIV, uCtx.ServerTrafficSeqNo)
                 uCtx.ServerTrafficSeqNo = uCtx.ServerTrafficSeqNo + 1
@@ -470,20 +470,20 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                     Case ucsStateExpectEncryptedExtensions
                         Do While lPos < lEnd
                             lMessagePos = lPos
-                            lPos = pvDecodeLong(baInput, lPos, lHandshakeType)
-                            lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
+                            lPos = pvReadLong(baInput, lPos, lHandshakeType)
+                            lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
                             If lMessageSize > 16 * 1024 Then
                                 sError = "Unexpected message size (lMessageSize=" & lMessageSize & ")"
                                 GoTo QH
                             End If
-                            lPos = pvDecodeArray(baInput, lPos, baMessage, lMessageSize)
+                            lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
                             Select Case lHandshakeType
                             Case TLS_HANDSHAKE_TYPE_CERTIFICATE
                                 uCtx.ServerCertificate = baMessage
                             Case TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY
                                 baHandshakeHash = pvCryptoHash(uCtx.DigestAlgo, uCtx.HandshakeMessages, 0)
-                                lVerifyPos = pvAppendString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
-                                lVerifyPos = pvAppendArray(baVerifyData, lVerifyPos, baHandshakeHash)
+                                lVerifyPos = pvWriteString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
+                                lVerifyPos = pvWriteArray(baVerifyData, lVerifyPos, baHandshakeHash)
                                 '--- ToDo: verify uCtx.ServerCertificate signature
                                 '--- ShellExecute("openssl x509 -pubkey -noout -in server.crt > server.pub")
                             Case TLS_HANDSHAKE_TYPE_FINISHED
@@ -501,17 +501,17 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                                 sError = "Unexpected message type for ucsStateExpectEncryptedExtensions (lHandshakeType=" & lHandshakeType & ")"
                                 GoTo QH
                             End Select
-                            pvAppendBuffer uCtx.HandshakeMessages, pvArraySize(uCtx.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
-                            lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
+                            pvWriteBuffer uCtx.HandshakeMessages, pvArraySize(uCtx.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
+                            lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
                         Loop
                         '--- note: skip padding too
                         lPos = lRecordPos + lRecordSize + 5
                     Case ucsStatePostHandshake
                         Do While lPos < lEnd
                             lMessagePos = lPos
-                            lPos = pvDecodeLong(baInput, lPos, lHandshakeType)
-                            lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
-                            lPos = pvDecodeArray(baInput, lPos, baMessage, lMessageSize)
+                            lPos = pvReadLong(baInput, lPos, lHandshakeType)
+                            lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
+                            lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
                             Select Case lHandshakeType
                             Case TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET
                                 '--- do nothing
@@ -534,7 +534,7 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                                         If pvArraySize(baMessage) = 0 Then
                                             GoTo QH
                                         End If
-                                        uCtx.SendPos = pvAppendArray(uCtx.SendBuffer, uCtx.SendPos, baMessage)
+                                        uCtx.SendPos = pvWriteArray(uCtx.SendBuffer, uCtx.SendPos, baMessage)
                                     End If
                                 Case Else
                                     sError = "Unexpected value in TLS_HANDSHAKE_TYPE_KEY_UPDATE (lRequestUpdate=" & lRequestUpdate & ")"
@@ -544,7 +544,7 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                                 sError = "Unexpected message type for ucsStatePostHandshake (lHandshakeType=" & lHandshakeType & ")"
                                 GoTo QH
                             End Select
-                            lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
+                            lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
                         Loop
                         '--- note: skip padding too
                         lPos = lRecordPos + lRecordSize + 5
@@ -563,7 +563,7 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                 Case TLS_CONTENT_TYPE_APPDATA
                     Select Case uCtx.State
                     Case ucsStatePostHandshake
-                        uCtx.RecvPos = pvAppendBuffer(uCtx.RecvBuffer, uCtx.RecvPos, VarPtr(baInput(lPos)), lEnd - lPos)
+                        uCtx.RecvPos = pvWriteBuffer(uCtx.RecvBuffer, uCtx.RecvPos, VarPtr(baInput(lPos)), lEnd - lPos)
                     Case Else
                         sError = "Invalid state for TLS_CONTENT_TYPE_APPDATA (" & uCtx.State & ")"
                         GoTo QH
@@ -585,14 +585,14 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
                 sError = "Unexpected record type (" & lRecordType & ")"
                 GoTo QH
             End Select
-        lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
+        lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
     Loop
     '--- success
     pvHandleInput = True
 QH:
 End Function
 
-Private Function pvDecodeServerHello(uCtx As UcsClientContextType, baInput() As Byte, sError As String) As Boolean
+Private Function pvParseServerHello(uCtx As UcsClientContextType, baInput() As Byte, sError As String) As Boolean
     Dim lPos            As Long
     Dim cBlocks         As Collection
     Dim lLegacyVersion  As Long
@@ -601,12 +601,12 @@ Private Function pvDecodeServerHello(uCtx As UcsClientContextType, baInput() As 
     Dim lExtType        As Long
     Dim lExchangeGroup  As Long
     
-    lPos = pvDecodeLong(baInput, lPos, lLegacyVersion, Size:=2)
-    lPos = pvDecodeArray(baInput, lPos, uCtx.ServerRandom, uCtx.SecretSize)
-    lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, BlockSize:=lBlockSize)
-        lPos = pvDecodeArray(baInput, lPos, uCtx.LegacySessionID, lBlockSize)
-    lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
-    lPos = pvDecodeLong(baInput, lPos, uCtx.CipherSuite, Size:=2)
+    lPos = pvReadLong(baInput, lPos, lLegacyVersion, Size:=2)
+    lPos = pvReadArray(baInput, lPos, uCtx.ServerRandom, uCtx.SecretSize)
+    lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, BlockSize:=lBlockSize)
+        lPos = pvReadArray(baInput, lPos, uCtx.LegacySessionID, lBlockSize)
+    lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
+    lPos = pvReadLong(baInput, lPos, uCtx.CipherSuite, Size:=2)
     Select Case uCtx.CipherSuite
     Case TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256
         uCtx.AeadAlgo = ucsAlgoAeadChacha20Poly1305
@@ -626,39 +626,41 @@ Private Function pvDecodeServerHello(uCtx As UcsClientContextType, baInput() As 
         sError = "Unsupported cipher suite (0x" & Hex$(uCtx.CipherSuite) & ")"
         GoTo QH
     End Select
-    lPos = pvDecodeLong(baInput, lPos, lLegacyCompression)
+    lPos = pvReadLong(baInput, lPos, lLegacyCompression)
     Debug.Assert lLegacyCompression = 0
-    lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, Size:=2)
+    lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=2)
         Do While lPos < cBlocks.Item(cBlocks.Count)
-            lPos = pvDecodeLong(baInput, lPos, lExtType, Size:=2)
-            lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, Size:=2, BlockSize:=lBlockSize)
+            lPos = pvReadLong(baInput, lPos, lExtType, Size:=2)
+            lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=2, BlockSize:=lBlockSize)
                 Select Case lExtType
                 Case TLS_EXTENSION_TYPE_KEY_SHARE
-                    lPos = pvDecodeLong(baInput, lPos, lExchangeGroup, Size:=2)
+                    lPos = pvReadLong(baInput, lPos, lExchangeGroup, Size:=2)
                     Debug.Assert lExchangeGroup = TLS_GROUP_X25519
-                    lPos = pvDecodeBeginBlock(baInput, lPos, cBlocks, Size:=2, BlockSize:=lBlockSize)
+                    lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=2, BlockSize:=lBlockSize)
                         Debug.Assert lBlockSize = uCtx.KeySize
                         If lBlockSize <> uCtx.KeySize Then
                             sError = "Invalid server key size"
                             GoTo QH
                         End If
-                        lPos = pvDecodeArray(baInput, lPos, uCtx.ServerPublic, uCtx.KeySize)
-                    lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
+                        lPos = pvReadArray(baInput, lPos, uCtx.ServerPublic, uCtx.KeySize)
+                    lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
                 Case TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS
                     If lBlockSize >= 2 Then
-                        Call pvDecodeLong(baInput, lPos, uCtx.ServerSupportedVersion, Size:=2)
+                        Call pvReadLong(baInput, lPos, uCtx.ServerSupportedVersion, Size:=2)
                     End If
                     lPos = lPos + lBlockSize
                 Case Else
                     lPos = lPos + lBlockSize
                 End Select
-            lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
+            lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
         Loop
-    lPos = pvDecodeEndBlock(baInput, lPos, cBlocks)
+    lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
     '--- success
-    pvDecodeServerHello = True
+    pvParseServerHello = True
 QH:
 End Function
+
+'= HMAC-based key derivation =============================================
 
 Private Function pvDeriveHandshakeSecrets(uCtx As UcsClientContextType, sError As String) As Boolean
     Dim baHandshakeHash() As Byte
@@ -763,22 +765,22 @@ Private Function pvHkdfExpand(ByVal eHash As UcsCryptoAlgorithmEnum, baSalt() As
     
     If LenB(sLabel) <> 0 Then
         sLabel = "tls13 " & sLabel
-        pvAppendReserve baInfo, 0, 3 + Len(sLabel) + 1 + pvArraySize(baContext)
-        lInfoPos = pvAppendLong(baInfo, lInfoPos, lSize, Size:=2)
-        lInfoPos = pvAppendLong(baInfo, lInfoPos, Len(sLabel))
-        lInfoPos = pvAppendString(baInfo, lInfoPos, sLabel)
-        lInfoPos = pvAppendLong(baInfo, lInfoPos, pvArraySize(baContext))
-        lInfoPos = pvAppendArray(baInfo, lInfoPos, baContext)
+        pvWriteReserved baInfo, 0, 3 + Len(sLabel) + 1 + pvArraySize(baContext)
+        lInfoPos = pvWriteLong(baInfo, lInfoPos, lSize, Size:=2)
+        lInfoPos = pvWriteLong(baInfo, lInfoPos, Len(sLabel))
+        lInfoPos = pvWriteString(baInfo, lInfoPos, sLabel)
+        lInfoPos = pvWriteLong(baInfo, lInfoPos, pvArraySize(baContext))
+        lInfoPos = pvWriteArray(baInfo, lInfoPos, baContext)
     Else
         baInfo = baContext
     End If
     lIdx = 1
     Do While lRetValPos < lSize
-        lInputPos = pvAppendArray(baInput, 0, baLast)
-        lInputPos = pvAppendArray(baInput, lInputPos, baInfo)
-        lInputPos = pvAppendLong(baInput, lInputPos, lIdx)
+        lInputPos = pvWriteArray(baInput, 0, baLast)
+        lInputPos = pvWriteArray(baInput, lInputPos, baInfo)
+        lInputPos = pvWriteLong(baInput, lInputPos, lIdx)
         baLast = pvCryptoHmac(eHash, baSalt, baInput, 0, Size:=lInputPos)
-        lRetValPos = pvAppendArray(baRetVal, lRetValPos, baLast)
+        lRetValPos = pvWriteArray(baRetVal, lRetValPos, baLast)
         lIdx = lIdx + 1
     Loop
     If UBound(baRetVal) <> lSize - 1 Then
@@ -787,6 +789,8 @@ Private Function pvHkdfExpand(ByVal eHash As UcsCryptoAlgorithmEnum, baSalt() As
     pvHkdfExpand = baRetVal
     Debug.Print "sLabel=" & sLabel & ", pvHkdfExpand=0x" & ToHex(baRetVal)
 End Function
+
+'= crypto ================================================================
 
 Private Function pvCryptoDecrypt(eAead As UcsCryptoAlgorithmEnum, baServerIV() As Byte, baServerKey() As Byte, baAd() As Byte, ByVal lAdPos As Long, ByVal lAdSize As Long, baInput() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
     Dim baBuffer()      As Byte
@@ -903,43 +907,45 @@ Private Function pvCryptoRandomBytes(ByVal lSize As Long) As Byte()
     pvCryptoRandomBytes = baRetVal
 End Function
 
-Private Function pvAppendBeginBlock(baDest() As Byte, ByVal lPos As Long, cBlocks As Collection, Optional ByVal Size As Long = 1) As Long
+'= buffer management =====================================================
+
+Private Function pvWriteBeginOfBlock(baBuffer() As Byte, ByVal lPos As Long, cBlocks As Collection, Optional ByVal Size As Long = 1) As Long
     If cBlocks Is Nothing Then
         Set cBlocks = New Collection
     End If
     cBlocks.Add lPos
-    pvAppendBeginBlock = pvAppendReserve(baDest, lPos, Size)
-    '--- note: keep Size in baDest
-    baDest(lPos) = (Size And &HFF)
+    pvWriteBeginOfBlock = pvWriteReserved(baBuffer, lPos, Size)
+    '--- note: keep Size in baBuffer
+    baBuffer(lPos) = (Size And &HFF)
 End Function
 
-Private Function pvAppendEndBlock(baDest() As Byte, ByVal lPos As Long, cBlocks As Collection) As Long
+Private Function pvWriteEndOfBlock(baBuffer() As Byte, ByVal lPos As Long, cBlocks As Collection) As Long
     Dim lStart          As Long
     
     lStart = cBlocks.Item(cBlocks.Count)
     cBlocks.Remove cBlocks.Count
-    pvAppendLong baDest, lStart, lPos - lStart - baDest(lStart), Size:=baDest(lStart)
-    pvAppendEndBlock = lPos
+    pvWriteLong baBuffer, lStart, lPos - lStart - baBuffer(lStart), Size:=baBuffer(lStart)
+    pvWriteEndOfBlock = lPos
 End Function
 
-Private Function pvAppendString(baDest() As Byte, ByVal lPos As Long, sValue As String) As Long
-    pvAppendString = pvAppendArray(baDest, lPos, StrConv(sValue, vbFromUnicode))
+Private Function pvWriteString(baBuffer() As Byte, ByVal lPos As Long, sValue As String) As Long
+    pvWriteString = pvWriteArray(baBuffer, lPos, StrConv(sValue, vbFromUnicode))
 End Function
 
-Private Function pvAppendArray(baDest() As Byte, ByVal lPos As Long, baSrc() As Byte) As Long
+Private Function pvWriteArray(baBuffer() As Byte, ByVal lPos As Long, baSrc() As Byte) As Long
     Dim lSize       As Long
     
     If pvArraySize(baSrc, RetVal:=lSize) > 0 Then
-        lPos = pvAppendBuffer(baDest, lPos, VarPtr(baSrc(0)), lSize)
+        lPos = pvWriteBuffer(baBuffer, lPos, VarPtr(baSrc(0)), lSize)
     End If
-    pvAppendArray = lPos
+    pvWriteArray = lPos
 End Function
 
-Private Function pvAppendLong(baDest() As Byte, ByVal lPos As Long, ByVal lValue As Long, Optional ByVal Size As Long = 1) As Long
+Private Function pvWriteLong(baBuffer() As Byte, ByVal lPos As Long, ByVal lValue As Long, Optional ByVal Size As Long = 1) As Long
     Static baTemp(0 To 3) As Byte
 
     If Size <= 1 Then
-        pvAppendLong = pvAppendBuffer(baDest, lPos, VarPtr(lValue), Size)
+        pvWriteLong = pvWriteBuffer(baBuffer, lPos, VarPtr(lValue), Size)
     Else
         baTemp(Size - 1) = (lValue And &HFF): lValue = lValue \ &H100
         baTemp(Size - 2) = (lValue And &HFF): lValue = lValue \ &H100
@@ -949,105 +955,107 @@ Private Function pvAppendLong(baDest() As Byte, ByVal lPos As Long, ByVal lValue
                 baTemp(Size - 4) = (lValue And &HFF)
             End If
         End If
-        pvAppendLong = pvAppendBuffer(baDest, lPos, VarPtr(baTemp(0)), Size)
+        pvWriteLong = pvWriteBuffer(baBuffer, lPos, VarPtr(baTemp(0)), Size)
     End If
 End Function
 
-Private Function pvAppendReserve(baDest() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Long
-    pvAppendReserve = pvAppendBuffer(baDest, lPos, 0, lSize)
+Private Function pvWriteReserved(baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Long
+    pvWriteReserved = pvWriteBuffer(baBuffer, lPos, 0, lSize)
 End Function
 
-Private Function pvAppendBuffer(baDest() As Byte, ByVal lPos As Long, ByVal lPtr As Long, ByVal lSize As Long) As Long
-    If Peek(ArrPtr(baDest)) = 0 Then
-        ReDim baDest(0 To lPos + lSize - 1) As Byte
-    ElseIf UBound(baDest) < lPos + lSize - 1 Then
-        ReDim Preserve baDest(0 To lPos + lSize - 1) As Byte
+Private Function pvWriteBuffer(baBuffer() As Byte, ByVal lPos As Long, ByVal lPtr As Long, ByVal lSize As Long) As Long
+    If Peek(ArrPtr(baBuffer)) = 0 Then
+        ReDim baBuffer(0 To lPos + lSize - 1) As Byte
+    ElseIf UBound(baBuffer) < lPos + lSize - 1 Then
+        ReDim Preserve baBuffer(0 To lPos + lSize - 1) As Byte
     End If
     If lSize > 0 And lPtr <> 0 Then
         Debug.Assert IsBadReadPtr(lPtr, lSize) = 0
-        Call CopyMemory(baDest(lPos), ByVal lPtr, lSize)
+        Call CopyMemory(baBuffer(lPos), ByVal lPtr, lSize)
     End If
-    pvAppendBuffer = lPos + lSize
+    pvWriteBuffer = lPos + lSize
 End Function
 
-Private Function pvDecodeBeginBlock(baInput() As Byte, ByVal lPos As Long, cBlocks As Collection, Optional ByVal Size As Long = 1, Optional BlockSize As Long) As Long
+Private Function pvReadBeginOfBlock(baBuffer() As Byte, ByVal lPos As Long, cBlocks As Collection, Optional ByVal Size As Long = 1, Optional BlockSize As Long) As Long
     If cBlocks Is Nothing Then
         Set cBlocks = New Collection
     End If
-    pvDecodeBeginBlock = pvDecodeLong(baInput, lPos, BlockSize, Size)
-    cBlocks.Add pvDecodeBeginBlock + BlockSize
+    pvReadBeginOfBlock = pvReadLong(baBuffer, lPos, BlockSize, Size)
+    cBlocks.Add pvReadBeginOfBlock + BlockSize
 End Function
 
-Private Function pvDecodeEndBlock(baInput() As Byte, ByVal lPos As Long, cBlocks As Collection) As Long
+Private Function pvReadEndOfBlock(baBuffer() As Byte, ByVal lPos As Long, cBlocks As Collection) As Long
     Dim lEnd          As Long
     
-    #If baInput Then '--- touch args
+    #If baBuffer Then '--- touch args
     #End If
     lEnd = cBlocks.Item(cBlocks.Count)
     cBlocks.Remove cBlocks.Count
     Debug.Assert lPos = lEnd
-    pvDecodeEndBlock = lEnd
+    pvReadEndOfBlock = lEnd
 End Function
 
-Private Function pvDecodeLong(baInput() As Byte, ByVal lPos As Long, lValue As Long, Optional ByVal Size As Long = 1) As Long
+Private Function pvReadLong(baBuffer() As Byte, ByVal lPos As Long, lValue As Long, Optional ByVal Size As Long = 1) As Long
     Static baTemp(0 To 3) As Byte
     
-    If lPos + Size <= pvArraySize(baInput) Then
+    If lPos + Size <= pvArraySize(baBuffer) Then
         If Size <= 1 Then
-            lValue = baInput(lPos)
+            lValue = baBuffer(lPos)
         Else
-            baTemp(Size - 1) = baInput(lPos + 0)
-            baTemp(Size - 2) = baInput(lPos + 1)
-            If Size >= 3 Then baTemp(Size - 3) = baInput(lPos + 2)
-            If Size >= 4 Then baTemp(Size - 4) = baInput(lPos + 3)
+            baTemp(Size - 1) = baBuffer(lPos + 0)
+            baTemp(Size - 2) = baBuffer(lPos + 1)
+            If Size >= 3 Then baTemp(Size - 3) = baBuffer(lPos + 2)
+            If Size >= 4 Then baTemp(Size - 4) = baBuffer(lPos + 3)
             Call CopyMemory(lValue, baTemp(0), Size)
         End If
     Else
         lValue = 0
     End If
-    pvDecodeLong = lPos + Size
+    pvReadLong = lPos + Size
 End Function
 
-Private Function pvDecodeArray(baInput() As Byte, ByVal lPos As Long, baDest() As Byte, ByVal lSize As Long) As Long
+Private Function pvReadArray(baBuffer() As Byte, ByVal lPos As Long, baDest() As Byte, ByVal lSize As Long) As Long
     If lSize < 0 Then
-        lSize = pvArraySize(baInput) - lPos
+        lSize = pvArraySize(baBuffer) - lPos
     End If
     If lSize > 0 Then
         ReDim baDest(0 To lSize - 1) As Byte
-        If lPos + lSize <= pvArraySize(baInput) Then
-            Call CopyMemory(baDest(0), baInput(lPos), lSize)
-        ElseIf lPos < pvArraySize(baInput) Then
-            Call CopyMemory(baDest(0), baInput(lPos), pvArraySize(baInput) - lPos)
+        If lPos + lSize <= pvArraySize(baBuffer) Then
+            Call CopyMemory(baDest(0), baBuffer(lPos), lSize)
+        ElseIf lPos < pvArraySize(baBuffer) Then
+            Call CopyMemory(baDest(0), baBuffer(lPos), pvArraySize(baBuffer) - lPos)
         End If
     Else
         Erase baDest
     End If
-    pvDecodeArray = lPos + lSize
+    pvReadArray = lPos + lSize
 End Function
 
-'Private Function pvDecodeRecord(baInput() As Byte, ByVal lPos As Long) As Byte()
+'Private Function pvReadRecord(baBuffer() As Byte, ByVal lPos As Long) As Byte()
 '    Dim baRetVal()      As Byte
 '    Dim lSize           As Long
 '
-'    lSize = baInput(lPos + 3) * &H100& + baInput(lPos + 4)
-'    pvDecodeArray baInput, lPos + 5, baRetVal, lSize
-'    pvDecodeRecord = baRetVal
+'    lSize = baBuffer(lPos + 3) * &H100& + baBuffer(lPos + 4)
+'    pvReadArray baBuffer, lPos + 5, baRetVal, lSize
+'    pvReadRecord = baRetVal
 'End Function
 
-Private Function pvArraySize(baSrc() As Byte, Optional RetVal As Long) As Long
-    If Peek(ArrPtr(baSrc)) <> 0 Then
-        RetVal = UBound(baSrc) + 1
+'= arrays utilities ======================================================
+
+Private Function pvArraySize(baArray() As Byte, Optional RetVal As Long) As Long
+    If Peek(ArrPtr(baArray)) <> 0 Then
+        RetVal = UBound(baArray) + 1
     Else
         RetVal = 0
     End If
     pvArraySize = RetVal
 End Function
 
-Private Function pvArrayXor(baInput() As Byte, ByVal lSeqNo As Long) As Byte()
+Private Function pvArrayXor(baArray() As Byte, ByVal lSeqNo As Long) As Byte()
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
-    baRetVal = baInput
+    baRetVal = baArray
     lIdx = pvArraySize(baRetVal)
     Do While lSeqNo <> 0 And lIdx > 0
         lIdx = lIdx - 1
@@ -1056,6 +1064,8 @@ Private Function pvArrayXor(baInput() As Byte, ByVal lSeqNo As Long) As Byte()
     Loop
     pvArrayXor = baRetVal
 End Function
+
+'= helper ================================================================
 
 Private Function Peek(ByVal lPtr As Long) As Long
     Call GetMem4(ByVal lPtr, Peek)
@@ -1175,7 +1185,7 @@ Private Sub Command1_Click()
     If pvArraySize(baSend) = 0 Then
         GoTo QH
     End If
-    pvAppendBuffer uCtx.HandshakeMessages, 0, VarPtr(baSend(5)), pvArraySize(baSend) - 5
+    pvWriteBuffer uCtx.HandshakeMessages, 0, VarPtr(baSend(5)), pvArraySize(baSend) - 5
     If Not oSocket.SyncSendArray(baSend) Then
         sError = oSocket.GetErrorDescription(oSocket.LastError)
         GoTo QH
