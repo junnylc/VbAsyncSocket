@@ -94,17 +94,76 @@ Private Sub Command1_Click()
         MsgBox "Wrong URL", vbCritical
         GoTo QH
     End If
-    uCtx = TlsInitClient(uRemote.Host & ":" & uRemote.Port, txtResult)
-    sResult = TlsFetchHttp(uCtx, uRemote.Path, sError)
-    If LenB(sResult) <> 0 Then
-        txtResult.Text = sResult
-    End If
+    uCtx = TlsInitClient(uRemote.Host)
+    sResult = pvFetchHttp(uCtx, uRemote.Host & ":" & uRemote.Port, uRemote.Path, sError)
     If LenB(sError) <> 0 Then
         MsgBox sError, vbCritical
         GoTo QH
     End If
+    txtResult.Text = sResult
 QH:
 End Sub
+
+Private Function pvFetchHttp(uCtx As UcsClientContextType, sServer As String, sPath As String, sError As String) As String
+    Dim oSocket         As cAsyncSocket
+    Dim vSplit          As Variant
+    Dim baRecv()        As Byte
+    Dim sRequest        As String
+    Dim baSend()        As Byte
+    Dim lSize           As Long
+    Dim bComplete       As Boolean
+    Dim baDecr()        As Byte
+    
+    Set oSocket = New cAsyncSocket
+    vSplit = Split(sServer & ":443", ":")
+    If Not oSocket.SyncConnect(CStr(vSplit(0)), Val(vSplit(1))) Then
+        sError = oSocket.GetErrorDescription(oSocket.LastError)
+        GoTo QH
+    End If
+    Do
+        If Not oSocket.ReceiveArray(baRecv) Then
+            sError = oSocket.GetErrorDescription(oSocket.LastError)
+            GoTo QH
+        End If
+        lSize = 0
+        If Not TlsHandshake(uCtx, baRecv, -1, baSend, lSize, bComplete) Then
+            sError = TlsGetLastError(uCtx)
+            GoTo QH
+        End If
+        If lSize > 0 Then
+            If Not oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
+                sError = oSocket.GetErrorDescription(oSocket.LastError)
+                GoTo QH
+            End If
+        End If
+    Loop While Not bComplete
+    sRequest = "GET " & sPath & " HTTP/1.0" & vbCrLf & _
+               "Host: " & vSplit(0) & vbCrLf & vbCrLf
+    lSize = 0
+    If Not TlsSend(uCtx, StrConv(sRequest, vbFromUnicode), -1, baSend, lSize) Then
+        sError = TlsGetLastError(uCtx)
+        GoTo QH
+    End If
+    If lSize > 0 Then
+        If Not oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
+            sError = oSocket.GetErrorDescription(oSocket.LastError)
+            GoTo QH
+        End If
+    End If
+    Do
+        If Not oSocket.ReceiveArray(baRecv) Then
+            sError = oSocket.GetErrorDescription(oSocket.LastError)
+            GoTo QH
+        End If
+        lSize = 0
+        If Not TlsReceive(uCtx, baRecv, -1, baDecr, lSize) Then
+            sError = TlsGetLastError(uCtx)
+            GoTo QH
+        End If
+    Loop While lSize = 0
+    pvFetchHttp = Replace(Replace(StrConv(baDecr, vbUnicode), vbCr, vbNullString), vbLf, vbCrLf)
+QH:
+End Function
 
 Private Sub Form_Load()
     If GetModuleHandle("libsodium.dll") = 0 Then
