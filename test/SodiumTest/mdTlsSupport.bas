@@ -673,10 +673,9 @@ Private Function pvHandleHandshakeContent(uCtx As UcsTlsContext, baInput() As By
                         GoTo QH
                     End Select
                 Case ucsTlsStateExpectEncryptedExtensions
-                    lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
                     Select Case lMessageType
                     Case TLS_HANDSHAKE_TYPE_CERTIFICATE
-                        .ServerCertificate = baMessage
+                        pvReadArray baInput, lPos, .ServerCertificate, lMessageSize
                     Case TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY
                         baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
                         lVerifyPos = pvWriteString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
@@ -684,6 +683,7 @@ Private Function pvHandleHandshakeContent(uCtx As UcsTlsContext, baInput() As By
                         '--- ToDo: verify .ServerCertificate signature
                         '--- ShellExecute("openssl x509 -pubkey -noout -in server.crt > server.pub")
                     Case TLS_HANDSHAKE_TYPE_FINISHED
+                        pvReadArray baInput, lPos, baMessage, lMessageSize
                         baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
                         baVerifyData = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "finished", EmptyByteArray, .DigestSize)
                         baVerifyData = pvHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
@@ -699,6 +699,7 @@ Private Function pvHandleHandshakeContent(uCtx As UcsTlsContext, baInput() As By
                         sError = "Unexpected message type for ucsTlsStateExpectEncryptedExtensions (lMessageType=" & lMessageType & ")"
                         GoTo QH
                     End Select
+                    lPos = lPos + lMessageSize
                     pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
                     If .State = ucsTlsStatePostHandshake Then
                         .SendPos = pvSendClientHandshakeFinished(uCtx, .SendBuffer, .SendPos, sError)
@@ -710,37 +711,31 @@ Private Function pvHandleHandshakeContent(uCtx As UcsTlsContext, baInput() As By
                         End If
                     End If
                 Case ucsTlsStatePostHandshake
-                    lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
                     Select Case lMessageType
                     Case TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET
-                        '--- do nothing
+                        '--- don't store tickets for now
                     Case TLS_HANDSHAKE_TYPE_KEY_UPDATE
                         Debug.Print "TLS_HANDSHAKE_TYPE_KEY_UPDATE"
-                        If pvArraySize(baMessage) = 1 Then
-                            lRequestUpdate = baMessage(0)
+                        If lMessageSize = 1 Then
+                            lRequestUpdate = baInput(lPos)
                         Else
                             lRequestUpdate = -1
                         End If
-                        Select Case lRequestUpdate
-                        Case 0, 1
-                            If Not pvDeriveKeyUpdate(uCtx, lRequestUpdate <> 0, sError) Then
+                        If Not pvDeriveKeyUpdate(uCtx, lRequestUpdate <> 0, sError) Then
+                            GoTo QH
+                        End If
+                        If lRequestUpdate <> 0 Then
+                            '--- ack by TLS_HANDSHAKE_TYPE_KEY_UPDATE w/ update_not_requested(0)
+                            If pvSendClientApplicationData(uCtx, baMessage, 0, FromHex("1800000100"), -1, sError) = 0 Then
                                 GoTo QH
                             End If
-                            If lRequestUpdate = 1 Then
-                                '--- ack by TLS_HANDSHAKE_TYPE_KEY_UPDATE w/ update_not_requested(0)
-                                If pvSendClientApplicationData(uCtx, baMessage, 0, FromHex("1800000100"), -1, sError) = 0 Then
-                                    GoTo QH
-                                End If
-                                .SendPos = pvWriteArray(.SendBuffer, .SendPos, baMessage)
-                            End If
-                        Case Else
-                            sError = "Unexpected value in TLS_HANDSHAKE_TYPE_KEY_UPDATE (lRequestUpdate=" & lRequestUpdate & ")"
-                            GoTo QH
-                        End Select
+                            .SendPos = pvWriteArray(.SendBuffer, .SendPos, baMessage)
+                        End If
                     Case Else
                         sError = "Unexpected message type for ucsTlsStatePostHandshake (lMessageType=" & lMessageType & ")"
                         GoTo QH
                     End Select
+                    lPos = lPos + lMessageSize
                 Case Else
                     sError = "Invalid state for handshake content (" & .State & ")"
                     GoTo QH
