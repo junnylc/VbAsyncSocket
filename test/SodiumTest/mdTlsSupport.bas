@@ -313,13 +313,17 @@ End Function
 Public Function TlsGetLastAlert(uCtx As UcsClientContextType, Optional AlertCode As UcsTlsAlertDescriptionsEnum) As String
     Static vTexts       As Variant
     
-    If IsEmpty(vTexts) Then
-        vTexts = SplitOrReindex(STR_VL_ALERTS, "|")
-    End If
     AlertCode = uCtx.LastAlertDesc
-    TlsGetLastAlert = At(vTexts, AlertCode)
-    If LenB(TlsGetLastAlert) = 0 Then
-        TlsGetLastAlert = "Unknown (" & AlertCode & ")"
+    If AlertCode >= 0 Then
+        If IsEmpty(vTexts) Then
+            vTexts = SplitOrReindex(STR_VL_ALERTS, "|")
+        End If
+        If AlertCode <= UBound(vTexts) Then
+            TlsGetLastAlert = vTexts(AlertCode)
+        End If
+        If LenB(TlsGetLastAlert) = 0 Then
+            TlsGetLastAlert = "Unknown (" & AlertCode & ")"
+        End If
     End If
 End Function
 
@@ -1276,17 +1280,3 @@ Private Function SplitOrReindex(Expression As String, Delimiter As String) As Va
     End If
 End Function
 
-Private Property Get At(vData As Variant, ByVal lIdx As Long, Optional sDefault As String) As String
-    On Error GoTo QH
-    At = sDefault
-    If IsArray(vData) Then
-        If lIdx < LBound(vData) Then
-            '--- lIdx = -1 for last element
-            lIdx = UBound(vData) + 1 + lIdx
-        End If
-        If LBound(vData) <= lIdx And lIdx <= UBound(vData) Then
-            At = CStr(vData(lIdx))
-        End If
-    End If
-QH:
-End Property
