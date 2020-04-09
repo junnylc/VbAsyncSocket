@@ -28,10 +28,10 @@ Begin VB.Form Form1
       Width           =   9756
    End
    Begin VB.CommandButton Command1 
-      Caption         =   "Connect"
+      Caption         =   "Download"
       Default         =   -1  'True
       Height          =   348
-      Left            =   3864
+      Left            =   8400
       TabIndex        =   2
       Top             =   168
       Width           =   1356
@@ -40,12 +40,12 @@ Begin VB.Form Form1
       Height          =   348
       Left            =   1260
       TabIndex        =   0
-      Text            =   "tls13.1d.pw"
+      Text            =   "bgdev.org"
       Top             =   168
-      Width           =   2532
+      Width           =   7068
    End
    Begin VB.Label Label1 
-      Caption         =   "Server:"
+      Caption         =   "Address:"
       Height          =   348
       Left            =   168
       TabIndex        =   1
@@ -65,13 +65,30 @@ DefObj A-Z
 ' API
 '=========================================================================
 
+'--- Windows Messages
+Private Const WM_SETREDRAW              As Long = &HB
+Private Const EM_SETSEL                 As Long = &HB1
+Private Const EM_REPLACESEL             As Long = &HC2
+Private Const WM_VSCROLL                As Long = &H115
+'--- for WM_VSCROLL
+Private Const SB_BOTTOM                 As Long = 7
+
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As Long
 Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal ucb As Long) As Long
 Private Declare Function GetModuleHandle Lib "kernel32" Alias "GetModuleHandleA" (ByVal lpModuleName As String) As Long
 Private Declare Function LoadLibrary Lib "kernel32" Alias "LoadLibraryA" (ByVal lpLibFileName As String) As Long
+Private Declare Function SendMessage Lib "user32" Alias "SendMessageA" (ByVal hWnd As Long, ByVal wMsg As Long, ByVal wParam As Long, lParam As Any) As Long
 '--- libsodium
 Private Declare Function sodium_init Lib "libsodium" () As Long
+
+'=========================================================================
+' Constants and member variables
+'=========================================================================
+
+Private m_oSocket           As cAsyncSocket
+Private m_sServerName       As String
+Private m_uCtx              As UcsClientContextType
 
 Private Type UcsParsedUrl
     Protocol        As String
@@ -104,98 +121,121 @@ End Sub
 
 Private Sub Command1_Click()
     Dim uRemote         As UcsParsedUrl
-    Dim uCtx            As UcsClientContextType
     Dim sResult         As String
     Dim sError          As String
     
     On Error GoTo EH
-    ' tls13.1d.pw, localhost:44330
+    ' tls13.1d.pw, localhost:44330, tls.ctf.network
     If Not ParseUrl(txtUrl.Text, uRemote, DefProtocol:="https") Then
         MsgBox "Wrong URL", vbCritical
         GoTo QH
     End If
-    uCtx = TlsInitClient(uRemote.Host)
-    sResult = HttpsRequest(uCtx, uRemote.Host & ":" & uRemote.Port, uRemote.Path, sError)
+    sResult = HttpsRequest(m_uCtx, uRemote, sError)
     If LenB(sError) <> 0 Then
         MsgBox sError, vbCritical
         GoTo QH
     End If
-    txtResult.Text = sResult
+    If LenB(sResult) <> 0 Then
+        txtResult.Text = vbNullString
+        pvAppendLogText txtResult, sResult
+        txtResult.SelStart = 0
+    End If
 QH:
     Exit Sub
 EH:
     MsgBox Err.Description & " [" & Err.Source & "]", vbCritical
+    Set m_oSocket = Nothing
 End Sub
 
 '=========================================================================
 ' Methods
 '=========================================================================
 
-Private Function HttpsRequest(uCtx As UcsClientContextType, sServer As String, sPath As String, sError As String) As String
-    Dim oSocket         As cAsyncSocket
-    Dim vSplit          As Variant
+Private Function HttpsRequest(uCtx As UcsClientContextType, uRemote As UcsParsedUrl, sError As String) As String
     Dim baRecv()        As Byte
     Dim sRequest        As String
     Dim baSend()        As Byte
     Dim lSize           As Long
     Dim bComplete       As Boolean
     Dim baDecr()        As Byte
+    Dim dblTimer        As Double
     
-    Set oSocket = New cAsyncSocket
-    vSplit = Split(sServer & ":443", ":")
-    If Not oSocket.SyncConnect(CStr(vSplit(0)), Val(vSplit(1))) Then
-        sError = oSocket.GetErrorDescription(oSocket.LastError)
-        GoTo QH
-    End If
-    Do
-        If Not oSocket.ReceiveArray(baRecv) Then
-            sError = oSocket.GetErrorDescription(oSocket.LastError)
+    If m_sServerName <> uRemote.Host & ":" & uRemote.Port Or m_oSocket Is Nothing Then
+        Set m_oSocket = New cAsyncSocket
+        If Not m_oSocket.SyncConnect(uRemote.Host, uRemote.Port) Then
+            sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
             GoTo QH
         End If
-        If pvArraySize(baRecv) <> 0 Then
-            txtResult.Text = "pvArraySize(baRecv)=" & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
-        End If
-        lSize = 0
-        If Not TlsHandshake(uCtx, baRecv, -1, baSend, lSize, bComplete) Then
-            sError = TlsGetLastError(uCtx)
-            GoTo QH
-        End If
-        If lSize > 0 Then
-            If Not oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
-                sError = oSocket.GetErrorDescription(oSocket.LastError)
+        m_sServerName = uRemote.Host & ":" & uRemote.Port
+        '--- send TLS handshake
+        uCtx = TlsInitClient(uRemote.Host)
+        Do
+            If Not m_oSocket.ReceiveArray(baRecv) Then
+                sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
                 GoTo QH
             End If
-        End If
-    Loop While Not bComplete
-    sRequest = "GET " & sPath & " HTTP/1.0" & vbCrLf & _
-               "Host: " & vSplit(0) & vbCrLf & vbCrLf
+            If pvArraySize(baRecv) <> 0 Then
+                txtResult.Text = "pvArraySize(baRecv)=" & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
+            End If
+            lSize = 0
+            If Not TlsHandshake(uCtx, baRecv, -1, baSend, lSize, bComplete) Then
+                sError = TlsGetLastError(uCtx)
+                GoTo QH
+            End If
+            If lSize > 0 Then
+                If Not m_oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
+                    sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
+                    GoTo QH
+                End If
+            End If
+        Loop While Not bComplete
+    End If
+    '--- send TLS application data and wait for recv
+    sRequest = "GET " & uRemote.Path & " HTTP/1.1" & vbCrLf & _
+               "Connection: keep-alive" & vbCrLf & _
+               "Host: " & uRemote.Host & vbCrLf & vbCrLf
     lSize = 0
     If Not TlsSend(uCtx, StrConv(sRequest, vbFromUnicode), -1, baSend, lSize) Then
         sError = TlsGetLastError(uCtx)
         GoTo QH
     End If
     If lSize > 0 Then
-        If Not oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
-            sError = oSocket.GetErrorDescription(oSocket.LastError)
+        If Not m_oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
+            sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
             GoTo QH
         End If
     End If
+    lSize = 0
+    dblTimer = Timer
     Do
-        If Not oSocket.ReceiveArray(baRecv) Then
-            sError = oSocket.GetErrorDescription(oSocket.LastError)
+        If Not m_oSocket.ReceiveArray(baRecv) Then
+            sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
             GoTo QH
         End If
         If pvArraySize(baRecv) <> 0 Then
-            txtResult.Text = "pvArraySize(baRecv)=" & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
+            txtResult.Text = "pvArraySize(baRecv)=" & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), IIf(pvArraySize(baRecv) > 1024, 1024, pvArraySize(baRecv)))
+            dblTimer = Timer
+        ElseIf lSize > 0 And Timer > dblTimer + 0.2 Then
+            Exit Do
+        ElseIf Timer > dblTimer + 1 Then
+            Exit Do
         End If
-        lSize = 0
         If Not TlsReceive(uCtx, baRecv, -1, baDecr, lSize) Then
             sError = TlsGetLastError(uCtx)
             GoTo QH
         End If
-    Loop While lSize = 0
+    Loop
     HttpsRequest = Replace(Replace(StrConv(baDecr, vbUnicode), vbCr, vbNullString), vbLf, vbCrLf)
+    lSize = InStr(1, HttpsRequest, vbCrLf & vbCrLf)
+    If lSize = 0 Then
+        Set m_oSocket = Nothing
+    ElseIf InStr(1, Left$(HttpsRequest, lSize), "Connection: close", vbTextCompare) Then
+        Set m_oSocket = Nothing
+    End If
 QH:
+    If LenB(sError) <> 0 Then
+        Set m_oSocket = Nothing
+    End If
 End Function
 
 Private Function ParseUrl(sUrl As String, uParsed As UcsParsedUrl, Optional DefProtocol As String) As Boolean
@@ -283,3 +323,14 @@ Private Function pvArraySize(baArray() As Byte, Optional RetVal As Long) As Long
     End If
     pvArraySize = RetVal
 End Function
+
+Private Sub pvAppendLogText(txtLog As TextBox, sValue As String)
+    Call SendMessage(txtLog.hWnd, WM_SETREDRAW, 0, ByVal 0)
+    Call SendMessage(txtLog.hWnd, EM_SETSEL, 0, ByVal -1)
+    Call SendMessage(txtLog.hWnd, EM_SETSEL, -1, ByVal -1)
+    Call SendMessage(txtLog.hWnd, EM_REPLACESEL, 1, ByVal sValue)
+    Call SendMessage(txtLog.hWnd, EM_SETSEL, 0, ByVal -1)
+    Call SendMessage(txtLog.hWnd, EM_SETSEL, -1, ByVal -1)
+    Call SendMessage(txtLog.hWnd, WM_SETREDRAW, 1, ByVal 0)
+    Call SendMessage(txtLog.hWnd, WM_VSCROLL, SB_BOTTOM, ByVal 0)
+End Sub
