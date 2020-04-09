@@ -185,6 +185,7 @@ End Type
 Public Function TlsInitClient(sServerName As String) As UcsClientContextType
     Dim uCtx            As UcsClientContextType
     
+    On Error GoTo EH
     With uCtx
         pvSetLastError uCtx, vbNullString
         .ServerName = sServerName
@@ -204,12 +205,16 @@ Public Function TlsInitClient(sServerName As String) As UcsClientContextType
             Err.Raise vbObjectError, "TlsInitClient", "Unsupported key-exchange type " & .KxAlgo
         End If
     End With
+QH:
     TlsInitClient = uCtx
+    Exit Function
+EH:
+    pvSetLastError uCtx, Err.Description
+    Resume QH
 End Function
 
 Public Function TlsHandshake(uCtx As UcsClientContextType, baInput() As Byte, lSize As Long, baOutput() As Byte, lPos As Long, bComplete As Boolean) As Boolean
-    Dim sError          As String
-    
+    On Error GoTo EH
     With uCtx
         pvSetLastError uCtx, vbNullString
         '--- swap-in
@@ -221,23 +226,25 @@ Public Function TlsHandshake(uCtx As UcsClientContextType, baInput() As Byte, lS
             If lSize < 0 Then
                 lSize = pvArraySize(baInput)
             End If
-            If Not pvHandleInput(uCtx, baInput, lSize, sError) Then
-                pvSetLastError uCtx, sError, .LastAlertDesc
+            If Not pvHandleInput(uCtx, baInput, lSize, .LastError) Then
                 GoTo QH
             End If
         End If
         bComplete = (.State >= ucsTlsStatePostHandshake)
+        '--- success
+        TlsHandshake = True
+QH:
         '--- swap-out
         pvArraySwap baOutput, lPos, .SendBuffer, .SendPos
     End With
-    '--- success
-    TlsHandshake = True
-QH:
+    Exit Function
+EH:
+    pvSetLastError uCtx, Err.Description
+    Resume QH
 End Function
 
 Public Function TlsSend(uCtx As UcsClientContextType, baData() As Byte, lSize As Long, baOutput() As Byte, lPos As Long) As Boolean
-    Dim sError          As String
-    
+    On Error GoTo EH
     With uCtx
         pvSetLastError uCtx, vbNullString
         '--- swap-in
@@ -245,21 +252,24 @@ Public Function TlsSend(uCtx As UcsClientContextType, baData() As Byte, lSize As
         If lSize < 0 Then
             lSize = pvArraySize(baData)
         End If
-        .SendPos = pvSendClientApplicationData(uCtx, .SendBuffer, .SendPos, baData, lSize, sError)
-        If LenB(sError) <> 0 Then
+        .SendPos = pvSendClientApplicationData(uCtx, .SendBuffer, .SendPos, baData, lSize, .LastError)
+        If LenB(.LastError) <> 0 Then
             GoTo QH
         End If
+        '--- success
+        TlsSend = True
+QH:
         '--- swap-out
         pvArraySwap baOutput, lPos, .SendBuffer, .SendPos
     End With
-    '--- success
-    TlsSend = True
-QH:
+    Exit Function
+EH:
+    pvSetLastError uCtx, Err.Description
+    Resume QH
 End Function
 
 Public Function TlsReceive(uCtx As UcsClientContextType, baInput() As Byte, lSize As Long, baOutput() As Byte, lPos As Long) As Boolean
-    Dim sError          As String
-    
+    On Error GoTo EH
     With uCtx
         pvSetLastError uCtx, vbNullString
         '--- swap-in
@@ -267,16 +277,19 @@ Public Function TlsReceive(uCtx As UcsClientContextType, baInput() As Byte, lSiz
         If lSize < 0 Then
             lSize = pvArraySize(baInput)
         End If
-        If Not pvHandleInput(uCtx, baInput, lSize, sError) Then
-            pvSetLastError uCtx, sError, .LastAlertDesc
+        If Not pvHandleInput(uCtx, baInput, lSize, .LastError) Then
             GoTo QH
         End If
+        '--- success
+        TlsReceive = True
+QH:
         '--- swap-out
         pvArraySwap baOutput, lPos, .DecrBuffer, .DecrPos
     End With
-    '--- success
-    TlsReceive = True
-QH:
+    Exit Function
+EH:
+    pvSetLastError uCtx, Err.Description
+    Resume QH
 End Function
 
 Public Function TlsGetLastError(uCtx As UcsClientContextType) As String
