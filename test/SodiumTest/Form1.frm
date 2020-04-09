@@ -215,7 +215,7 @@ InLoop:
             GoTo QH
         End If
         If pvArraySize(baRecv) <> 0 Then
-            txtResult.Text = "pvArraySize(baRecv)=" & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), IIf(pvArraySize(baRecv) > 1024, 1024, pvArraySize(baRecv)))
+            txtResult.Text = "pvArraySize(baRecv)=" & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
             dblTimer = Timer
         ElseIf lSize > 0 And Timer > dblTimer + 0.2 Then
             Exit Do
@@ -282,12 +282,14 @@ Private Function DesignDumpMemory(ByVal lPtr As Long, ByVal lSize As Long) As St
     Dim sHex            As String
     Dim sChar           As String
     Dim lValue          As Long
-
+    Dim aResult()       As String
+    
+    ReDim aResult(0 To (lSize + 15) \ 16) As String
     For lIdx = 0 To ((lSize + 15) \ 16) * 16
         If lIdx < lSize Then
             If IsBadReadPtr(UnsignedAdd(lPtr, lIdx), 1) = 0 Then
                 Call CopyMemory(lValue, ByVal UnsignedAdd(lPtr, lIdx), 1)
-                sHex = sHex & Right$("00" & Hex$(lValue), 2) & " "
+                sHex = sHex & Right$("0" & Hex$(lValue), 2) & " "
                 If lValue >= 32 Then
                     sChar = sChar & Chr$(lValue)
                 Else
@@ -301,11 +303,12 @@ Private Function DesignDumpMemory(ByVal lPtr As Long, ByVal lSize As Long) As St
             sHex = sHex & "   "
         End If
         If ((lIdx + 1) Mod 16) = 0 Then
-            DesignDumpMemory = DesignDumpMemory & Right$("0000" & Hex$(lIdx - 15), 4) & ": " & sHex & " " & sChar & vbCrLf
+            aResult(lIdx \ 16) = Right$("000" & Hex$(lIdx - 15), 4) & " - " & sHex & " " & sChar
             sHex = vbNullString
             sChar = vbNullString
         End If
     Next
+    DesignDumpMemory = Join(aResult, vbCrLf)
 End Function
 
 Private Function UnsignedAdd(ByVal lUnsignedPtr As Long, ByVal lSignedOffset As Long) As Long
