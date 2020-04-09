@@ -1,4 +1,15 @@
 Attribute VB_Name = "mdTlsSupport"
+'=========================================================================
+'
+' Based on RFC 8446 at https://tools.ietf.org/html/rfc8446
+'   and illustrated traffic-dump at https://tls13.ulfheim.net/
+'
+' More TLS 1.3 implementations at https://github.com/h2o/picotls
+'   and https://github.com/openssl/openssl
+'
+' List of resources at https://github.com/tlswg/tls13-spec/wiki/Implementations
+'
+'=========================================================================
 Option Explicit
 DefObj A-Z
 
