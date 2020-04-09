@@ -40,7 +40,7 @@ Begin VB.Form Form1
       Height          =   348
       Left            =   1260
       TabIndex        =   0
-      Text            =   "bgdev.org"
+      Text            =   "facebook.com"
       Top             =   168
       Width           =   7068
    End
@@ -169,11 +169,13 @@ Private Function HttpsRequest(uCtx As UcsClientContextType, uRemote As UcsParsed
         m_sServerName = uRemote.Host & ":" & uRemote.Port
         '--- send TLS handshake
         uCtx = TlsInitClient(uRemote.Host)
+        GoTo InLoop
         Do
-            If Not m_oSocket.ReceiveArray(baRecv) Then
+            If Not m_oSocket.SyncReceiveArray(baRecv, Timeout:=1000) Then
                 sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
                 GoTo QH
             End If
+InLoop:
             If pvArraySize(baRecv) <> 0 Then
                 txtResult.Text = "pvArraySize(baRecv)=" & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
             End If

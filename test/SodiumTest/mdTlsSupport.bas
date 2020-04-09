@@ -166,6 +166,7 @@ Public Type UcsClientContextType
     PrevServerTrafficKey()      As Byte
     PrevServerTrafficIV()       As Byte
     PrevServerTrafficSeqNo      As Long
+'    PrevHandshakeContent()      As Byte
     
     State                       As UcsTlsStatesEnum
     LastError                   As String
@@ -187,6 +188,9 @@ Public Type UcsClientContextType
     DecrPos                     As Long
     SendBuffer()                As Byte
     SendPos                     As Long
+    MessBuffer()                As Byte
+    MessPos                     As Long
+    MessSize                    As Long
 End Type
 
 '=========================================================================
@@ -533,19 +537,30 @@ Private Function pvHandleRecord(uCtx As UcsClientContextType, baInput() As Byte,
         lPos = pvReadLong(baInput, lPos, lRecordType)
         lPos = pvReadLong(baInput, lPos, TLS_CLIENT_LEGACY_VERSION, Size:=2)
         lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=2, BlockSize:=lRecordSize)
-        If lRecordSize > IIf(lRecordType = TLS_CONTENT_TYPE_APPDATA, TLS_MAX_ENCRYPTED_RECORD_SIZE, TLS_MAX_PLAINTEXT_RECORD_SIZE) Then
-            sError = "Record size too big"
-            GoTo QH
-        End If
-        If lPos + lRecordSize > lSize Then
-            lPos = lRecordPos
-            Exit Do
-        End If
+            If lRecordSize > IIf(lRecordType = TLS_CONTENT_TYPE_APPDATA, TLS_MAX_ENCRYPTED_RECORD_SIZE, TLS_MAX_PLAINTEXT_RECORD_SIZE) Then
+                sError = "Record size too big"
+                GoTo QH
+            End If
+            If lPos + lRecordSize > lSize Then
+                '--- back off and bail out early
+                lPos = lRecordPos
+                Exit Do
+            End If
             Select Case lRecordType
             Case TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC
                 lPos = lPos + lRecordSize
+            Case TLS_CONTENT_TYPE_ALERT
+HandleAlertContent:
+                If lRecordSize >= 2 Then
+                    .LastAlertDesc = baInput(lPos + 1)
+                    If baInput(lPos) = TLS_ALERT_LEVEL_FATAL Then
+                        sError = "Fatal alert"
+                        GoTo QH
+                    End If
+                End If
+                lPos = lPos + lRecordSize
             Case TLS_CONTENT_TYPE_HANDSHAKE
-                lPos = pvHandleMessage(uCtx, lRecordType, baInput, lPos, lPos + lRecordSize, sError)
+                lPos = pvHandleHandshakeContent(uCtx, baInput, lPos, lPos + lRecordSize, sError)
                 If LenB(sError) <> 0 Then
                     GoTo QH
                 End If
@@ -571,21 +586,42 @@ Private Function pvHandleRecord(uCtx As UcsClientContextType, baInput() As Byte,
                     lEnd = lEnd - 1
                 Loop
                 lRecordType = baInput(lEnd)
-                lPos = pvHandleMessage(uCtx, lRecordType, baInput, lPos, lEnd, sError)
-                If LenB(sError) <> 0 Then
-                    GoTo QH
-                End If
+                Select Case lRecordType
+                Case TLS_CONTENT_TYPE_ALERT
+                    GoTo HandleAlertContent
+                Case TLS_CONTENT_TYPE_HANDSHAKE
+                    If .MessSize > 0 Then
+                        .MessSize = pvWriteBuffer(.MessBuffer, .MessSize, VarPtr(baInput(lPos)), lEnd - lPos)
+                        .MessPos = pvHandleHandshakeContent(uCtx, .MessBuffer, .MessPos, .MessSize, sError)
+                        If LenB(sError) <> 0 Then
+                            GoTo QH
+                        End If
+                        If .MessPos >= .MessSize Then
+                            Erase .MessBuffer
+                            .MessSize = 0
+                            .MessPos = 0
+                        End If
+                    Else
+                        lPos = pvHandleHandshakeContent(uCtx, baInput, lPos, lEnd, sError)
+                        If LenB(sError) <> 0 Then
+                            GoTo QH
+                        End If
+                        If lPos < lEnd Then
+                            .MessSize = pvWriteBuffer(.MessBuffer, .MessSize, VarPtr(baInput(lPos)), lEnd - lPos)
+                            .MessPos = 0
+                        End If
+                    End If
+                Case TLS_CONTENT_TYPE_APPDATA
+                    Select Case .State
+                    Case ucsTlsStatePostHandshake
+                        .DecrPos = pvWriteBuffer(.DecrBuffer, .DecrPos, VarPtr(baInput(lPos)), lEnd - lPos)
+                    Case Else
+                        sError = "Invalid state for appdata content (" & .State & ")"
+                        GoTo QH
+                    End Select
+                End Select
                 '--- note: skip zero padding too
                 lPos = lRecordPos + lRecordSize + 5
-            Case TLS_CONTENT_TYPE_ALERT
-                If lRecordSize >= 2 Then
-                    .LastAlertDesc = baInput(lPos + 1)
-                    If baInput(lPos) = TLS_ALERT_LEVEL_FATAL Then
-                        sError = "Fatal alert"
-                        GoTo QH
-                    End If
-                End If
-                lPos = lPos + lRecordSize
             Case Else
                 sError = "Unexpected record type (" & lRecordType & ")"
                 GoTo QH
@@ -598,7 +634,7 @@ Private Function pvHandleRecord(uCtx As UcsClientContextType, baInput() As Byte,
 QH:
 End Function
 
-Private Function pvHandleMessage(uCtx As UcsClientContextType, ByVal lRecordType As Long, baInput() As Byte, ByVal lPos As Long, ByVal lEnd As Long, sError As String) As Long
+Private Function pvHandleHandshakeContent(uCtx As UcsClientContextType, baInput() As Byte, ByVal lPos As Long, ByVal lEnd As Long, sError As String) As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
     Dim lMessageType    As Long
@@ -610,27 +646,21 @@ Private Function pvHandleMessage(uCtx As UcsClientContextType, ByVal lRecordType
     Dim lRequestUpdate  As Long
     
     With uCtx
-        Select Case lRecordType
-        Case TLS_CONTENT_TYPE_ALERT
-            If lEnd >= lPos + 2 Then
-                .LastAlertDesc = baInput(lPos + 1)
-                If baInput(lPos) = TLS_ALERT_LEVEL_FATAL Then
-                    sError = "Fatal alert"
-                    GoTo QH
+        Do While lPos < lEnd
+            lMessagePos = lPos
+            lPos = pvReadLong(baInput, lPos, lMessageType)
+            lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
+                If lPos + lMessageSize > lEnd Then
+                    '--- back off and bail out early
+                    lPos = lMessagePos
+                    Exit Do
                 End If
-            End If
-        Case TLS_CONTENT_TYPE_HANDSHAKE
-            Do While lPos < lEnd
-                lMessagePos = lPos
-                lPos = pvReadLong(baInput, lPos, lMessageType)
-                lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
-                Debug.Assert lPos + lMessageSize <= lEnd
                 Select Case .State
                 Case ucsTlsStateExpectServerHello
                     Select Case lMessageType
                     Case TLS_HANDSHAKE_TYPE_SERVER_HELLO
                         lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
-                        If Not pvHandleServerHello(uCtx, baMessage, sError) Then
+                        If Not pvHandleHandshakeServerHello(uCtx, baMessage, sError) Then
                             GoTo QH
                         End If
                         pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
@@ -712,27 +742,18 @@ Private Function pvHandleMessage(uCtx As UcsClientContextType, ByVal lRecordType
                         GoTo QH
                     End Select
                 Case Else
-                    sError = "Invalid state for TLS_CONTENT_TYPE_HANDSHAKE (" & .State & ")"
+                    sError = "Invalid state for handshake content (" & .State & ")"
                     GoTo QH
                 End Select
-                lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
-            Loop
-        Case TLS_CONTENT_TYPE_APPDATA
-            Select Case .State
-            Case ucsTlsStatePostHandshake
-                .DecrPos = pvWriteBuffer(.DecrBuffer, .DecrPos, VarPtr(baInput(lPos)), lEnd - lPos)
-            Case Else
-                sError = "Invalid state for TLS_CONTENT_TYPE_APPDATA (" & .State & ")"
-                GoTo QH
-            End Select
-        End Select
+            lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
+        Loop
     End With
     '--- success
-    pvHandleMessage = lPos
+    pvHandleHandshakeContent = lPos
 QH:
 End Function
 
-Private Function pvHandleServerHello(uCtx As UcsClientContextType, baMessage() As Byte, sError As String) As Boolean
+Private Function pvHandleHandshakeServerHello(uCtx As UcsClientContextType, baMessage() As Byte, sError As String) As Boolean
     Dim lPos            As Long
     Dim lBlockSize      As Long
     Dim cBlocks         As Collection
@@ -798,7 +819,7 @@ Private Function pvHandleServerHello(uCtx As UcsClientContextType, baMessage() A
         lPos = pvReadEndOfBlock(baMessage, lPos, cBlocks)
     End With
     '--- success
-    pvHandleServerHello = True
+    pvHandleHandshakeServerHello = True
 QH:
 End Function
 
