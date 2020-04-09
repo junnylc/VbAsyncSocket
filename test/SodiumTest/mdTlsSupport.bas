@@ -141,7 +141,8 @@ Public Enum UcsTlsAlertDescriptionsEnum
     uscTlsAlertNoApplicationProtocol = 120
 End Enum
 
-Public Type UcsClientContextType
+Public Type UcsTlsContext
+    '--- config
     ServerName                  As String
     LegacySessionID()           As Byte '--- not used
     ClientRandom()              As Byte
@@ -151,7 +152,7 @@ Public Type UcsClientContextType
     ServerPublic()              As Byte
     ServerSupportedVersion      As Long '--- not used
     ServerCertificate()         As Byte
-    
+    '--- keys
     HandshakeMessages()         As Byte
     HandshakeSecret()           As Byte
     MasterSecret()              As Byte
@@ -166,12 +167,11 @@ Public Type UcsClientContextType
     PrevServerTrafficKey()      As Byte
     PrevServerTrafficIV()       As Byte
     PrevServerTrafficSeqNo      As Long
-'    PrevHandshakeContent()      As Byte
-    
+    '--- state
     State                       As UcsTlsStatesEnum
     LastError                   As String
     LastAlertDesc               As UcsTlsAlertDescriptionsEnum
-    
+    '--- crypto settings
     KxAlgo                      As UcsTlsCryptoAlgorithmsEnum
     SecretSize                  As Long
     CipherSuite                 As Long
@@ -181,7 +181,7 @@ Public Type UcsClientContextType
     TagSize                     As Long
     DigestAlgo                  As UcsTlsCryptoAlgorithmsEnum
     DigestSize                  As Long
-
+    '--- buffers
     RecvBuffer()                As Byte
     RecvPos                     As Long
     DecrBuffer()                As Byte
@@ -197,8 +197,8 @@ End Type
 ' Methods
 '=========================================================================
 
-Public Function TlsInitClient(sServerName As String) As UcsClientContextType
-    Dim uCtx            As UcsClientContextType
+Public Function TlsInitClient(sServerName As String) As UcsTlsContext
+    Dim uCtx            As UcsTlsContext
     
     On Error GoTo EH
     With uCtx
@@ -228,7 +228,7 @@ EH:
     Resume QH
 End Function
 
-Public Function TlsHandshake(uCtx As UcsClientContextType, baInput() As Byte, lSize As Long, baOutput() As Byte, lPos As Long, bComplete As Boolean) As Boolean
+Public Function TlsHandshake(uCtx As UcsTlsContext, baInput() As Byte, lSize As Long, baOutput() As Byte, lPos As Long, bComplete As Boolean) As Boolean
     On Error GoTo EH
     With uCtx
         pvSetLastError uCtx, vbNullString
@@ -258,7 +258,7 @@ EH:
     Resume QH
 End Function
 
-Public Function TlsSend(uCtx As UcsClientContextType, baData() As Byte, lSize As Long, baOutput() As Byte, lPos As Long) As Boolean
+Public Function TlsSend(uCtx As UcsTlsContext, baData() As Byte, lSize As Long, baOutput() As Byte, lPos As Long) As Boolean
     On Error GoTo EH
     With uCtx
         pvSetLastError uCtx, vbNullString
@@ -283,7 +283,7 @@ EH:
     Resume QH
 End Function
 
-Public Function TlsReceive(uCtx As UcsClientContextType, baInput() As Byte, lSize As Long, baOutput() As Byte, lPos As Long) As Boolean
+Public Function TlsReceive(uCtx As UcsTlsContext, baInput() As Byte, lSize As Long, baOutput() As Byte, lPos As Long) As Boolean
     On Error GoTo EH
     With uCtx
         pvSetLastError uCtx, vbNullString
@@ -307,14 +307,14 @@ EH:
     Resume QH
 End Function
 
-Public Function TlsGetLastError(uCtx As UcsClientContextType) As String
+Public Function TlsGetLastError(uCtx As UcsTlsContext) As String
     TlsGetLastError = uCtx.LastError
     If uCtx.LastAlertDesc <> -1 Then
         TlsGetLastError = IIf(LenB(TlsGetLastError) <> 0, TlsGetLastError & ": ", vbNullString) & TlsGetLastAlert(uCtx)
     End If
 End Function
 
-Public Function TlsGetLastAlert(uCtx As UcsClientContextType, Optional AlertCode As UcsTlsAlertDescriptionsEnum) As String
+Public Function TlsGetLastAlert(uCtx As UcsTlsContext, Optional AlertCode As UcsTlsAlertDescriptionsEnum) As String
     Static vTexts       As Variant
     
     AlertCode = uCtx.LastAlertDesc
@@ -333,7 +333,7 @@ End Function
 
 '= private ===============================================================
 
-Private Function pvSendClientHello(uCtx As UcsClientContextType, baOutput() As Byte, ByVal lPos As Long) As Long
+Private Function pvSendClientHello(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long) As Long
     Dim lMessagePos     As Long
     Dim cBlocks         As Collection
     
@@ -425,7 +425,7 @@ Private Function pvSendClientHello(uCtx As UcsClientContextType, baOutput() As B
     pvSendClientHello = lPos
 End Function
 
-Private Function pvSendClientHandshakeFinished(uCtx As UcsClientContextType, baOutput() As Byte, ByVal lPos As Long, sError As String) As Long
+Private Function pvSendClientHandshakeFinished(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, sError As String) As Long
     Dim lRecordPos      As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
@@ -469,7 +469,7 @@ Private Function pvSendClientHandshakeFinished(uCtx As UcsClientContextType, baO
 QH:
 End Function
 
-Private Function pvSendClientApplicationData(uCtx As UcsClientContextType, baOutput() As Byte, ByVal lPos As Long, baData() As Byte, ByVal lSize As Long, sError As String) As Long
+Private Function pvSendClientApplicationData(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, baData() As Byte, ByVal lSize As Long, sError As String) As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
     Dim cBlocks         As Collection
@@ -499,7 +499,7 @@ Private Function pvSendClientApplicationData(uCtx As UcsClientContextType, baOut
 QH:
 End Function
 
-Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, ByVal lSize As Long, sError As String) As Boolean
+Private Function pvHandleInput(uCtx As UcsTlsContext, baInput() As Byte, ByVal lSize As Long, sError As String) As Boolean
     Dim lRecvPos        As Long
     Dim lRecvSize       As Long
     
@@ -522,7 +522,7 @@ Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, 
 QH:
 End Function
 
-Private Function pvHandleRecord(uCtx As UcsClientContextType, baInput() As Byte, ByVal lSize As Long, sError As String) As Long
+Private Function pvHandleRecord(uCtx As UcsTlsContext, baInput() As Byte, ByVal lSize As Long, sError As String) As Long
     Dim lRecordPos      As Long
     Dim lRecordSize     As Long
     Dim lRecordType     As Long
@@ -634,7 +634,7 @@ HandleAlertContent:
 QH:
 End Function
 
-Private Function pvHandleHandshakeContent(uCtx As UcsClientContextType, baInput() As Byte, ByVal lPos As Long, ByVal lEnd As Long, sError As String) As Long
+Private Function pvHandleHandshakeContent(uCtx As UcsTlsContext, baInput() As Byte, ByVal lPos As Long, ByVal lEnd As Long, sError As String) As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
     Dim lMessageType    As Long
@@ -753,7 +753,7 @@ Private Function pvHandleHandshakeContent(uCtx As UcsClientContextType, baInput(
 QH:
 End Function
 
-Private Function pvHandleHandshakeServerHello(uCtx As UcsClientContextType, baMessage() As Byte, sError As String) As Boolean
+Private Function pvHandleHandshakeServerHello(uCtx As UcsTlsContext, baMessage() As Byte, sError As String) As Boolean
     Dim lPos            As Long
     Dim lBlockSize      As Long
     Dim cBlocks         As Collection
@@ -823,14 +823,14 @@ Private Function pvHandleHandshakeServerHello(uCtx As UcsClientContextType, baMe
 QH:
 End Function
 
-Private Sub pvSetLastError(uCtx As UcsClientContextType, sError As String, Optional ByVal AlertDesc As UcsTlsAlertDescriptionsEnum = -1)
+Private Sub pvSetLastError(uCtx As UcsTlsContext, sError As String, Optional ByVal AlertDesc As UcsTlsAlertDescriptionsEnum = -1)
     uCtx.LastError = sError
     uCtx.LastAlertDesc = AlertDesc
 End Sub
 
 '= HMAC-based key derivation functions ===================================
 
-Private Function pvDeriveHandshakeSecrets(uCtx As UcsClientContextType, sError As String) As Boolean
+Private Function pvDeriveHandshakeSecrets(uCtx As UcsTlsContext, sError As String) As Boolean
     Dim baHandshakeHash() As Byte
     Dim baEarlySecret() As Byte
     Dim baEmptyHash()   As Byte
@@ -866,7 +866,7 @@ Private Function pvDeriveHandshakeSecrets(uCtx As UcsClientContextType, sError A
 QH:
 End Function
 
-Private Function pvDeriveApplicationSecrets(uCtx As UcsClientContextType, sError As String) As Boolean
+Private Function pvDeriveApplicationSecrets(uCtx As UcsTlsContext, sError As String) As Boolean
     Dim baHandshakeHash() As Byte
     Dim baEmptyHash()   As Byte
     Dim baDerivedSecret() As Byte
@@ -897,7 +897,7 @@ Private Function pvDeriveApplicationSecrets(uCtx As UcsClientContextType, sError
 QH:
 End Function
 
-Private Function pvDeriveKeyUpdate(uCtx As UcsClientContextType, ByVal bUpdateClient As Boolean, sError As String) As Boolean
+Private Function pvDeriveKeyUpdate(uCtx As UcsTlsContext, ByVal bUpdateClient As Boolean, sError As String) As Boolean
     With uCtx
         If pvArraySize(.ServerTrafficSecret) = 0 Then
             sError = "Missing previous server secret"

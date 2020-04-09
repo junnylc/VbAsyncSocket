@@ -88,7 +88,7 @@ Private Declare Function sodium_init Lib "libsodium" () As Long
 
 Private m_oSocket           As cAsyncSocket
 Private m_sServerName       As String
-Private m_uCtx              As UcsClientContextType
+Private m_uCtx              As UcsTlsContext
 
 Private Type UcsParsedUrl
     Protocol        As String
@@ -151,7 +151,7 @@ End Sub
 ' Methods
 '=========================================================================
 
-Private Function HttpsRequest(uCtx As UcsClientContextType, uRemote As UcsParsedUrl, sError As String) As String
+Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sError As String) As String
     Dim baRecv()        As Byte
     Dim sRequest        As String
     Dim baSend()        As Byte
