@@ -422,10 +422,10 @@ Private Function pvSendClientHello(uCtx As UcsClientContextType, baOutput() As B
 End Function
 
 Private Function pvSendClientHandshakeFinished(uCtx As UcsClientContextType, baOutput() As Byte, ByVal lPos As Long, sError As String) As Long
-    Dim cBlocks         As Collection
     Dim lRecordPos      As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
+    Dim cBlocks         As Collection
     Dim baVerifyData()  As Byte
     Dim baClientIV()    As Byte
     Dim baHandshakeHash() As Byte
@@ -466,9 +466,9 @@ QH:
 End Function
 
 Private Function pvSendClientApplicationData(uCtx As UcsClientContextType, baOutput() As Byte, ByVal lPos As Long, baData() As Byte, ByVal lSize As Long, sError As String) As Long
-    Dim cBlocks         As Collection
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
+    Dim cBlocks         As Collection
     Dim baClientIV()    As Byte
     
     '--- Record Header
@@ -496,19 +496,19 @@ QH:
 End Function
 
 Private Function pvHandleInput(uCtx As UcsClientContextType, baInput() As Byte, ByVal lSize As Long, sError As String) As Boolean
-    Dim lPos            As Long
+    Dim lRecvPos        As Long
     Dim lRecvSize       As Long
     
     If lSize > 0 Then
     With uCtx
         .RecvPos = pvWriteBuffer(.RecvBuffer, .RecvPos, VarPtr(baInput(0)), lSize)
-        lPos = pvHandleRecord(uCtx, .RecvBuffer, .RecvPos, sError)
+        lRecvPos = pvHandleRecord(uCtx, .RecvBuffer, .RecvPos, sError)
         If LenB(sError) <> 0 Then
             GoTo QH
         End If
-        lRecvSize = .RecvPos - lPos
-        If lPos > 0 And lRecvSize > 0 Then
-            Call CopyMemory(.RecvBuffer(0), .RecvBuffer(lPos), lRecvSize)
+        lRecvSize = .RecvPos - lRecvPos
+        If lRecvPos > 0 And lRecvSize > 0 Then
+            Call CopyMemory(.RecvBuffer(0), .RecvBuffer(lRecvPos), lRecvSize)
         End If
         .RecvPos = IIf(lRecvSize > 0, lRecvSize, 0)
     End With
@@ -521,26 +521,17 @@ End Function
 Private Function pvHandleRecord(uCtx As UcsClientContextType, baInput() As Byte, ByVal lSize As Long, sError As String) As Long
     Dim lRecordPos      As Long
     Dim lRecordSize     As Long
-    Dim lPos            As Long
-    Dim cBlocks         As Collection
     Dim lRecordType     As Long
-    Dim lLegacyProtocol As Long
-    Dim lHandshakeType  As Long
+    Dim cBlocks         As Collection
     Dim baServerIV()    As Byte
+    Dim lPos            As Long
     Dim lEnd            As Long
-    Dim baVerifyData()  As Byte
-    Dim baMessage()     As Byte
-    Dim lMessagePos     As Long
-    Dim lMessageSize    As Long
-    Dim lVerifyPos      As Long
-    Dim baHandshakeHash() As Byte
-    Dim lRequestUpdate  As Long
     
     With uCtx
     Do While lPos + 6 <= lSize
         lRecordPos = lPos
         lPos = pvReadLong(baInput, lPos, lRecordType)
-        lPos = pvReadLong(baInput, lPos, lLegacyProtocol, Size:=2)
+        lPos = pvReadLong(baInput, lPos, TLS_CLIENT_LEGACY_VERSION, Size:=2)
         lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=2, BlockSize:=lRecordSize)
         If lRecordSize > IIf(lRecordType = TLS_CONTENT_TYPE_APPDATA, TLS_MAX_ENCRYPTED_RECORD_SIZE, TLS_MAX_PLAINTEXT_RECORD_SIZE) Then
             sError = "Record size too big"
@@ -554,28 +545,10 @@ Private Function pvHandleRecord(uCtx As UcsClientContextType, baInput() As Byte,
             Case TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC
                 lPos = lPos + lRecordSize
             Case TLS_CONTENT_TYPE_HANDSHAKE
-                lMessagePos = lPos
-                lPos = pvReadLong(baInput, lPos, lHandshakeType)
-                lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
-                    Select Case .State
-                    Case ucsTlsStateExpectServerHello
-                        Select Case lHandshakeType
-                        Case TLS_HANDSHAKE_TYPE_SERVER_HELLO
-                            lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
-                            If Not pvHandleServerHello(uCtx, baMessage, sError) Then
-                                GoTo QH
-                            End If
-                            pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
-                            If Not pvDeriveHandshakeSecrets(uCtx, sError) Then
-                                GoTo QH
-                            End If
-                            .State = ucsTlsStateExpectEncryptedExtensions
-                        Case Else
-                            sError = "Unexpected message type for ucsTlsStateExpectServerHello (lHandshakeType=" & lHandshakeType & ")"
-                            GoTo QH
-                        End Select
-                    End Select
-                lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
+                lPos = pvHandleMessage(uCtx, lRecordType, baInput, lPos, lPos + lRecordSize, sError)
+                If LenB(sError) <> 0 Then
+                    GoTo QH
+                End If
             Case TLS_CONTENT_TYPE_APPDATA
                 baServerIV = pvArrayXor(.ServerTrafficIV, .ServerTrafficSeqNo)
                 If pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baInput, lRecordPos, 5, baInput, lPos, lRecordSize) Then
@@ -598,118 +571,13 @@ Private Function pvHandleRecord(uCtx As UcsClientContextType, baInput() As Byte,
                     lEnd = lEnd - 1
                 Loop
                 lRecordType = baInput(lEnd)
-                Select Case lRecordType
-                Case TLS_CONTENT_TYPE_HANDSHAKE
-                    Select Case .State
-                    Case ucsTlsStateExpectEncryptedExtensions
-                        Do While lPos < lEnd
-                            lMessagePos = lPos
-                            lPos = pvReadLong(baInput, lPos, lHandshakeType)
-                            lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
-                            If lMessageSize > 16 * 1024 Then
-                                sError = "Unexpected message size (lMessageSize=" & lMessageSize & ")"
-                                GoTo QH
-                            End If
-                            lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
-                            Select Case lHandshakeType
-                            Case TLS_HANDSHAKE_TYPE_CERTIFICATE
-                                .ServerCertificate = baMessage
-                            Case TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY
-                                baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
-                                lVerifyPos = pvWriteString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
-                                lVerifyPos = pvWriteArray(baVerifyData, lVerifyPos, baHandshakeHash)
-                                '--- ToDo: verify .ServerCertificate signature
-                                '--- ShellExecute("openssl x509 -pubkey -noout -in server.crt > server.pub")
-                            Case TLS_HANDSHAKE_TYPE_FINISHED
-                                baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
-                                baVerifyData = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "finished", EmptyByteArray, .DigestSize)
-                                baVerifyData = pvHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
-                                Debug.Assert StrConv(baVerifyData, vbUnicode) = StrConv(baMessage, vbUnicode)
-                                If StrConv(baVerifyData, vbUnicode) <> StrConv(baMessage, vbUnicode) Then
-                                    sError = "Server Handshake verification failed"
-                                    GoTo QH
-                                End If
-                                .State = ucsTlsStatePostHandshake
-                            Case TLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, TLS_HANDSHAKE_TYPE_COMPRESSED_CERTIFICATE
-                                '--- do nothing
-                            Case Else
-                                sError = "Unexpected message type for ucsTlsStateExpectEncryptedExtensions (lHandshakeType=" & lHandshakeType & ")"
-                                GoTo QH
-                            End Select
-                            pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
-                            lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
-                        Loop
-                        If .State = ucsTlsStatePostHandshake Then
-                            .SendPos = pvSendClientHandshakeFinished(uCtx, .SendBuffer, .SendPos, sError)
-                            If LenB(sError) <> 0 Then
-                                GoTo QH
-                            End If
-                            If Not pvDeriveApplicationSecrets(uCtx, sError) Then
-                                GoTo QH
-                            End If
-                        End If
-                        '--- note: skip padding too
-                        lPos = lRecordPos + lRecordSize + 5
-                    Case ucsTlsStatePostHandshake
-                        Do While lPos < lEnd
-                            lMessagePos = lPos
-                            lPos = pvReadLong(baInput, lPos, lHandshakeType)
-                            lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
-                            lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
-                            Select Case lHandshakeType
-                            Case TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET
-                                '--- do nothing
-                            Case TLS_HANDSHAKE_TYPE_KEY_UPDATE
-                                Debug.Print "TLS_HANDSHAKE_TYPE_KEY_UPDATE"
-                                If pvArraySize(baMessage) = 1 Then
-                                    lRequestUpdate = baMessage(0)
-                                Else
-                                    lRequestUpdate = -1
-                                End If
-                                Select Case lRequestUpdate
-                                Case 0, 1
-                                    If Not pvDeriveKeyUpdate(uCtx, lRequestUpdate <> 0, sError) Then
-                                        GoTo QH
-                                    End If
-                                    If lRequestUpdate = 1 Then
-                                        '--- ack by TLS_HANDSHAKE_TYPE_KEY_UPDATE w/ update_not_requested(0)
-                                        If pvSendClientApplicationData(uCtx, baMessage, 0, FromHex("1800000100"), -1, sError) = 0 Then
-                                            GoTo QH
-                                        End If
-                                        .SendPos = pvWriteArray(.SendBuffer, .SendPos, baMessage)
-                                    End If
-                                Case Else
-                                    sError = "Unexpected value in TLS_HANDSHAKE_TYPE_KEY_UPDATE (lRequestUpdate=" & lRequestUpdate & ")"
-                                    GoTo QH
-                                End Select
-                            Case Else
-                                sError = "Unexpected message type for ucsTlsStatePostHandshake (lHandshakeType=" & lHandshakeType & ")"
-                                GoTo QH
-                            End Select
-                            lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
-                        Loop
-                        '--- note: skip padding too
-                        lPos = lRecordPos + lRecordSize + 5
-                    Case Else
-                        sError = "Invalid state for TLS_CONTENT_TYPE_HANDSHAKE (" & .State & ")"
-                        GoTo QH
-                    End Select
-                Case TLS_CONTENT_TYPE_ALERT
-                    GoTo HandleAlert
-                Case TLS_CONTENT_TYPE_APPDATA
-                    Select Case .State
-                    Case ucsTlsStatePostHandshake
-                        .DecrPos = pvWriteBuffer(.DecrBuffer, .DecrPos, VarPtr(baInput(lPos)), lEnd - lPos)
-                    Case Else
-                        sError = "Invalid state for TLS_CONTENT_TYPE_APPDATA (" & .State & ")"
-                        GoTo QH
-                    End Select
-                    lPos = lPos + lRecordSize
-                Case Else
-                    lPos = lPos + lRecordSize
-                End Select
+                lPos = pvHandleMessage(uCtx, lRecordType, baInput, lPos, lEnd, sError)
+                If LenB(sError) <> 0 Then
+                    GoTo QH
+                End If
+                '--- note: skip zero padding too
+                lPos = lRecordPos + lRecordSize + 5
             Case TLS_CONTENT_TYPE_ALERT
-HandleAlert:
                 If lRecordSize >= 2 Then
                     .LastAlertDesc = baInput(lPos + 1)
                     If baInput(lPos) = TLS_ALERT_LEVEL_FATAL Then
@@ -730,12 +598,146 @@ HandleAlert:
 QH:
 End Function
 
+Private Function pvHandleMessage(uCtx As UcsClientContextType, ByVal lRecordType As Long, baInput() As Byte, ByVal lPos As Long, ByVal lEnd As Long, sError As String) As Long
+    Dim lMessagePos     As Long
+    Dim lMessageSize    As Long
+    Dim lMessageType    As Long
+    Dim cBlocks         As Collection
+    Dim baMessage()     As Byte
+    Dim baHandshakeHash() As Byte
+    Dim baVerifyData()  As Byte
+    Dim lVerifyPos      As Long
+    Dim lRequestUpdate  As Long
+    
+    With uCtx
+        Select Case lRecordType
+        Case TLS_CONTENT_TYPE_ALERT
+            If lEnd >= lPos + 2 Then
+                .LastAlertDesc = baInput(lPos + 1)
+                If baInput(lPos) = TLS_ALERT_LEVEL_FATAL Then
+                    sError = "Fatal alert"
+                    GoTo QH
+                End If
+            End If
+        Case TLS_CONTENT_TYPE_HANDSHAKE
+            Do While lPos < lEnd
+                lMessagePos = lPos
+                lPos = pvReadLong(baInput, lPos, lMessageType)
+                lPos = pvReadBeginOfBlock(baInput, lPos, cBlocks, Size:=3, BlockSize:=lMessageSize)
+                Debug.Assert lPos + lMessageSize <= lEnd
+                Select Case .State
+                Case ucsTlsStateExpectServerHello
+                    Select Case lMessageType
+                    Case TLS_HANDSHAKE_TYPE_SERVER_HELLO
+                        lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
+                        If Not pvHandleServerHello(uCtx, baMessage, sError) Then
+                            GoTo QH
+                        End If
+                        pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
+                        If Not pvDeriveHandshakeSecrets(uCtx, sError) Then
+                            GoTo QH
+                        End If
+                        .State = ucsTlsStateExpectEncryptedExtensions
+                    Case Else
+                        sError = "Unexpected message type for ucsTlsStateExpectServerHello (lMessageType=" & lMessageType & ")"
+                        GoTo QH
+                    End Select
+                Case ucsTlsStateExpectEncryptedExtensions
+                    lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
+                    Select Case lMessageType
+                    Case TLS_HANDSHAKE_TYPE_CERTIFICATE
+                        .ServerCertificate = baMessage
+                    Case TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY
+                        baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
+                        lVerifyPos = pvWriteString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
+                        lVerifyPos = pvWriteArray(baVerifyData, lVerifyPos, baHandshakeHash)
+                        '--- ToDo: verify .ServerCertificate signature
+                        '--- ShellExecute("openssl x509 -pubkey -noout -in server.crt > server.pub")
+                    Case TLS_HANDSHAKE_TYPE_FINISHED
+                        baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
+                        baVerifyData = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "finished", EmptyByteArray, .DigestSize)
+                        baVerifyData = pvHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
+                        Debug.Assert StrConv(baVerifyData, vbUnicode) = StrConv(baMessage, vbUnicode)
+                        If StrConv(baVerifyData, vbUnicode) <> StrConv(baMessage, vbUnicode) Then
+                            sError = "Server Handshake verification failed"
+                            GoTo QH
+                        End If
+                        .State = ucsTlsStatePostHandshake
+                    Case TLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, TLS_HANDSHAKE_TYPE_COMPRESSED_CERTIFICATE
+                        '--- do nothing
+                    Case Else
+                        sError = "Unexpected message type for ucsTlsStateExpectEncryptedExtensions (lMessageType=" & lMessageType & ")"
+                        GoTo QH
+                    End Select
+                    pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
+                    If .State = ucsTlsStatePostHandshake Then
+                        .SendPos = pvSendClientHandshakeFinished(uCtx, .SendBuffer, .SendPos, sError)
+                        If LenB(sError) <> 0 Then
+                            GoTo QH
+                        End If
+                        If Not pvDeriveApplicationSecrets(uCtx, sError) Then
+                            GoTo QH
+                        End If
+                    End If
+                Case ucsTlsStatePostHandshake
+                    lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
+                    Select Case lMessageType
+                    Case TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET
+                        '--- do nothing
+                    Case TLS_HANDSHAKE_TYPE_KEY_UPDATE
+                        Debug.Print "TLS_HANDSHAKE_TYPE_KEY_UPDATE"
+                        If pvArraySize(baMessage) = 1 Then
+                            lRequestUpdate = baMessage(0)
+                        Else
+                            lRequestUpdate = -1
+                        End If
+                        Select Case lRequestUpdate
+                        Case 0, 1
+                            If Not pvDeriveKeyUpdate(uCtx, lRequestUpdate <> 0, sError) Then
+                                GoTo QH
+                            End If
+                            If lRequestUpdate = 1 Then
+                                '--- ack by TLS_HANDSHAKE_TYPE_KEY_UPDATE w/ update_not_requested(0)
+                                If pvSendClientApplicationData(uCtx, baMessage, 0, FromHex("1800000100"), -1, sError) = 0 Then
+                                    GoTo QH
+                                End If
+                                .SendPos = pvWriteArray(.SendBuffer, .SendPos, baMessage)
+                            End If
+                        Case Else
+                            sError = "Unexpected value in TLS_HANDSHAKE_TYPE_KEY_UPDATE (lRequestUpdate=" & lRequestUpdate & ")"
+                            GoTo QH
+                        End Select
+                    Case Else
+                        sError = "Unexpected message type for ucsTlsStatePostHandshake (lMessageType=" & lMessageType & ")"
+                        GoTo QH
+                    End Select
+                Case Else
+                    sError = "Invalid state for TLS_CONTENT_TYPE_HANDSHAKE (" & .State & ")"
+                    GoTo QH
+                End Select
+                lPos = pvReadEndOfBlock(baInput, lPos, cBlocks)
+            Loop
+        Case TLS_CONTENT_TYPE_APPDATA
+            Select Case .State
+            Case ucsTlsStatePostHandshake
+                .DecrPos = pvWriteBuffer(.DecrBuffer, .DecrPos, VarPtr(baInput(lPos)), lEnd - lPos)
+            Case Else
+                sError = "Invalid state for TLS_CONTENT_TYPE_APPDATA (" & .State & ")"
+                GoTo QH
+            End Select
+        End Select
+    End With
+    '--- success
+    pvHandleMessage = lPos
+QH:
+End Function
+
 Private Function pvHandleServerHello(uCtx As UcsClientContextType, baMessage() As Byte, sError As String) As Boolean
     Dim lPos            As Long
+    Dim lBlockSize      As Long
     Dim cBlocks         As Collection
     Dim lLegacyVersion  As Long
-    Dim lBlockSize      As Long
-    Dim lLegacyCompression As Long
+    Dim lLegacyCompress As Long
     Dim lExtType        As Long
     Dim lExchangeGroup  As Long
     
@@ -765,8 +767,8 @@ Private Function pvHandleServerHello(uCtx As UcsClientContextType, baMessage() A
             sError = "Unsupported cipher suite (0x" & Hex$(.CipherSuite) & ")"
             GoTo QH
         End Select
-        lPos = pvReadLong(baMessage, lPos, lLegacyCompression)
-        Debug.Assert lLegacyCompression = 0
+        lPos = pvReadLong(baMessage, lPos, lLegacyCompress)
+        Debug.Assert lLegacyCompress = 0
         lPos = pvReadBeginOfBlock(baMessage, lPos, cBlocks, Size:=2)
             Do While lPos < cBlocks.Item(cBlocks.Count)
                 lPos = pvReadLong(baMessage, lPos, lExtType, Size:=2)
@@ -1279,4 +1281,3 @@ Private Function SplitOrReindex(Expression As String, Delimiter As String) As Va
         SplitOrReindex = vResult
     End If
 End Function
-
