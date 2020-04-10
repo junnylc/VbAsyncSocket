@@ -82,6 +82,7 @@ Private Const TLS_MAX_PLAINTEXT_RECORD_SIZE             As Long = 16384
 Private Const TLS_MAX_ENCRYPTED_RECORD_SIZE             As Long = (16384 + 256)
 
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
+Private Declare Sub FillMemory Lib "kernel32" Alias "RtlFillMemory" (Destination As Any, ByVal Length As Long, ByVal Fill As Byte)
 Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As Long
 Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal ucb As Long) As Long
 '--- libsodium
@@ -89,16 +90,25 @@ Private Declare Function randombytes_buf Lib "libsodium" (lpOut As Any, ByVal lS
 Private Declare Function crypto_scalarmult_curve25519 Lib "libsodium" (lpOut As Any, lpConstN As Any, lpConstP As Any) As Long
 Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpConstN As Any) As Long
 Private Declare Function crypto_hash_sha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
+Private Declare Function crypto_hash_sha512_init Lib "libsodium" (lpState As Any) As Long
+Private Declare Function crypto_hash_sha512_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
+Private Declare Function crypto_hash_sha512_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
 Private Declare Function crypto_auth_hmacsha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, ByVal lHighSize As Long, lpConstKey As Any) As Long
 Private Declare Function crypto_aead_chacha20poly1305_ietf_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
 Private Declare Function crypto_aead_chacha20poly1305_ietf_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-'Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
 
 '=========================================================================
 ' Constants and member variables
 '=========================================================================
 
 Private Const STR_VL_ALERTS             As String = "0|Close notify|10|Unexpected message|20|Bad record mac|40|Handshake failure|42|Bad certificate|44|Certificate revoked|45|Certificate expired|46|Certificate unknown|47|Illegal parameter|48|Unknown CA|50|Decode error|51|Decrypt error|70|Protocol version|80|Internal error|90|User canceled|109|Missing extension|112|Unrecognized name|116|Certificate required|120|No application protocol"
+Private Const STR_SHA384_STATE          As String = "d89e05c15d9dbbcb07d57c362a299a6217dd70305a01599139590ef7d8ec2f15310bc0ff6726336711155868874ab48ea78ff9640d2e0cdba44ffabe1d48b547"
+Private Const LNG_SHA384_BLOCK_SIZE     As Long = 128
+Private Const LNG_SHA512_CTX_SIZE       As Long = 64 + 16 + 128
+Private Const LNG_SHA512_BLOCK_SIZE     As Long = 128
+Private Const LNG_SHA512_DIGEST_SIZE    As Long = 64
 
 Public Enum UcsTlsStatesEnum
     ucsTlsStateHandshakeStart
@@ -109,14 +119,14 @@ End Enum
 
 Public Enum UcsTlsCryptoAlgorithmsEnum
     '--- key exchange
-    ucsTlsAlgoKeyX25519
+    ucsTlsAlgoKeyX25519 = 1
     '--- authenticated encryption w/ additional data
-    ucsTlsAlgoAeadAes128
-    ucsTlsAlgoAeadChacha20Poly1305
-    ucsTlsAlgoAeadAes256
+    ucsTlsAlgoAeadAes128 = 11
+    ucsTlsAlgoAeadChacha20Poly1305 = 12
+    ucsTlsAlgoAeadAes256 = 13
     '--- digest
-    ucsTlsAlgoDigestSha256
-    ucsTlsAlgoDigestSha384
+    ucsTlsAlgoDigestSha256 = 21
+    ucsTlsAlgoDigestSha384 = 22
 End Enum
 
 Public Enum UcsTlsAlertDescriptionsEnum
@@ -354,7 +364,7 @@ Private Function pvSendClientHello(uCtx As UcsTlsContext, baOutput() As Byte, By
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Cipher Suites
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-'                    lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
+                    lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
                     lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Legacy Compression Methods
@@ -766,6 +776,7 @@ Private Function pvHandleHandshakeServerHello(uCtx As UcsTlsContext, baMessage()
         lPos = pvReadLong(baMessage, lPos, .CipherSuite, Size:=2)
         Select Case .CipherSuite
         Case TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256
+            Debug.Print "Using TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 for " & .ServerName
             .AeadAlgo = ucsTlsAlgoAeadChacha20Poly1305
             .KeySize = TLS_CHACHA20_KEY_SIZE
             .IvSize = TLS_CHACHA20POLY1305_IV_SIZE
@@ -773,7 +784,8 @@ Private Function pvHandleHandshakeServerHello(uCtx As UcsTlsContext, baMessage()
             .DigestAlgo = ucsTlsAlgoDigestSha256
             .DigestSize = TLS_SHA256_DIGEST_SIZE
         Case TLS_CIPHER_SUITE_AES_256_GCM_SHA384
-            .AeadAlgo = ucsTlsAlgoAeadChacha20Poly1305
+            Debug.Print "Using TLS_CIPHER_SUITE_AES_256_GCM_SHA384 for " & .ServerName
+            .AeadAlgo = ucsTlsAlgoAeadAes256
             .KeySize = TLS_AES256_KEY_SIZE
             .IvSize = TLS_AESGCM_IV_SIZE
             .TagSize = TLS_AESGCM_TAG_SIZE
@@ -842,8 +854,8 @@ Private Function pvDeriveHandshakeSecrets(uCtx As UcsTlsContext, sError As Strin
         End If
         baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
         '--- for ucsTlsAlgoDigestSha256 always 33AD0A1C607EC03B09E6CD9893680CE210ADF300AA1F2660E1B22E10F170F92A
-        baEarlySecret = pvHkdfExtract(.DigestAlgo, EmptyByteArray(.DigestSize), EmptyByteArray(.KeySize))
-        '--- for ucsTlsAlgoDigestSha256 always  E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
+        baEarlySecret = pvHkdfExtract(.DigestAlgo, EmptyByteArray(.DigestSize), EmptyByteArray(.DigestSize))
+        '--- for ucsTlsAlgoDigestSha256 always E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
         baEmptyHash = pvCryptoHash(.DigestAlgo, EmptyByteArray, 0)
         '--- for ucsTlsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
         baDerivedSecret = pvHkdfExpand(.DigestAlgo, baEarlySecret, "derived", baEmptyHash, .DigestSize)
@@ -879,7 +891,7 @@ Private Function pvDeriveApplicationSecrets(uCtx As UcsTlsContext, sError As Str
         baEmptyHash = pvCryptoHash(.DigestAlgo, EmptyByteArray, 0)
         '--- for ucsTlsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
         baDerivedSecret = pvHkdfExpand(.DigestAlgo, .HandshakeSecret, "derived", baEmptyHash, .DigestSize)
-        .MasterSecret = pvHkdfExtract(.DigestAlgo, baDerivedSecret, EmptyByteArray(.KeySize))
+        .MasterSecret = pvHkdfExtract(.DigestAlgo, baDerivedSecret, EmptyByteArray(.DigestSize))
         
         .ServerTrafficSecret = pvHkdfExpand(.DigestAlgo, .MasterSecret, "s ap traffic", baHandshakeHash, .DigestSize)
         .ServerTrafficKey = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
@@ -968,76 +980,124 @@ End Function
 '= crypto wrappers =======================================================
 
 Private Function pvCryptoDecrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baServerIV() As Byte, baServerKey() As Byte, baAd() As Byte, ByVal lAdPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
-    If eAead = ucsTlsAlgoAeadChacha20Poly1305 Then
+    Debug.Assert pvArraySize(baBuffer) >= lPos + lSize
+    Select Case eAead
+    Case ucsTlsAlgoAeadChacha20Poly1305
         Debug.Assert pvArraySize(baServerIV) = TLS_CHACHA20POLY1305_IV_SIZE
         Debug.Assert pvArraySize(baServerKey) = TLS_CHACHA20_KEY_SIZE
-        Debug.Assert pvArraySize(baBuffer) >= lPos + lSize
         If crypto_aead_chacha20poly1305_ietf_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAd(lAdPos), lAdSize, 0, baServerIV(0), baServerKey(0)) <> 0 Then
             GoTo QH
         End If
-    Else
+    Case ucsTlsAlgoAeadAes256
+        Debug.Assert pvArraySize(baServerIV) = TLS_AESGCM_IV_SIZE
+        Debug.Assert pvArraySize(baServerKey) = TLS_AES256_KEY_SIZE
+        If crypto_aead_aes256gcm_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAd(lAdPos), lAdSize, 0, baServerIV(0), baServerKey(0)) <> 0 Then
+            GoTo QH
+        End If
+    Case Else
         Err.Raise vbObjectError, "pvCryptoDecrypt", "Unsupported aead type " & eAead
-    End If
+    End Select
     '--- success
     pvCryptoDecrypt = True
 QH:
 End Function
 
 Private Function pvCryptoEncrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baClientIV() As Byte, baClientKey() As Byte, baAd() As Byte, ByVal lAdPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
-    If eAead = ucsTlsAlgoAeadChacha20Poly1305 Then
+    Debug.Assert pvArraySize(baBuffer) >= lPos + lSize + TLS_CHACHA20POLY1305_TAG_SIZE
+    Select Case eAead
+    Case ucsTlsAlgoAeadChacha20Poly1305
         Debug.Assert pvArraySize(baClientIV) = TLS_CHACHA20POLY1305_IV_SIZE
         Debug.Assert pvArraySize(baClientKey) = TLS_CHACHA20_KEY_SIZE
-        Debug.Assert pvArraySize(baBuffer) >= lPos + lSize + TLS_CHACHA20POLY1305_TAG_SIZE
         If crypto_aead_chacha20poly1305_ietf_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, baAd(lAdPos), lAdSize, 0, 0, baClientIV(0), baClientKey(0)) <> 0 Then
             GoTo QH
         End If
-    Else
+    Case ucsTlsAlgoAeadAes256
+        Debug.Assert pvArraySize(baClientIV) = TLS_AESGCM_IV_SIZE
+        Debug.Assert pvArraySize(baClientKey) = TLS_AES256_KEY_SIZE
+        If crypto_aead_aes256gcm_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, baAd(lAdPos), lAdSize, 0, 0, baClientIV(0), baClientKey(0)) <> 0 Then
+            GoTo QH
+        End If
+    Case Else
         Err.Raise vbObjectError, "pvCryptoEncrypt", "Unsupported aead type " & eAead
-    End If
+    End Select
     '--- success
     pvCryptoEncrypt = True
 QH:
 End Function
 
 Private Function pvCryptoHash(eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
+    Static baCtx(0 To LNG_SHA512_CTX_SIZE - 1) As Byte
+    Static baFinal(0 To LNG_SHA512_DIGEST_SIZE - 1) As Byte
     Dim baRetVal()      As Byte
     Dim lPtr            As Long
     
+    If Size < 0 Then
+        Size = pvArraySize(baInput) - lPos
+    Else
+        Debug.Assert pvArraySize(baInput) >= lPos + Size
+    End If
+    If Size > 0 Then
+        lPtr = VarPtr(baInput(lPos))
+    End If
     Select Case eHash
     Case ucsTlsAlgoDigestSha256
-        If Size < 0 Then
-            Size = pvArraySize(baInput) - lPos
-        Else
-            Debug.Assert pvArraySize(baInput) >= lPos + Size
-        End If
-        If Size > 0 Then
-            lPtr = VarPtr(baInput(lPos))
-        End If
         ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
         Call crypto_hash_sha256(baRetVal(0), ByVal lPtr, Size)
+    Case ucsTlsAlgoDigestSha384
+        pvCryptoInitSha384 baCtx
+        Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
+        Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
+        ReDim baRetVal(0 To TLS_SHA384_DIGEST_SIZE - 1) As Byte
+        Call CopyMemory(baRetVal(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
     Case Else
         Err.Raise vbObjectError, "pvCryptoHash", "Unsupported hash type " & eHash
     End Select
     pvCryptoHash = baRetVal
 End Function
 
-Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baSalt() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
+Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
+    Static baCtx(0 To LNG_SHA512_CTX_SIZE - 1) As Byte
+    Static baFinal(0 To LNG_SHA512_DIGEST_SIZE - 1) As Byte
+    Static baPad(0 To LNG_SHA512_BLOCK_SIZE - 1) As Byte
     Dim baRetVal()      As Byte
     Dim lPtr            As Long
+    Dim lIdx            As Long
     
+    If Size < 0 Then
+        Size = pvArraySize(baInput) - lPos
+    Else
+        Debug.Assert pvArraySize(baInput) >= lPos + Size
+    End If
+    If Size > 0 Then
+        lPtr = VarPtr(baInput(lPos))
+    End If
     Select Case eHash
     Case ucsTlsAlgoDigestSha256
-        Debug.Assert pvArraySize(baSalt) = TLS_SHA256_DIGEST_SIZE
-        If Size < 0 Then
-            Size = pvArraySize(baInput) - lPos
-        Else
-            Debug.Assert pvArraySize(baInput) >= lPos + Size
-        End If
-        If Size > 0 Then
-            lPtr = VarPtr(baInput(lPos))
-        End If
+        Debug.Assert pvArraySize(baKey) = TLS_SHA256_DIGEST_SIZE
         ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
-        Call crypto_auth_hmacsha256(baRetVal(0), ByVal lPtr, Size, 0, baSalt(0))
+        Call crypto_auth_hmacsha256(baRetVal(0), ByVal lPtr, Size, 0, baKey(0))
+    Case ucsTlsAlgoDigestSha384
+        Debug.Assert pvArraySize(baKey) <= LNG_SHA384_BLOCK_SIZE
+        '-- inner hash
+        pvCryptoInitSha384 baCtx
+        Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, &H36)
+        For lIdx = 0 To UBound(baKey)
+            baPad(lIdx) = baKey(lIdx) Xor &H36
+        Next
+        Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
+        Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
+        Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
+        '-- outer hash
+        pvCryptoInitSha384 baCtx
+        Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, &H5C)
+        For lIdx = 0 To UBound(baKey)
+            baPad(lIdx) = baKey(lIdx) Xor &H5C
+        Next
+        Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
+        Call crypto_hash_sha512_update(baCtx(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
+        Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
+        ReDim baRetVal(0 To TLS_SHA384_DIGEST_SIZE - 1) As Byte
+        Call CopyMemory(baRetVal(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
     Case Else
         Err.Raise vbObjectError, "pvCryptoHmac", "Unsupported hash type " & eHash
     End Select
@@ -1067,6 +1127,16 @@ Private Function pvCryptoRandomBytes(ByVal lSize As Long) As Byte()
     End If
     pvCryptoRandomBytes = baRetVal
 End Function
+
+Private Sub pvCryptoInitSha384(baCtx() As Byte)
+    Static baSha384State() As Byte
+    
+    If pvArraySize(baSha384State) = 0 Then
+        baSha384State = FromHex(STR_SHA384_STATE)
+    End If
+    Call crypto_hash_sha512_init(baCtx(0))
+    Call CopyMemory(baCtx(0), baSha384State(0), UBound(baSha384State) + 1)
+End Sub
 
 '= buffer management =====================================================
 
