@@ -457,7 +457,7 @@ Private Function pvSendClientHandshakeFinished(uCtx As UcsTlsContext, baOutput()
             lPos = pvWriteLong(baOutput, lPos, TLS_HANDSHAKE_TYPE_FINISHED)
             lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=3)
                 baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
-                baVerifyData = pvHkdfExpand(.DigestAlgo, .ClientTrafficSecret, "finished", EmptyByteArray, .DigestSize)
+                baVerifyData = pvHkdfExpandLabel(.DigestAlgo, .ClientTrafficSecret, "finished", EmptyByteArray, .DigestSize)
                 baVerifyData = pvHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
                 lPos = pvWriteArray(baOutput, lPos, baVerifyData)
             lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
@@ -695,7 +695,7 @@ Private Function pvHandleHandshakeContent(uCtx As UcsTlsContext, baInput() As By
                     Case TLS_HANDSHAKE_TYPE_FINISHED
                         pvReadArray baInput, lPos, baMessage, lMessageSize
                         baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
-                        baVerifyData = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "finished", EmptyByteArray, .DigestSize)
+                        baVerifyData = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "finished", EmptyByteArray, .DigestSize)
                         baVerifyData = pvHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
                         Debug.Assert StrConv(baVerifyData, vbUnicode) = StrConv(baMessage, vbUnicode)
                         If StrConv(baVerifyData, vbUnicode) <> StrConv(baMessage, vbUnicode) Then
@@ -858,17 +858,17 @@ Private Function pvDeriveHandshakeSecrets(uCtx As UcsTlsContext, sError As Strin
         '--- for ucsTlsAlgoDigestSha256 always E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
         baEmptyHash = pvCryptoHash(.DigestAlgo, EmptyByteArray, 0)
         '--- for ucsTlsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
-        baDerivedSecret = pvHkdfExpand(.DigestAlgo, baEarlySecret, "derived", baEmptyHash, .DigestSize)
+        baDerivedSecret = pvHkdfExpandLabel(.DigestAlgo, baEarlySecret, "derived", baEmptyHash, .DigestSize)
         baSharedSecret = pvCryptoDeriveSecret(.KxAlgo, .ClientPrivate, .ServerPublic)
         .HandshakeSecret = pvHkdfExtract(.DigestAlgo, baDerivedSecret, baSharedSecret)
         
-        .ServerTrafficSecret = pvHkdfExpand(.DigestAlgo, .HandshakeSecret, "s hs traffic", baHandshakeHash, .DigestSize)
-        .ServerTrafficKey = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .ServerTrafficIV = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        .ServerTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, "s hs traffic", baHandshakeHash, .DigestSize)
+        .ServerTrafficKey = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
+        .ServerTrafficIV = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "iv", EmptyByteArray, .IvSize)
         .ServerTrafficSeqNo = 0
-        .ClientTrafficSecret = pvHkdfExpand(.DigestAlgo, .HandshakeSecret, "c hs traffic", baHandshakeHash, .DigestSize)
-        .ClientTrafficKey = pvHkdfExpand(.DigestAlgo, .ClientTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .ClientTrafficIV = pvHkdfExpand(.DigestAlgo, .ClientTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        .ClientTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, "c hs traffic", baHandshakeHash, .DigestSize)
+        .ClientTrafficKey = pvHkdfExpandLabel(.DigestAlgo, .ClientTrafficSecret, "key", EmptyByteArray, .KeySize)
+        .ClientTrafficIV = pvHkdfExpandLabel(.DigestAlgo, .ClientTrafficSecret, "iv", EmptyByteArray, .IvSize)
         .ClientTrafficSeqNo = 0
     End With
     '--- success
@@ -890,16 +890,16 @@ Private Function pvDeriveApplicationSecrets(uCtx As UcsTlsContext, sError As Str
         '--- for ucsTlsAlgoDigestSha256 always E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
         baEmptyHash = pvCryptoHash(.DigestAlgo, EmptyByteArray, 0)
         '--- for ucsTlsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
-        baDerivedSecret = pvHkdfExpand(.DigestAlgo, .HandshakeSecret, "derived", baEmptyHash, .DigestSize)
+        baDerivedSecret = pvHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, "derived", baEmptyHash, .DigestSize)
         .MasterSecret = pvHkdfExtract(.DigestAlgo, baDerivedSecret, EmptyByteArray(.DigestSize))
         
-        .ServerTrafficSecret = pvHkdfExpand(.DigestAlgo, .MasterSecret, "s ap traffic", baHandshakeHash, .DigestSize)
-        .ServerTrafficKey = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .ServerTrafficIV = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        .ServerTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .MasterSecret, "s ap traffic", baHandshakeHash, .DigestSize)
+        .ServerTrafficKey = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
+        .ServerTrafficIV = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "iv", EmptyByteArray, .IvSize)
         .ServerTrafficSeqNo = 0
-        .ClientTrafficSecret = pvHkdfExpand(.DigestAlgo, .MasterSecret, "c ap traffic", baHandshakeHash, .DigestSize)
-        .ClientTrafficKey = pvHkdfExpand(.DigestAlgo, .ClientTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .ClientTrafficIV = pvHkdfExpand(.DigestAlgo, .ClientTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        .ClientTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .MasterSecret, "c ap traffic", baHandshakeHash, .DigestSize)
+        .ClientTrafficKey = pvHkdfExpandLabel(.DigestAlgo, .ClientTrafficSecret, "key", EmptyByteArray, .KeySize)
+        .ClientTrafficIV = pvHkdfExpandLabel(.DigestAlgo, .ClientTrafficSecret, "iv", EmptyByteArray, .IvSize)
         .ClientTrafficSeqNo = 0
     End With
     '--- success
@@ -916,18 +916,18 @@ Private Function pvDeriveKeyUpdate(uCtx As UcsTlsContext, ByVal bUpdateClient As
         .PrevServerTrafficKey = .ServerTrafficSecret
         .PrevServerTrafficIV = .ServerTrafficIV
         .PrevServerTrafficSeqNo = .ServerTrafficSeqNo
-        .ServerTrafficSecret = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "traffic upd", EmptyByteArray, .DigestSize)
-        .ServerTrafficKey = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .ServerTrafficIV = pvHkdfExpand(.DigestAlgo, .ServerTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        .ServerTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "traffic upd", EmptyByteArray, .DigestSize)
+        .ServerTrafficKey = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
+        .ServerTrafficIV = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "iv", EmptyByteArray, .IvSize)
         .ServerTrafficSeqNo = 0
         If bUpdateClient Then
             If pvArraySize(.ClientTrafficSecret) = 0 Then
                 sError = "Missing previous client secret"
                 GoTo QH
             End If
-            .ClientTrafficSecret = pvHkdfExpand(.DigestAlgo, .ClientTrafficSecret, "traffic upd", EmptyByteArray, .DigestSize)
-            .ClientTrafficKey = pvHkdfExpand(.DigestAlgo, .ClientTrafficSecret, "key", EmptyByteArray, .KeySize)
-            .ClientTrafficIV = pvHkdfExpand(.DigestAlgo, .ClientTrafficSecret, "iv", EmptyByteArray, .IvSize)
+            .ClientTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .ClientTrafficSecret, "traffic upd", EmptyByteArray, .DigestSize)
+            .ClientTrafficKey = pvHkdfExpandLabel(.DigestAlgo, .ClientTrafficSecret, "key", EmptyByteArray, .KeySize)
+            .ClientTrafficIV = pvHkdfExpandLabel(.DigestAlgo, .ClientTrafficSecret, "iv", EmptyByteArray, .IvSize)
             .ClientTrafficSeqNo = 0
         End If
     End With
@@ -940,7 +940,7 @@ Private Function pvHkdfExtract(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baSalt
     pvHkdfExtract = pvCryptoHmac(eHash, baSalt, baInput, 0)
 End Function
 
-Private Function pvHkdfExpand(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baSalt() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Byte()
+Private Function pvHkdfExpandLabel(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baSalt() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Byte()
     Dim baRetVal()      As Byte
     Dim lRetValPos      As Long
     Dim baInfo()        As Byte
@@ -973,8 +973,8 @@ Private Function pvHkdfExpand(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baSalt(
     If UBound(baRetVal) <> lSize - 1 Then
         ReDim Preserve baRetVal(0 To lSize - 1) As Byte
     End If
-    pvHkdfExpand = baRetVal
-    Debug.Print "sLabel=" & sLabel & ", pvHkdfExpand=0x" & ToHex(baRetVal)
+    pvHkdfExpandLabel = baRetVal
+    Debug.Print "sLabel=" & sLabel & ", pvHkdfExpandLabel=0x" & ToHex(baRetVal)
 End Function
 
 '= crypto wrappers =======================================================
