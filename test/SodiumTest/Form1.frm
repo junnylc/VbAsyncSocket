@@ -40,7 +40,7 @@ Begin VB.Form Form1
       Height          =   348
       Left            =   1260
       TabIndex        =   0
-      Text            =   "facebook.com"
+      Text            =   "localhost:44330"
       Top             =   168
       Width           =   7068
    End
@@ -75,7 +75,6 @@ Private Const SB_BOTTOM                 As Long = 7
 
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As Long
-Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal ucb As Long) As Long
 Private Declare Function GetModuleHandle Lib "kernel32" Alias "GetModuleHandleA" (ByVal lpModuleName As String) As Long
 Private Declare Function LoadLibrary Lib "kernel32" Alias "LoadLibraryA" (ByVal lpLibFileName As String) As Long
 Private Declare Function SendMessage Lib "user32" Alias "SendMessageA" (ByVal hWnd As Long, ByVal wMsg As Long, ByVal wParam As Long, lParam As Any) As Long
@@ -130,9 +129,10 @@ Private Sub Command1_Click()
         MsgBox "Wrong URL", vbCritical
         GoTo QH
     End If
+    txtResult.Text = vbNullString
     sResult = HttpsRequest(m_uCtx, uRemote, sError)
     If LenB(sError) <> 0 Then
-        MsgBox sError, vbCritical
+        pvAppendLogText txtResult, "Error: " & sError
         GoTo QH
     End If
     If LenB(sResult) <> 0 Then
@@ -160,6 +160,7 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
     Dim baDecr()        As Byte
     Dim dblTimer        As Double
     
+    txtResult.Text = vbNullString
     If m_sServerName <> uRemote.Host & ":" & uRemote.Port Or m_oSocket Is Nothing Then
         Set m_oSocket = New cAsyncSocket
         If Not m_oSocket.SyncConnect(uRemote.Host, uRemote.Port) Then
@@ -168,7 +169,7 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
         End If
         m_sServerName = uRemote.Host & ":" & uRemote.Port
         '--- send TLS handshake
-        uCtx = TlsInitClient(uRemote.Host)
+        uCtx = TlsInitClient(ServerName:=uRemote.Host) ' , SupportProtocols:=ucsTlsSupportTls12)
         GoTo InLoop
         Do
             If Not m_oSocket.SyncReceiveArray(baRecv, Timeout:=1000) Then
@@ -177,7 +178,7 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
             End If
 InLoop:
             If pvArraySize(baRecv) <> 0 Then
-                txtResult.Text = "pvArraySize(baRecv)=" & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
+                pvAppendLogText txtResult, String$(2, ">") & " Recv " & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
             End If
             lSize = 0
             If Not TlsHandshake(uCtx, baRecv, -1, baSend, lSize, bComplete) Then
@@ -185,6 +186,7 @@ InLoop:
                 GoTo QH
             End If
             If lSize > 0 Then
+                pvAppendLogText txtResult, String$(2, "<") & " Send " & lSize & vbCrLf & DesignDumpMemory(VarPtr(baSend(0)), lSize)
                 If Not m_oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
                     sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
                     GoTo QH
@@ -202,6 +204,7 @@ InLoop:
         GoTo QH
     End If
     If lSize > 0 Then
+        pvAppendLogText txtResult, String$(2, "<") & " Send " & lSize & vbCrLf & DesignDumpMemory(VarPtr(baSend(0)), lSize)
         If Not m_oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
             sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
             GoTo QH
@@ -215,7 +218,7 @@ InLoop:
             GoTo QH
         End If
         If pvArraySize(baRecv) <> 0 Then
-            txtResult.Text = "pvArraySize(baRecv)=" & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
+            pvAppendLogText txtResult, String$(2, ">") & " Recv " & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
             dblTimer = Timer
         ElseIf lSize > 0 And Timer > dblTimer + 0.2 Then
             Exit Do
@@ -275,45 +278,6 @@ Private Function ParseUrl(sUrl As String, uParsed As UcsParsedUrl, Optional DefP
             End If
         End With
     End With
-End Function
-
-Private Function DesignDumpMemory(ByVal lPtr As Long, ByVal lSize As Long) As String
-    Dim lIdx            As Long
-    Dim sHex            As String
-    Dim sChar           As String
-    Dim lValue          As Long
-    Dim aResult()       As String
-    
-    ReDim aResult(0 To (lSize + 15) \ 16) As String
-    For lIdx = 0 To ((lSize + 15) \ 16) * 16
-        If lIdx < lSize Then
-            If IsBadReadPtr(UnsignedAdd(lPtr, lIdx), 1) = 0 Then
-                Call CopyMemory(lValue, ByVal UnsignedAdd(lPtr, lIdx), 1)
-                sHex = sHex & Right$("0" & Hex$(lValue), 2) & " "
-                If lValue >= 32 Then
-                    sChar = sChar & Chr$(lValue)
-                Else
-                    sChar = sChar & "."
-                End If
-            Else
-                sHex = sHex & "?? "
-                sChar = sChar & "."
-            End If
-        Else
-            sHex = sHex & "   "
-        End If
-        If ((lIdx + 1) Mod 16) = 0 Then
-            aResult(lIdx \ 16) = Right$("000" & Hex$(lIdx - 15), 4) & " - " & sHex & " " & sChar
-            sHex = vbNullString
-            sChar = vbNullString
-        End If
-    Next
-    DesignDumpMemory = Join(aResult, vbCrLf)
-End Function
-
-Private Function UnsignedAdd(ByVal lUnsignedPtr As Long, ByVal lSignedOffset As Long) As Long
-    '--- note: safely add *signed* offset to *unsigned* ptr for *unsigned* retval w/o overflow in LARGEADDRESSAWARE processes
-    UnsignedAdd = ((lUnsignedPtr Xor &H80000000) + lSignedOffset) Xor &H80000000
 End Function
 
 Private Function pvArraySize(baArray() As Byte, Optional RetVal As Long) As Long
