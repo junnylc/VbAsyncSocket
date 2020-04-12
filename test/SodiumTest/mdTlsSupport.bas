@@ -117,6 +117,7 @@ Private Const LNG_SHA384_BLOCK_SIZE     As Long = 128
 Private Const LNG_SHA512_CTX_SIZE       As Long = 64 + 16 + 128
 Private Const LNG_SHA512_BLOCK_SIZE     As Long = 128
 Private Const LNG_SHA512_DIGEST_SIZE    As Long = 64
+Private Const LNG_LEGACY_AD_SIZE        As Long = 13
 
 Public Enum UcsTlsSupportProtocolsEnum '--- bitmask
     ucsTlsSupportTls12 = 2 ^ 0
@@ -423,7 +424,7 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                     lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                     If (.SupportProtocols And ucsTlsSupportTls12) <> 0 Then
                         '--- Extension - EC Point Formats
-                        lPos = pvWriteArray(baOutput, lPos, FromHex("00:0b:00:02:01:00"))   '--- uncompressed only
+                        lPos = pvWriteArray(baOutput, lPos, FromHex("00:0B:00:02:01:00"))   '--- uncompressed only
                         '--- Extension - Renegotiation Info
                         lPos = pvWriteArray(baOutput, lPos, FromHex("FF:01:00:01:00"))      '--- empty info
                     End If
@@ -514,13 +515,13 @@ Private Function pvBuildClientKeyExchange(uCtx As UcsTlsContext, baOutput() As B
             lMessageSize = lPos - lMessagePos
             lPos = pvWriteReserved(baOutput, lPos, .TagSize)
             '--- encrypt message
-            ReDim baAd(0 To 12) As Byte
+            ReDim baAd(0 To LNG_LEGACY_AD_SIZE - 1) As Byte
             lAdPos = pvWriteLong(baAd, 0, 0, Size:=4)
             lAdPos = pvWriteLong(baAd, lAdPos, .ClientTrafficSeqNo, Size:=4)
             lAdPos = pvWriteBuffer(baAd, lAdPos, VarPtr(baOutput(lRecordPos)), 3)
             lAdPos = pvWriteLong(baAd, lAdPos, lMessageSize, Size:=2)
-            Debug.Assert lAdPos = UBound(baAd) + 1
-            If Not pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baAd, 0, pvArraySize(baAd), baOutput, lMessagePos, lMessageSize) Then
+            Debug.Assert lAdPos = LNG_LEGACY_AD_SIZE
+            If Not pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baAd, 0, lAdPos, baOutput, lMessagePos, lMessageSize) Then
                 sError = "Encryption failed"
                 GoTo QH
             End If
@@ -580,6 +581,7 @@ Private Function pvBuildClientApplicationData(uCtx As UcsTlsContext, baOutput() 
     Dim baClientIV()    As Byte
     Dim baAd()          As Byte
     Dim lAdPos          As Long
+    Dim bResult         As Boolean
     
     With uCtx
         lRecordPos = lPos
@@ -587,44 +589,40 @@ Private Function pvBuildClientApplicationData(uCtx As UcsTlsContext, baOutput() 
         lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_APPDATA)
         lPos = pvWriteLong(baOutput, lPos, TLS_RECORD_VERSION, Size:=2)
         lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-            If .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
-                lMessagePos = lPos
-                If lSize > 0 Then
-                    lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baData(0)), lSize)
-                End If
-                lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_APPDATA)
-                lMessageSize = lPos - lMessagePos
-                lPos = pvWriteReserved(baOutput, lPos, .TagSize)
-                baClientIV = pvArrayXor(.ClientTrafficIV, .ClientTrafficSeqNo)
-                If Not pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baOutput, 0, 5, baOutput, lMessagePos, lMessageSize) Then
-                    sError = "Encryption failed"
-                    GoTo QH
-                End If
-            ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
+            If .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
                 ReDim baClientIV(0 To .IvSize - 1) As Byte
                 pvWriteArray baClientIV, 0, .ClientTrafficIV
                 pvWriteArray baClientIV, 4, pvCryptoRandomBytes(.IvSize - 4)
                 lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baClientIV(4)), .IvSize - 4)
-                lMessagePos = lPos
-                If lSize > 0 Then
-                    lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baData(0)), lSize)
-                End If
-                lMessageSize = lPos - lMessagePos
-                lPos = pvWriteReserved(baOutput, lPos, .TagSize)
-                '--- encrypt message
-                ReDim baAd(0 To 12) As Byte
-                lAdPos = pvWriteLong(baAd, 0, 0, Size:=4)
-                lAdPos = pvWriteLong(baAd, lAdPos, .ClientTrafficSeqNo, Size:=4)
-                lAdPos = pvWriteBuffer(baAd, lAdPos, VarPtr(baOutput(lRecordPos)), 3)
-                lAdPos = pvWriteLong(baAd, lAdPos, lMessageSize, Size:=2)
-                Debug.Assert lAdPos = UBound(baAd) + 1
-'                Debug.Print "baAd=" & ToHex(baAd) & ", baClientIV=" & ToHex(baClientIV) & ", .ClientTrafficKey=" & ToHex(.ClientTrafficKey)
-                If Not pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baAd, 0, pvArraySize(baAd), baOutput, lMessagePos, lMessageSize) Then
-                    sError = "Encryption failed"
-                    GoTo QH
-                End If
             End If
+            lMessagePos = lPos
+            If lSize > 0 Then
+                lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baData(0)), lSize)
+            End If
+            If .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
+                lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_APPDATA)
+            End If
+            lMessageSize = lPos - lMessagePos
+            lPos = pvWriteReserved(baOutput, lPos, .TagSize)
         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
+        '--- encrypt message
+        If .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
+            baClientIV = pvArrayXor(.ClientTrafficIV, .ClientTrafficSeqNo)
+            bResult = pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baOutput, lRecordPos, 5, baOutput, lMessagePos, lMessageSize)
+        ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
+            ReDim baAd(0 To LNG_LEGACY_AD_SIZE - 1) As Byte
+            lAdPos = pvWriteLong(baAd, 0, 0, Size:=4)
+            lAdPos = pvWriteLong(baAd, lAdPos, .ClientTrafficSeqNo, Size:=4)
+            lAdPos = pvWriteBuffer(baAd, lAdPos, VarPtr(baOutput(lRecordPos)), 3)
+            lAdPos = pvWriteLong(baAd, lAdPos, lMessageSize, Size:=2)
+            Debug.Assert lAdPos = LNG_LEGACY_AD_SIZE
+'            Debug.Print "baAd=" & ToHex(baAd) & ", baClientIV=" & ToHex(baClientIV) & ", .ClientTrafficKey=" & ToHex(.ClientTrafficKey)
+            bResult = pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baAd, 0, lAdPos, baOutput, lMessagePos, lMessageSize)
+        End If
+        If Not bResult Then
+            sError = "Encryption failed"
+            GoTo QH
+        End If
         .ClientTrafficSeqNo = .ClientTrafficSeqNo + 1
     End With
     pvBuildClientApplicationData = lPos
@@ -701,12 +699,13 @@ HandleAlertContent:
                     pvWriteBuffer baServerIV, 4, VarPtr(baInput(lPos)), .IvSize - 4
                     lEnd = lPos + lRecordSize - .TagSize
                     lPos = lPos + .IvSize - 4
-                    ReDim baAd(0 To 12) As Byte
+                    ReDim baAd(0 To LNG_LEGACY_AD_SIZE - 1) As Byte
                     lAdPos = pvWriteLong(baAd, 0, 0, Size:=4)
                     lAdPos = pvWriteLong(baAd, lAdPos, .ServerTrafficSeqNo, Size:=4)
                     lAdPos = pvWriteBuffer(baAd, lAdPos, VarPtr(baInput(lRecordPos)), 3)
                     lAdPos = pvWriteLong(baAd, lAdPos, lEnd - lPos, Size:=2)
-                    If Not pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAd, 0, pvArraySize(baAd), baInput, lPos, lEnd - lPos + .TagSize) Then
+                    Debug.Assert lAdPos = LNG_LEGACY_AD_SIZE
+                    If Not pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAd, 0, lAdPos, baInput, lPos, lEnd - lPos + .TagSize) Then
                         sError = "pvCryptoDecrypt w/ ServerTrafficKey failed"
                         GoTo QH
                     End If
@@ -779,12 +778,13 @@ HandleHandshakeContent:
                     pvWriteBuffer baServerIV, 4, VarPtr(baInput(lPos)), .IvSize - 4
                     lEnd = lPos + lRecordSize - .TagSize
                     lPos = lPos + .IvSize - 4
-                    ReDim baAd(0 To 12) As Byte
+                    ReDim baAd(0 To LNG_LEGACY_AD_SIZE - 1) As Byte
                     lAdPos = pvWriteLong(baAd, 0, 0, Size:=4)
                     lAdPos = pvWriteLong(baAd, lAdPos, .ServerTrafficSeqNo, Size:=4)
                     lAdPos = pvWriteBuffer(baAd, lAdPos, VarPtr(baInput(lRecordPos)), 3)
                     lAdPos = pvWriteLong(baAd, lAdPos, lEnd - lPos, Size:=2)
-                    If Not pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAd, 0, pvArraySize(baAd), baInput, lPos, lEnd - lPos + .TagSize) Then
+                    Debug.Assert lAdPos = LNG_LEGACY_AD_SIZE
+                    If Not pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAd, 0, lAdPos, baInput, lPos, lEnd - lPos + .TagSize) Then
                         sError = "pvCryptoDecrypt w/ ServerTrafficKey failed"
                         GoTo QH
                     End If
