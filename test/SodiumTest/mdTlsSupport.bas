@@ -462,10 +462,10 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                 '--- Cipher Suites
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
                     If (.SupportProtocols And ucsTlsSupportTls12) <> 0 Then
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
+                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, Size:=2)
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
+                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
                     End If
                     If (.SupportProtocols And ucsTlsSupportTls13) <> 0 Then
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
@@ -595,6 +595,8 @@ Private Function pvBuildClientKeyExchange(uCtx As UcsTlsContext, baOutput() As B
                 lPos = pvWriteArray(baOutput, lPos, baVerifyData)
             lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
             lMessageSize = lPos - lMessagePos
+            '--- note: *before* allocating space for the authentication tag
+            pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baOutput(lMessagePos)), lPos - lMessagePos
             lPos = pvWriteReserved(baOutput, lPos, .TagSize)
             '--- encrypt message
             ReDim baAd(0 To LNG_LEGACY_AD_SIZE - 1) As Byte
@@ -610,7 +612,6 @@ Private Function pvBuildClientKeyExchange(uCtx As UcsTlsContext, baOutput() As B
             End If
             .ClientTrafficSeqNo = .ClientTrafficSeqNo + 1
             lMessagePos = lRecordPos + 5
-            pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baOutput(lMessagePos)), lPos - lMessagePos
         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
     End With
     pvBuildClientKeyExchange = lPos
@@ -786,7 +787,7 @@ HandleAlertContent:
                         Debug.Print TlsGetLastAlert(uCtx) & " (TLS_ALERT_LEVEL_WARNING)", Timer
                     End Select
                 End If
-                '--- note: skip compression
+                '--- note: skip AEAD's authentication tag too
                 lPos = lRecordPos + lRecordSize + 5
             Case TLS_CONTENT_TYPE_HANDSHAKE
                 If .State = ucsTlsStateExpectServerFinish And .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
@@ -975,6 +976,7 @@ Private Function pvParseHandshakeContent(uCtx As UcsTlsContext, baInput() As Byt
                             lPos = pvReadEndOfBlock(baInput, lPos, .BlocksStack)
                             lPos = pvReadLong(baInput, lPos, lSignatureType, Size:=2)
 '                            Debug.Assert lSignatureType = &H401 '-- RSA signature with SHA256 hash
+                            Debug.Print "Using signature type &H" & Hex$(lSignatureType), Timer
                             lPos = pvReadBeginOfBlock(baInput, lPos, .BlocksStack, Size:=2, BlockSize:=lSignatureSize)
                                 lPos = pvReadArray(baInput, lPos, baSignature, lSignatureSize)
                                 '--- ToDo: verify .ServerCertificate signature
@@ -1018,10 +1020,10 @@ Private Function pvParseHandshakeContent(uCtx As UcsTlsContext, baInput() As Byt
                             lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
                             baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
                             baVerifyData = pvLegacyTls1Prf(.DigestAlgo, .MasterSecret, "server finished", baHandshakeHash, 12)
-'                            Debug.Assert StrConv(baVerifyData, vbUnicode) = StrConv(baMessage, vbUnicode)
+                            Debug.Assert StrConv(baVerifyData, vbUnicode) = StrConv(baMessage, vbUnicode)
                             If StrConv(baVerifyData, vbUnicode) <> StrConv(baMessage, vbUnicode) Then
-'                                sError = "Server Handshake verification failed"
-'                                GoTo QH
+                                sError = "Server Handshake verification failed"
+                                GoTo QH
                             End If
                             .State = ucsTlsStatePostHandshake
                             '--- not used past handshake
