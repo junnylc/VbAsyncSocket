@@ -191,6 +191,7 @@ Public Type UcsTlsContext
     ServerCertificate()         As Byte
     ServerSessionID()           As Byte '--- not used in 1.3
     '--- crypto settings
+    KxGroup                     As Long
     KxAlgo                      As UcsTlsCryptoAlgorithmsEnum
     SecretSize                  As Long
     CipherSuite                 As Long
@@ -362,27 +363,58 @@ End Function
 
 '= private ===============================================================
 
-Private Function pvSetupKeyExchangeGroup(uCtx As UcsTlsContext, ByVal lGroup As Long, sError As String) As Boolean
+Private Function pvSetupKeyExchangeGroup(uCtx As UcsTlsContext, ByVal lExchangeGroup As Long, sError As String) As Boolean
     With uCtx
-        Select Case lGroup
-        Case TLS_GROUP_X25519
-            If .KxAlgo <> ucsTlsAlgoKeyX25519 Then
+        If .KxGroup <> lExchangeGroup Then
+            .KxGroup = lExchangeGroup
+            Select Case lExchangeGroup
+            Case TLS_GROUP_X25519
                 .KxAlgo = ucsTlsAlgoKeyX25519
                 .SecretSize = TLS_X25519_KEY_SIZE
                 .ClientPrivate = pvCryptoRandomBytes(TLS_X25519_KEY_SIZE)
-                '--- fix some issues w/ specific privkeys
+                '--- fix issues w/ specific privkeys
                 .ClientPrivate(0) = .ClientPrivate(0) And 248
                 .ClientPrivate(UBound(.ClientPrivate)) = (.ClientPrivate(UBound(.ClientPrivate)) And 127) Or 64
                 ReDim .ClientPublic(0 To TLS_X25519_KEY_SIZE - 1) As Byte
                 Call crypto_scalarmult_curve25519_base(.ClientPublic(0), .ClientPrivate(0))
-            End If
-        Case Else
-            sError = "Unsupported EC group " & lGroup
-            GoTo QH
-        End Select
+            Case Else
+                sError = "Unsupported exchange group (0x" & Hex$(.KxGroup) & ")"
+                GoTo QH
+            End Select
+        End If
     End With
     '--- success
     pvSetupKeyExchangeGroup = True
+QH:
+End Function
+
+Private Function pvSetupCipherSuite(uCtx As UcsTlsContext, ByVal lCipherSuite As Long, sError As String) As Boolean
+    With uCtx
+        If .CipherSuite <> lCipherSuite Then
+            .CipherSuite = lCipherSuite
+            Select Case .CipherSuite
+            Case TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+                .AeadAlgo = ucsTlsAlgoAeadChacha20Poly1305
+                .KeySize = TLS_CHACHA20_KEY_SIZE
+                .IvSize = TLS_CHACHA20POLY1305_IV_SIZE
+                .TagSize = TLS_CHACHA20POLY1305_TAG_SIZE
+                .DigestAlgo = ucsTlsAlgoDigestSha256
+                .DigestSize = TLS_SHA256_DIGEST_SIZE
+            Case TLS_CIPHER_SUITE_AES_256_GCM_SHA384, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+                .AeadAlgo = ucsTlsAlgoAeadAes256
+                .KeySize = TLS_AES256_KEY_SIZE
+                .IvSize = TLS_AESGCM_IV_SIZE
+                .TagSize = TLS_AESGCM_TAG_SIZE
+                .DigestAlgo = ucsTlsAlgoDigestSha384
+                .DigestSize = TLS_SHA384_DIGEST_SIZE
+            Case Else
+                sError = "Unsupported cipher suite (0x" & Hex$(.CipherSuite) & ")"
+                GoTo QH
+            End Select
+        End If
+    End With
+    '--- success
+    pvSetupCipherSuite = True
 QH:
 End Function
 
@@ -1010,6 +1042,7 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
     Dim lPos            As Long
     Dim lBlockSize      As Long
     Dim lLegacyVersion  As Long
+    Dim lCipherSuite    As Long
     Dim lLegacyCompress As Long
     Dim lExtType        As Long
     Dim lExchangeGroup  As Long
@@ -1021,26 +1054,10 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
         lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, BlockSize:=lBlockSize)
             lPos = pvReadArray(baMessage, lPos, .ServerSessionID, lBlockSize)
         lPos = pvReadEndOfBlock(baMessage, lPos, .BlocksStack)
-        lPos = pvReadLong(baMessage, lPos, .CipherSuite, Size:=2)
-        Select Case .CipherSuite
-        Case TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-            .AeadAlgo = ucsTlsAlgoAeadChacha20Poly1305
-            .KeySize = TLS_CHACHA20_KEY_SIZE
-            .IvSize = TLS_CHACHA20POLY1305_IV_SIZE
-            .TagSize = TLS_CHACHA20POLY1305_TAG_SIZE
-            .DigestAlgo = ucsTlsAlgoDigestSha256
-            .DigestSize = TLS_SHA256_DIGEST_SIZE
-        Case TLS_CIPHER_SUITE_AES_256_GCM_SHA384, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
-            .AeadAlgo = ucsTlsAlgoAeadAes256
-            .KeySize = TLS_AES256_KEY_SIZE
-            .IvSize = TLS_AESGCM_IV_SIZE
-            .TagSize = TLS_AESGCM_TAG_SIZE
-            .DigestAlgo = ucsTlsAlgoDigestSha384
-            .DigestSize = TLS_SHA384_DIGEST_SIZE
-        Case Else
-            sError = "Unsupported cipher suite (0x" & Hex$(.CipherSuite) & ")"
+        lPos = pvReadLong(baMessage, lPos, lCipherSuite, Size:=2)
+        If Not pvSetupCipherSuite(uCtx, lCipherSuite, sError) Then
             GoTo QH
-        End Select
+        End If
         Debug.Print "Using " & pvCryptoCipherSuiteName(.CipherSuite) & " for " & .ServerName
         lPos = pvReadLong(baMessage, lPos, lLegacyCompress)
         Debug.Assert lLegacyCompress = 0
