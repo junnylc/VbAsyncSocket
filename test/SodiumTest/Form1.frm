@@ -171,7 +171,7 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
         End If
         m_sServerName = uRemote.Host & ":" & uRemote.Port
         '--- send TLS handshake
-        uCtx = TlsInitClient(ServerName:=uRemote.Host) ' , SupportProtocols:=ucsTlsSupportTls12)
+        uCtx = TlsInitClient(TargetHost:=uRemote.Host) ' , ClientFeatures:=ucsTlsSupportTls12)
         GoTo InLoop
         Do
             If Not m_oSocket.SyncReceiveArray(baRecv, Timeout:=1000) Then
