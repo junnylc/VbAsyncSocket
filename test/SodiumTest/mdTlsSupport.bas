@@ -35,7 +35,7 @@ Private Const TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE    As Long = 16
 Private Const TLS_HANDSHAKE_TYPE_FINISHED               As Long = 20
 Private Const TLS_HANDSHAKE_TYPE_KEY_UPDATE             As Long = 24
 'Private Const TLS_HANDSHAKE_TYPE_COMPRESSED_CERTIFICATE As Long = 25
-'Private Const TLS_HANDSHAKE_TYPE_MESSAGE_HASH           As Long = 254
+Private Const TLS_HANDSHAKE_TYPE_MESSAGE_HASH           As Long = 254
 Private Const TLS_EXTENSION_TYPE_SERVER_NAME            As Long = 0
 'Private Const TLS_EXTENSION_TYPE_STATUS_REQUEST         As Long = 5
 Private Const TLS_EXTENSION_TYPE_SUPPORTED_GROUPS       As Long = 10
@@ -45,7 +45,7 @@ Private Const TLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS   As Long = 13
 'Private Const TLS_EXTENSION_TYPE_PRE_SHARED_KEY         As Long = 41
 'Private Const TLS_EXTENSION_TYPE_EARLY_DATA             As Long = 42
 Private Const TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS     As Long = 43
-'Private Const TLS_EXTENSION_TYPE_COOKIE                 As Long = 44
+Private Const TLS_EXTENSION_TYPE_COOKIE                 As Long = 44
 'Private Const TLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES As Long = 45
 Private Const TLS_EXTENSION_TYPE_KEY_SHARE              As Long = 51
 'Private Const TLS_CIPHER_SUITE_AES_128_GCM_SHA256       As Long = &H1301
@@ -132,6 +132,7 @@ Private Declare Function BCryptFinalizeKeyPair Lib "bcrypt" (ByVal hKey As Long,
 
 Private Const STR_VL_ALERTS             As String = "0|Close notify|10|Unexpected message|20|Bad record mac|40|Handshake failure|42|Bad certificate|44|Certificate revoked|45|Certificate expired|46|Certificate unknown|47|Illegal parameter|48|Unknown CA|50|Decode error|51|Decrypt error|70|Protocol version|80|Internal error|90|User canceled|109|Missing extension|112|Unrecognized name|116|Certificate required|120|No application protocol"
 Private Const STR_SHA384_STATE          As String = "d89e05c15d9dbbcb07d57c362a299a6217dd70305a01599139590ef7d8ec2f15310bc0ff6726336711155868874ab48ea78ff9640d2e0cdba44ffabe1d48b547"
+Private Const STR_HELLO_RETRY_RANDOM    As String = "cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c"
 Private Const LNG_SHA384_BLOCK_SIZE     As Long = 128
 Private Const LNG_SHA512_CTX_SIZE       As Long = 64 + 16 + 128
 Private Const LNG_SHA512_BLOCK_SIZE     As Long = 128
@@ -241,6 +242,10 @@ Public Type UcsTlsContext
     MessBuffer()                As Byte
     MessPos                     As Long
     MessSize                    As Long
+    '--- hello retry request
+    HelloRetryCipherSuite       As Long
+    HelloRetryExchangeGroup     As Long
+    HelloRetryCookie()          As Byte
 End Type
 
 '=========================================================================
@@ -394,7 +399,7 @@ Private Function pvSetupKeyExchangeGroup(uCtx As UcsTlsContext, ByVal lExchangeG
             Case TLS_GROUP_SECP256R1
                 .KxAlgo = ucsTlsAlgoKeySecp256r1
                 If Not pvBCryptEcdhP256KeyPair(.ClientPrivate, .ClientPublic) Then
-                    sError = "pvBCryptEcdhP256KeyPair failed: " & Err.Description
+                    sError = "pvBCryptEcdhP256KeyPair failed"
                     GoTo QH
                 End If
             Case Else
@@ -461,15 +466,19 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Cipher Suites
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-                    If (.SupportProtocols And ucsTlsSupportTls12) <> 0 Then
+                    If (.SupportProtocols And ucsTlsSupportTls12) <> 0 And .HelloRetryCipherSuite = 0 Then
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, Size:=2)
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
+                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, Size:=2)
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
                     End If
                     If (.SupportProtocols And ucsTlsSupportTls13) <> 0 Then
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
+                        If .HelloRetryCipherSuite = 0 Or .HelloRetryCipherSuite = TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 Then
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
+                        End If
+                        If .HelloRetryCipherSuite = 0 Or .HelloRetryCipherSuite = TLS_CIPHER_SUITE_AES_256_GCM_SHA384 Then
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
+                        End If
                     End If
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Legacy Compression Methods
@@ -494,9 +503,13 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                     lPos = pvWriteLong(baOutput, lPos, TLS_EXTENSION_TYPE_SUPPORTED_GROUPS, Size:=2)
                     lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
                         lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_X25519, Size:=2)
+                            If .HelloRetryExchangeGroup = 0 Or .HelloRetryExchangeGroup = TLS_GROUP_X25519 Then
+                                lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_X25519, Size:=2)
+                            End If
                             If (.SupportProtocols And ucsTlsSupportTls12) <> 0 Then
-                                lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_SECP256R1, Size:=2)
+                                If .HelloRetryExchangeGroup = 0 Or .HelloRetryExchangeGroup = TLS_GROUP_SECP256R1 Then
+                                    lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_SECP256R1, Size:=2)
+                                End If
                             End If
                         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                     lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
@@ -537,11 +550,20 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                                 End If
                             lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
+                        If pvArraySize(.HelloRetryCookie) > 0 Then
+                            '--- Extension - Cookie
+                            lPos = pvWriteLong(baOutput, lPos, TLS_EXTENSION_TYPE_COOKIE, Size:=2)
+                            lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
+                                lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack)
+                                    lPos = pvWriteArray(baOutput, lPos, .HelloRetryCookie)
+                                lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
+                            lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
+                        End If
                     End If
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
             lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
-        pvWriteBuffer .HandshakeMessages, 0, VarPtr(baOutput(lMessagePos)), lPos - lMessagePos
+        pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baOutput(lMessagePos)), lPos - lMessagePos
     End With
     pvBuildClientHello = lPos
 End Function
@@ -929,13 +951,25 @@ Private Function pvParseHandshakeContent(uCtx As UcsTlsContext, baInput() As Byt
                         If Not pvParseHandshakeServerHello(uCtx, baMessage, lRecordProtocol, sError) Then
                             GoTo QH
                         End If
-                        .State = ucsTlsStateExpectExtensions
+                        If pvArraySize(.HelloRetryCookie) <> 0 Then
+                            '--- after HelloRetryRequest -> replace HandshakeMessages w/ "synthetic handshake message"
+                            baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
+                            Erase .HandshakeMessages
+                            lVerifyPos = pvWriteLong(.HandshakeMessages, 0, TLS_HANDSHAKE_TYPE_MESSAGE_HASH)
+                            lVerifyPos = pvWriteLong(.HandshakeMessages, lVerifyPos, .DigestSize, Size:=3)
+                            lVerifyPos = pvWriteArray(.HandshakeMessages, lVerifyPos, baHandshakeHash)
+                        Else
+                            .State = ucsTlsStateExpectExtensions
+                        End If
                     Case Else
                         sError = "Unexpected message type for ucsTlsStateExpectServerHello (lMessageType=" & lMessageType & ")"
                         GoTo QH
                     End Select
                     pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
                     '--- post-process ucsTlsStateExpectServerHello
+                    If .State = ucsTlsStateExpectServerHello And pvArraySize(.HelloRetryCookie) <> 0 Then
+                        .SendPos = pvBuildClientHello(uCtx, .SendBuffer, .SendPos)
+                    End If
                     If .State = ucsTlsStateExpectExtensions And .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
                         If Not pvDeriveHandshakeSecrets(uCtx, sError) Then
                             GoTo QH
@@ -1040,7 +1074,7 @@ Private Function pvParseHandshakeContent(uCtx As UcsTlsContext, baInput() As Byt
                     Case TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET
                         '--- don't store tickets for now
                     Case TLS_HANDSHAKE_TYPE_KEY_UPDATE
-                        Debug.Print "TLS_HANDSHAKE_TYPE_KEY_UPDATE", Timer
+                        Debug.Print "Received TLS_HANDSHAKE_TYPE_KEY_UPDATE", Timer
                         If lMessageSize = 1 Then
                             lRequestUpdate = baInput(lPos)
                         Else
@@ -1082,11 +1116,18 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
     Dim lLegacyCompress As Long
     Dim lExtType        As Long
     Dim lExchangeGroup  As Long
+    Dim lEnd            As Long
+    Dim bHelloRetryRequest As Boolean
     
     With uCtx
+        '--- clear HelloRetryRequest
+        .HelloRetryCipherSuite = 0
+        .HelloRetryExchangeGroup = 0
+        Erase .HelloRetryCookie
         .ServerProtocol = lRecordProtocol
         lPos = pvReadLong(baMessage, lPos, lLegacyVersion, Size:=2)
         lPos = pvReadArray(baMessage, lPos, .ServerRandom, .SecretSize)
+        bHelloRetryRequest = (StrConv(.ServerRandom, vbUnicode) = StrConv(FromHex(STR_HELLO_RETRY_RANDOM), vbUnicode))
         lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, BlockSize:=lBlockSize)
             lPos = pvReadArray(baMessage, lPos, .ServerSessionID, lBlockSize)
         lPos = pvReadEndOfBlock(baMessage, lPos, .BlocksStack)
@@ -1094,35 +1135,60 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
         If Not pvSetupCipherSuite(uCtx, lCipherSuite, sError) Then
             GoTo QH
         End If
-        Debug.Print "Using " & pvCryptoCipherSuiteName(.CipherSuite) & " for " & .ServerName, Timer
+        Debug.Print "Using " & pvCryptoCipherSuiteName(.CipherSuite) & " from " & .ServerName, Timer
+        If bHelloRetryRequest Then
+            .HelloRetryCipherSuite = lCipherSuite
+        End If
         lPos = pvReadLong(baMessage, lPos, lLegacyCompress)
         Debug.Assert lLegacyCompress = 0
-        lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2)
-            Do While lPos < .BlocksStack.Item(1)
+        lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lBlockSize)
+            lEnd = lPos + lBlockSize
+            Do While lPos < lEnd
                 lPos = pvReadLong(baMessage, lPos, lExtType, Size:=2)
                 lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lBlockSize)
                     Select Case lExtType
                     Case TLS_EXTENSION_TYPE_KEY_SHARE
                         .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL
-                        lPos = pvReadLong(baMessage, lPos, lExchangeGroup, Size:=2)
-                        Debug.Assert lExchangeGroup = TLS_GROUP_X25519
-                        If Not pvSetupKeyExchangeGroup(uCtx, lExchangeGroup, sError) Then
+                        If lBlockSize >= 2 Then
+                            lPos = pvReadLong(baMessage, lPos, lExchangeGroup, Size:=2)
+                        Else
+                            sError = "Invalid data size for key share"
                             GoTo QH
                         End If
-                        lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lBlockSize)
-                            Debug.Assert lBlockSize = TLS_X25519_KEY_SIZE
-                            If lBlockSize <> TLS_X25519_KEY_SIZE Then
-                                sError = "Invalid server key size"
+                        If bHelloRetryRequest Then
+                            .HelloRetryExchangeGroup = lExchangeGroup
+                        Else
+                            Debug.Assert lExchangeGroup = TLS_GROUP_X25519
+                            If Not pvSetupKeyExchangeGroup(uCtx, lExchangeGroup, sError) Then
                                 GoTo QH
                             End If
-                            lPos = pvReadArray(baMessage, lPos, .ServerPublic, lBlockSize)
-                        lPos = pvReadEndOfBlock(baMessage, lPos, .BlocksStack)
-                    Case TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS
-                        Debug.Assert lBlockSize = 2
-                        If lBlockSize >= 2 Then
-                            Call pvReadLong(baMessage, lPos, .ServerProtocol, Size:=2)
+                            If lBlockSize > 4 Then
+                                lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lBlockSize)
+                                    Debug.Assert lBlockSize = TLS_X25519_KEY_SIZE
+                                    If lBlockSize <> TLS_X25519_KEY_SIZE Then
+                                        sError = "Invalid server key size"
+                                        GoTo QH
+                                    End If
+                                    lPos = pvReadArray(baMessage, lPos, .ServerPublic, lBlockSize)
+                                lPos = pvReadEndOfBlock(baMessage, lPos, .BlocksStack)
+                            Else
+                                sError = "Invalid data size for server key"
+                                GoTo QH
+                            End If
                         End If
-                        lPos = lPos + lBlockSize
+                    Case TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS
+                        If lBlockSize <> 2 Then
+                            sError = "Invalid data size for supported versions"
+                            GoTo QH
+                        End If
+                        lPos = pvReadLong(baMessage, lPos, .ServerProtocol, Size:=2)
+                    Case TLS_EXTENSION_TYPE_COOKIE
+                        If bHelloRetryRequest Then
+                            lPos = pvReadArray(baMessage, lPos, .HelloRetryCookie, lBlockSize)
+                        Else
+                            sError = "Cookie not allowed outside HelloRetryRequest"
+                            GoTo QH
+                        End If
                     Case Else
                         lPos = lPos + lBlockSize
                     End Select
@@ -1166,7 +1232,6 @@ Private Function pvDeriveHandshakeSecrets(uCtx As UcsTlsContext, sError As Strin
         baDerivedSecret = pvHkdfExpandLabel(.DigestAlgo, baEarlySecret, "derived", baEmptyHash, .DigestSize)
         baSharedSecret = pvCryptoScalarMultiply(.KxAlgo, .ClientPrivate, .ServerPublic)
         .HandshakeSecret = pvHkdfExtract(.DigestAlgo, baDerivedSecret, baSharedSecret)
-        
         .ServerTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, "s hs traffic", baHandshakeHash, .DigestSize)
         .ServerTrafficKey = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
         .ServerTrafficIV = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "iv", EmptyByteArray, .IvSize)
@@ -1197,7 +1262,6 @@ Private Function pvDeriveApplicationSecrets(uCtx As UcsTlsContext, sError As Str
         '--- for ucsTlsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
         baDerivedSecret = pvHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, "derived", baEmptyHash, .DigestSize)
         .MasterSecret = pvHkdfExtract(.DigestAlgo, baDerivedSecret, EmptyByteArray(.DigestSize))
-        
         .ServerTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .MasterSecret, "s ap traffic", baHandshakeHash, .DigestSize)
         .ServerTrafficKey = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
         .ServerTrafficIV = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "iv", EmptyByteArray, .IvSize)
@@ -1849,7 +1913,7 @@ Private Function pvBCryptToKeyBlob(baKey() As Byte, Optional ByVal lSize As Long
         lMagic = BCRYPT_ECDH_PRIVATE_P256_MAGIC
         lPartSize = 32
     Else
-        Err.Raise vbObjectError, , "Unrecognized key size"
+        Err.Raise vbObjectError, "pvBCryptToKeyBlob", "Unrecognized key size"
     End If
     ReDim baRetVal(0 To 8 + lSize) As Byte
     Call CopyMemory(baRetVal(0), lMagic, 4)
@@ -1882,7 +1946,7 @@ Private Function pvBCryptFromKeyBlob(baBlob() As Byte, Optional ByVal lSize As L
         Debug.Assert lSize >= 8 + 3 * lPartSize
         Call CopyMemory(baRetVal(0), baBlob(8), 3 * lPartSize)
     Case Else
-        Err.Raise vbObjectError, , "Unknown BCrypt magic"
+        Err.Raise vbObjectError, "pvBCryptFromKeyBlob", "Unknown BCrypt magic"
     End Select
     pvBCryptFromKeyBlob = baRetVal
 End Function
