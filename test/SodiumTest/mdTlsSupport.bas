@@ -91,7 +91,7 @@ Private Const TLS_CLIENT_LEGACY_VERSION                 As Long = &H303
 Private Const TLS_HELLO_RANDOM_SIZE                     As Long = 32
 Private Const TLS_SECP256R1_PRIVATE_KEY_SIZE            As Long = 3 * 32
 Private Const TLS_SECP256R1_PUBLIC_KEY_SIZE             As Long = 1 + 2 * 32 '-- including the header
-Private Const TLS_SECP256K1_TAG_PUBKEY_UNCOMPRESSED     As Long = 4
+Private Const TLS_SECP256R1_TAG_PUBKEY_UNCOMPRESSED     As Long = 4
 Private Const BCRYPT_ECDH_PUBLIC_P256_MAGIC             As Long = &H314B4345
 Private Const BCRYPT_ECDH_PRIVATE_P256_MAGIC            As Long = &H324B4345
 
@@ -135,12 +135,13 @@ Private Const STR_SHA384_STATE          As String = "d89e05c15d9dbbcb07d57c362a2
 Private Const STR_HELLO_RETRY_RANDOM    As String = "cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c"
 Private Const STR_UNKNOWN_ALERT         As String = "Unknown (%1)"
 Private Const STR_FORMAT_ALERT          As String = """%1"" alert"
+Private Const LNG_SHA256_BLOCK_SIZE     As Long = 64
 Private Const LNG_SHA384_BLOCK_SIZE     As Long = 128
 Private Const LNG_SHA512_CTX_SIZE       As Long = 64 + 16 + 128
 Private Const LNG_SHA512_BLOCK_SIZE     As Long = 128
 Private Const LNG_SHA512_DIGEST_SIZE    As Long = 64
-Private Const LNG_LEGACY_AAD_SIZE       As Long = 13
-Private Const LNG_SHA256_BLOCK_SIZE     As Long = 64
+Private Const LNG_AAD_SIZE              As Long = 5     '--- size of Additional Authenticated Data
+Private Const LNG_LEGACY_AAD_SIZE       As Long = 13    '--- for TLS 1.2
 '--- errors
 Private Const ERR_CONNECTION_CLOSED     As String = "Connection closed"
 Private Const ERR_BCRYPTECDHP256KEYPAIR_FAILED As String = "pvBCryptEcdhP256KeyPair failed"
@@ -148,11 +149,11 @@ Private Const ERR_UNSUPPORTED_EX_GROUP  As String = "Unsupported exchange group 
 Private Const ERR_UNSUPPORTED_CIPHER_SUITE As String = "Unsupported cipher suite (%1)"
 Private Const ERR_ENCRYPTION_FAILED     As String = "Encryption failed"
 Private Const ERR_RECORD_TOO_BIG        As String = "Record size too big"
-Private Const ERR_DECRYPT_FAILED        As String = "Decrypt failed"
+Private Const ERR_DECRYPTION_FAILED     As String = "Decryption failed"
 Private Const ERR_FATAL_ALERT           As String = "Fatal alert"
-Private Const ERR_INVALID_STATE_APPDATA As String = "Invalid state for appdata content (%1)"
 Private Const ERR_UNEXPECTED_RECORD_TYPE As String = "Unexpected record type (%1)"
 Private Const ERR_UNEXPECTED_MSG_TYPE   As String = "Unexpected message type for %1 (%2)"
+Private Const ERR_UNEXPECTED_PROTOCOL   As String = "Unexpected protocol for %1 (%2)"
 Private Const ERR_SERVER_HANDSHAKE_FAILED As String = "Server Handshake verification failed"
 Private Const ERR_INVALID_STATE_HANDSHAKE As String = "Invalid state for handshake content (%1)"
 Private Const ERR_INVALID_SIZE_KEY_SHARE As String = "Invalid data size for key share"
@@ -541,19 +542,15 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Cipher Suites
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-                    If (.ClientFeatures And ucsTlsSupportTls12) <> 0 And .HelloRetryCipherSuite = 0 Then
+                    If (.ClientFeatures And ucsTlsSupportTls12) <> 0 Then
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, Size:=2)
                         lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
                     End If
                     If (.ClientFeatures And ucsTlsSupportTls13) <> 0 Then
-                        If .HelloRetryCipherSuite = 0 Or .HelloRetryCipherSuite = TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
-                        End If
-                        If .HelloRetryCipherSuite = 0 Or .HelloRetryCipherSuite = TLS_CIPHER_SUITE_AES_256_GCM_SHA384 Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
-                        End If
+                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
+                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
                     End If
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Legacy Compression Methods
@@ -745,7 +742,7 @@ Private Function pvBuildClientHandshakeFinished(uCtx As UcsTlsContext, baOutput(
             lPos = pvWriteReserved(baOutput, lPos, .TagSize)
         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
         baClientIV = pvArrayXor(.ClientTrafficIV, .ClientTrafficSeqNo)
-        If Not pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baOutput, lRecordPos, 5, baOutput, lMessagePos, lMessageSize) Then
+        If Not pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baOutput, lRecordPos, LNG_AAD_SIZE, baOutput, lMessagePos, lMessageSize) Then
             sError = ERR_ENCRYPTION_FAILED
             eAlertCode = uscTlsAlertInternalError
             GoTo QH
@@ -791,7 +788,7 @@ Private Function pvBuildClientApplicationData(uCtx As UcsTlsContext, baOutput() 
         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
         '--- encrypt message
         If .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
-            bResult = pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baOutput, lRecordPos, 5, baOutput, lMessagePos, lMessageSize)
+            bResult = pvCryptoEncrypt(.AeadAlgo, baClientIV, .ClientTrafficKey, baOutput, lRecordPos, LNG_AAD_SIZE, baOutput, lMessagePos, lMessageSize)
         ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
             ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
             lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
@@ -896,6 +893,7 @@ Private Function pvParseRecord(uCtx As UcsTlsContext, baInput() As Byte, ByVal l
     Dim lPos            As Long
     Dim lEnd            As Long
     Dim baAad()         As Byte
+    Dim bResult         As Byte
     
     With uCtx
     Do While lPos + 6 <= lSize
@@ -919,16 +917,24 @@ Private Function pvParseRecord(uCtx As UcsTlsContext, baInput() As Byte, ByVal l
                 lPos = lPos + lRecordSize
             Case TLS_CONTENT_TYPE_ALERT
                 lEnd = lPos + lRecordSize
-HandleAlertContent:
-                If .State = ucsTlsStatePostHandshake And .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
-                    pvPrepareLegacyDecryptParams uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baServerIV, baAad
-                    If Not pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAad, 0, UBound(baAad) + 1, baInput, lPos, lEnd - lPos + .TagSize) Then
-                        sError = ERR_DECRYPT_FAILED
-                        eAlertCode = uscTlsAlertDecryptError
+                If lRecordSize > 2 Then
+                    If .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
+                        '--- note: TLS_CONTENT_TYPE_ALERT encryption is tunneled through TLS_CONTENT_TYPE_APPDATA
+                        sError = ERR_RECORD_TOO_BIG
+                        eAlertCode = uscTlsAlertDecodeError
+                        GoTo QH
+                    ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
+                        pvPrepareLegacyDecryptParams uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baServerIV, baAad
+                        bResult = pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAad, 0, UBound(baAad) + 1, baInput, lPos, lEnd - lPos + .TagSize)
+                    End If
+                    If Not bResult Then
+                        sError = ERR_DECRYPTION_FAILED
+                        eAlertCode = uscTlsAlertBadRecordMac
                         GoTo QH
                     End If
                     .ServerTrafficSeqNo = .ServerTrafficSeqNo + 1
                 End If
+HandleAlertContent:
                 If lPos + 1 < lEnd Then
                     Select Case baInput(lPos)
                     Case TLS_ALERT_LEVEL_FATAL
@@ -943,19 +949,26 @@ HandleAlertContent:
                         End If
                     End Select
                 End If
-                '--- note: skip AEAD's authentication tag too
+                '--- note: skip AEAD's authentication tag
                 lPos = lRecordPos + lRecordSize + 5
             Case TLS_CONTENT_TYPE_HANDSHAKE
-                If .State = ucsTlsStateExpectServerFinish And .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
-                    pvPrepareLegacyDecryptParams uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baServerIV, baAad
-                    If Not pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAad, 0, UBound(baAad) + 1, baInput, lPos, lEnd - lPos + .TagSize) Then
-                        sError = ERR_DECRYPT_FAILED
-                        eAlertCode = uscTlsAlertDecryptError
+                lEnd = lPos + lRecordSize
+                If .State = ucsTlsStateExpectServerFinish Then
+                    If .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
+                        '--- note: ucsTlsStateExpectServerFinish is TLS 1.2 state only
+                        sError = Replace(Replace(ERR_UNEXPECTED_PROTOCOL, "%1", "ucsTlsStateExpectServerFinish"), "%2", .ServerProtocol)
+                        eAlertCode = uscTlsAlertInternalError
+                        GoTo QH
+                    ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
+                        pvPrepareLegacyDecryptParams uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baServerIV, baAad
+                        bResult = pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAad, 0, UBound(baAad) + 1, baInput, lPos, lEnd - lPos + .TagSize)
+                    End If
+                    If Not bResult Then
+                        sError = ERR_DECRYPTION_FAILED
+                        eAlertCode = uscTlsAlertBadRecordMac
                         GoTo QH
                     End If
                     .ServerTrafficSeqNo = .ServerTrafficSeqNo + 1
-                Else
-                    lEnd = lPos + lRecordSize
                 End If
 HandleHandshakeContent:
                 If .MessSize > 0 Then
@@ -979,17 +992,23 @@ HandleHandshakeContent:
                         .MessPos = 0
                     End If
                 End If
-                '--- note: skip zero padding too
+                '--- note: skip AEAD's authentication tag
                 lPos = lRecordPos + lRecordSize + 5
             Case TLS_CONTENT_TYPE_APPDATA
                 If .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
                     baServerIV = pvArrayXor(.ServerTrafficIV, .ServerTrafficSeqNo)
-                    If Not pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baInput, lRecordPos, 5, baInput, lPos, lRecordSize) Then
-                        sError = ERR_DECRYPT_FAILED
-                        eAlertCode = uscTlsAlertDecryptError
-                        GoTo QH
-                    End If
-                    .ServerTrafficSeqNo = .ServerTrafficSeqNo + 1
+                    bResult = pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baInput, lRecordPos, LNG_AAD_SIZE, baInput, lPos, lRecordSize)
+                ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
+                    pvPrepareLegacyDecryptParams uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baServerIV, baAad
+                    bResult = pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAad, 0, UBound(baAad) + 1, baInput, lPos, lEnd - lPos + .TagSize)
+                End If
+                If Not bResult Then
+                    sError = ERR_DECRYPTION_FAILED
+                    eAlertCode = uscTlsAlertBadRecordMac
+                    GoTo QH
+                End If
+                .ServerTrafficSeqNo = .ServerTrafficSeqNo + 1
+                If .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
                     lEnd = lPos + lRecordSize - .TagSize - 1
                     '--- trim zero padding at the end of decrypted record
                     Do While baInput(lEnd) = 0
@@ -1002,24 +1021,15 @@ HandleHandshakeContent:
                     Case TLS_CONTENT_TYPE_HANDSHAKE
                         GoTo HandleHandshakeContent
                     Case TLS_CONTENT_TYPE_APPDATA
-                        If .State < ucsTlsStatePostHandshake Then
-                            sError = Replace(ERR_INVALID_STATE_APPDATA, "%1", .State)
-                            eAlertCode = uscTlsAlertUnexpectedMessage
-                            GoTo QH
-                        End If
-                        .DecrPos = pvWriteBuffer(.DecrBuffer, .DecrPos, VarPtr(baInput(lPos)), lEnd - lPos)
-                    End Select
-                ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
-                    pvPrepareLegacyDecryptParams uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baServerIV, baAad
-                    If Not pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAad, 0, UBound(baAad) + 1, baInput, lPos, lEnd - lPos + .TagSize) Then
-                        sError = ERR_DECRYPT_FAILED
-                        eAlertCode = uscTlsAlertDecryptError
+                        '--- do nothing
+                    Case Else
+                        sError = Replace(ERR_UNEXPECTED_RECORD_TYPE, "%1", lRecordType)
+                        eAlertCode = uscTlsAlertHandshakeFailure
                         GoTo QH
-                    End If
-                    .ServerTrafficSeqNo = .ServerTrafficSeqNo + 1
-                    .DecrPos = pvWriteBuffer(.DecrBuffer, .DecrPos, VarPtr(baInput(lPos)), lEnd - lPos)
+                    End Select
                 End If
-                '--- note: skip zero padding too
+                .DecrPos = pvWriteBuffer(.DecrBuffer, .DecrPos, VarPtr(baInput(lPos)), lEnd - lPos)
+                '--- note: skip AEAD's authentication tag or zero padding
                 lPos = lRecordPos + lRecordSize + 5
             Case Else
                 sError = Replace(ERR_UNEXPECTED_RECORD_TYPE, "%1", lRecordType)
@@ -2071,7 +2081,7 @@ Private Function pvBCryptToKeyBlob(baKey() As Byte, Optional ByVal lSize As Long
         lSize = pvArraySize(baKey)
     End If
     If lSize = TLS_SECP256R1_PUBLIC_KEY_SIZE Then
-        Debug.Assert baKey(0) = TLS_SECP256K1_TAG_PUBKEY_UNCOMPRESSED
+        Debug.Assert baKey(0) = TLS_SECP256R1_TAG_PUBKEY_UNCOMPRESSED
         lMagic = BCRYPT_ECDH_PUBLIC_P256_MAGIC
         lPartSize = 32
         lPos = 1
@@ -2103,7 +2113,7 @@ Private Function pvBCryptFromKeyBlob(baBlob() As Byte, Optional ByVal lSize As L
         Debug.Assert lPartSize = 32
         ReDim baRetVal(0 To TLS_SECP256R1_PUBLIC_KEY_SIZE - 1) As Byte
         Debug.Assert lSize >= 8 + 2 * lPartSize
-        baRetVal(0) = TLS_SECP256K1_TAG_PUBKEY_UNCOMPRESSED
+        baRetVal(0) = TLS_SECP256R1_TAG_PUBKEY_UNCOMPRESSED
         Call CopyMemory(baRetVal(1), baBlob(8), 2 * lPartSize)
     Case BCRYPT_ECDH_PRIVATE_P256_MAGIC
         Call CopyMemory(lPartSize, baBlob(4), 4)
