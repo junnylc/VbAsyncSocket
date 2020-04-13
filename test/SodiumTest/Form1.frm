@@ -40,7 +40,7 @@ Begin VB.Form Form1
       Height          =   348
       Left            =   1260
       TabIndex        =   0
-      Text            =   "localhost:44330"
+      Text            =   "tls13.1d.pw"
       Top             =   168
       Width           =   7068
    End
@@ -94,6 +94,8 @@ Private Type UcsParsedUrl
     Host            As String
     Port            As Long
     Path            As String
+    QueryString     As String
+    Anchor          As String
     User            As String
     Pass            As String
 End Type
@@ -195,7 +197,7 @@ InLoop:
         Loop While Not bComplete
     End If
     '--- send TLS application data and wait for recv
-    sRequest = "GET " & uRemote.Path & " HTTP/1.1" & vbCrLf & _
+    sRequest = "GET " & uRemote.Path & uRemote.QueryString & " HTTP/1.1" & vbCrLf & _
                "Connection: keep-alive" & vbCrLf & _
                "Host: " & uRemote.Host & vbCrLf & vbCrLf
     lSize = 0
@@ -229,15 +231,36 @@ InLoop:
             sError = TlsGetLastError(uCtx)
             GoTo QH
         End If
+        If TlsIsClosed(uCtx) Then
+            Set m_oSocket = Nothing
+            Exit Do
+        End If
     Loop
     HttpsRequest = Replace(Replace(StrConv(baDecr, vbUnicode), vbCr, vbNullString), vbLf, vbCrLf)
     lSize = InStr(1, HttpsRequest, vbCrLf & vbCrLf)
-    If lSize = 0 Then
-        Set m_oSocket = Nothing
-    ElseIf InStr(1, Left$(HttpsRequest, lSize), "Connection: close", vbTextCompare) Then
+    If Not m_oSocket Is Nothing Then
+        If lSize > 0 Then
+            If InStr(1, Left$(HttpsRequest, lSize), "Connection: close", vbTextCompare) = 0 Then
+                '--- keep TLS session
+                GoTo QH
+            End If
+        End If
+        lSize = 0
+        If Not TlsShutdown(uCtx, baSend, lSize) Then
+            sError = TlsGetLastError(uCtx)
+            GoTo QH
+        End If
+        If lSize > 0 Then
+            pvAppendLogText txtResult, String$(2, "<") & " Send " & lSize & vbCrLf & DesignDumpMemory(VarPtr(baSend(0)), lSize)
+            If Not m_oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
+                sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
+                GoTo QH
+            End If
+        End If
         Set m_oSocket = Nothing
     End If
 QH:
+'    HttpsRequest = vbNullString
     If LenB(sError) <> 0 Then
         Set m_oSocket = Nothing
     End If
@@ -246,7 +269,7 @@ End Function
 Private Function ParseUrl(sUrl As String, uParsed As UcsParsedUrl, Optional DefProtocol As String) As Boolean
     With CreateObject("VBScript.RegExp")
         .Global = True
-        .Pattern = "^(?:(.*)://)?(?:(?:([^:]*):)?([^@]*)@)?([A-Za-z0-9\-\.]+)(:[0-9]+)?(.*)$"
+        .Pattern = "^(?:(.*)://)?(?:(?:([^:]*):)?([^@]*)@)?([A-Za-z0-9\-\.]+)(:[0-9]+)?(/[^?#]*)?(\?[^#]*)?(#.*)?$"
         With .Execute(sUrl)
             If .Count > 0 Then
                 With .Item(0).SubMatches
@@ -273,6 +296,8 @@ Private Function ParseUrl(sUrl As String, uParsed As UcsParsedUrl, Optional DefP
                     If LenB(uParsed.Path) = 0 Then
                         uParsed.Path = "/"
                     End If
+                    uParsed.QueryString = .Item(6)
+                    uParsed.Anchor = .Item(7)
                 End With
                 ParseUrl = True
             End If
