@@ -112,6 +112,7 @@ Private Declare Function crypto_hash_sha512_update Lib "libsodium" (lpState As A
 Private Declare Function crypto_hash_sha512_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
 Private Declare Function crypto_aead_chacha20poly1305_ietf_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
 Private Declare Function crypto_aead_chacha20poly1305_ietf_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+Private Declare Function crypto_aead_aes256gcm_is_available Lib "libsodium" () As Long
 Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
 Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
 '--- BCrypt
@@ -545,15 +546,23 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Cipher Suites
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-                    If (.ClientFeatures And ucsTlsSupportTls12) <> 0 Then
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, Size:=2)
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
+                    If (.ClientFeatures And ucsTlsSupportTls12) <> 0 And pvCryptoIsSupported(ucsTlsAlgoKeySecp256r1) Then
+                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, Size:=2)
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
+                        End If
+                        If pvCryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
+                        End If
                     End If
-                    If (.ClientFeatures And ucsTlsSupportTls13) <> 0 Then
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
-                        lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
+                    If (.ClientFeatures And ucsTlsSupportTls13) <> 0 And pvCryptoIsSupported(ucsTlsAlgoKeyX25519) Then
+                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
+                        End If
+                        If pvCryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
+                        End If
                     End If
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Legacy Compression Methods
@@ -578,10 +587,12 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                     lPos = pvWriteLong(baOutput, lPos, TLS_EXTENSION_TYPE_SUPPORTED_GROUPS, Size:=2)
                     lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
                         lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-                            If .HelloRetryExchangeGroup = 0 Or .HelloRetryExchangeGroup = TLS_GROUP_X25519 Then
-                                lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_X25519, Size:=2)
+                            If pvCryptoIsSupported(ucsTlsAlgoKeyX25519) Then
+                                If .HelloRetryExchangeGroup = 0 Or .HelloRetryExchangeGroup = TLS_GROUP_X25519 Then
+                                    lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_X25519, Size:=2)
+                                End If
                             End If
-                            If (.ClientFeatures And ucsTlsSupportTls12) <> 0 Then
+                            If (.ClientFeatures And ucsTlsSupportTls12) <> 0 And pvCryptoIsSupported(ucsTlsAlgoKeySecp256r1) Then
                                 If .HelloRetryExchangeGroup = 0 Or .HelloRetryExchangeGroup = TLS_GROUP_SECP256R1 Then
                                     lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_SECP256R1, Size:=2)
                                 End If
@@ -1600,6 +1611,14 @@ Private Function pvKdfLegacyTls1Prf(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, b
 End Function
 
 '= crypto wrappers =======================================================
+
+Private Function pvCryptoIsSupported(eAead As UcsTlsCryptoAlgorithmsEnum) As Boolean
+    If eAead = ucsTlsAlgoAeadAes256 Then
+        pvCryptoIsSupported = (crypto_aead_aes256gcm_is_available() <> 0)
+    Else
+        pvCryptoIsSupported = True
+    End If
+End Function
 
 Private Function pvCryptoDecrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baServerIV() As Byte, baServerKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
     Debug.Assert pvArraySize(baBuffer) >= lPos + lSize
