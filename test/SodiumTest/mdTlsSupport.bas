@@ -305,7 +305,7 @@ EH:
     Resume QH
 End Function
 
-Public Function TlsHandshake(uCtx As UcsTlsContext, baInput() As Byte, ByVal lSize As Long, baOutput() As Byte, lPos As Long, bComplete As Boolean) As Boolean
+Public Function TlsHandshake(uCtx As UcsTlsContext, baInput() As Byte, ByVal lSize As Long, baOutput() As Byte, lPos As Long) As Boolean
     On Error GoTo EH
     With uCtx
         If .State = ucsTlsStateClosed Then
@@ -327,7 +327,6 @@ Public Function TlsHandshake(uCtx As UcsTlsContext, baInput() As Byte, ByVal lSi
                 GoTo QH
             End If
         End If
-        bComplete = (.State >= ucsTlsStatePostHandshake)
         '--- success
         TlsHandshake = True
 QH:
@@ -408,7 +407,7 @@ Public Function TlsShutdown(uCtx As UcsTlsContext, baOutput() As Byte, lPos As L
         pvSetLastError uCtx, vbNullString
         '--- swap-in
         pvArraySwap .SendBuffer, .SendPos, baOutput, lPos
-        .SendPos = pvBuildAlert(uCtx, .SendBuffer, .SendPos, uscTlsAlertCloseNotify, TLS_ALERT_LEVEL_WARNING, .LastError, .LastAlertCode)
+        .SendPos = pvBuildClientAlert(uCtx, .SendBuffer, .SendPos, uscTlsAlertCloseNotify, TLS_ALERT_LEVEL_WARNING, .LastError, .LastAlertCode)
         If LenB(.LastError) <> 0 Then
             pvSetLastError uCtx, .LastError, .LastAlertCode
             GoTo QH
@@ -428,6 +427,10 @@ End Function
 
 Public Function TlsIsClosed(uCtx As UcsTlsContext) As Boolean
     TlsIsClosed = (uCtx.State = ucsTlsStateClosed)
+End Function
+
+Public Function TlsIsReady(uCtx As UcsTlsContext) As Boolean
+    TlsIsReady = (uCtx.State = ucsTlsStatePostHandshake)
 End Function
 
 Public Function TlsGetLastError(uCtx As UcsTlsContext) As String
@@ -809,7 +812,7 @@ Private Function pvBuildClientApplicationData(uCtx As UcsTlsContext, baOutput() 
 QH:
 End Function
 
-Private Function pvBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, ByVal eAlertDesc As UcsTlsAlertDescriptionsEnum, ByVal lAlertLevel As Long, Optional sError As String, Optional eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
+Private Function pvBuildClientAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, ByVal eAlertDesc As UcsTlsAlertDescriptionsEnum, ByVal lAlertLevel As Long, Optional sError As String, Optional eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
     Dim lRecordPos      As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
@@ -818,6 +821,15 @@ Private Function pvBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVal l
     Dim lAadPos         As Long
     
     With uCtx
+        '--- for TLS 1.3 -> tunnel alert through application data encryption
+        If .State = ucsTlsStatePostHandshake And .ServerProtocol = TLS_PROTOCOL_VERSION_TLS13_FINAL Then
+            ReDim baClientIV(0 To 3) As Byte
+            baClientIV(0) = eAlertDesc
+            baClientIV(1) = lAlertLevel
+            baClientIV(1) = TLS_CONTENT_TYPE_ALERT
+            pvBuildClientAlert = pvBuildClientApplicationData(uCtx, baOutput, lPos, baClientIV, UBound(baClientIV) + 1, sError, eAlertCode)
+            GoTo QH
+        End If
         lRecordPos = lPos
         '--- Record Header
         lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_ALERT)
@@ -857,7 +869,7 @@ Private Function pvBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVal l
             .ClientTrafficSeqNo = .ClientTrafficSeqNo + 1
         End If
     End With
-    pvBuildAlert = lPos
+    pvBuildClientAlert = lPos
 QH:
 End Function
 
@@ -926,6 +938,8 @@ Private Function pvParseRecord(uCtx As UcsTlsContext, baInput() As Byte, ByVal l
                     ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
                         pvPrepareLegacyDecryptParams uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baServerIV, baAad
                         bResult = pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAad, 0, UBound(baAad) + 1, baInput, lPos, lEnd - lPos + .TagSize)
+                    Else
+                        bResult = False
                     End If
                     If Not bResult Then
                         sError = ERR_DECRYPTION_FAILED
@@ -962,6 +976,8 @@ HandleAlertContent:
                     ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
                         pvPrepareLegacyDecryptParams uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baServerIV, baAad
                         bResult = pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAad, 0, UBound(baAad) + 1, baInput, lPos, lEnd - lPos + .TagSize)
+                    Else
+                        bResult = False
                     End If
                     If Not bResult Then
                         sError = ERR_DECRYPTION_FAILED
@@ -1001,6 +1017,8 @@ HandleHandshakeContent:
                 ElseIf .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
                     pvPrepareLegacyDecryptParams uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baServerIV, baAad
                     bResult = pvCryptoDecrypt(.AeadAlgo, baServerIV, .ServerTrafficKey, baAad, 0, UBound(baAad) + 1, baInput, lPos, lEnd - lPos + .TagSize)
+                Else
+                    bResult = False
                 End If
                 If Not bResult Then
                     sError = ERR_DECRYPTION_FAILED
@@ -1371,7 +1389,7 @@ Private Sub pvSetLastError(uCtx As UcsTlsContext, sError As String, Optional ByV
             Set .BlocksStack = Nothing
         Else
             If AlertDesc >= 0 Then
-                .SendPos = pvBuildAlert(uCtx, .SendBuffer, .SendPos, AlertDesc, TLS_ALERT_LEVEL_FATAL)
+                .SendPos = pvBuildClientAlert(uCtx, .SendBuffer, .SendPos, AlertDesc, TLS_ALERT_LEVEL_FATAL)
             End If
             .State = ucsTlsStateClosed
         End If

@@ -158,7 +158,6 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
     Dim sRequest        As String
     Dim baSend()        As Byte
     Dim lSize           As Long
-    Dim bComplete       As Boolean
     Dim baDecr()        As Byte
     Dim dblTimer        As Double
     
@@ -183,7 +182,7 @@ InLoop:
                 pvAppendLogText txtResult, String$(2, ">") & " Recv " & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
             End If
             lSize = 0
-            If Not TlsHandshake(uCtx, baRecv, -1, baSend, lSize, bComplete) Then
+            If Not TlsHandshake(uCtx, baRecv, -1, baSend, lSize) Then
                 sError = TlsGetLastError(uCtx)
                 GoTo QH
             End If
@@ -194,7 +193,14 @@ InLoop:
                     GoTo QH
                 End If
             End If
-        Loop While Not bComplete
+            If LenB(sError) <> 0 Then
+                GoTo QH
+            End If
+            If TlsIsClosed(uCtx) Then
+                sError = "Unexpected TLS session close"
+                GoTo QH
+            End If
+        Loop While Not TlsIsReady(uCtx)
     End If
     '--- send TLS application data and wait for recv
     sRequest = "GET " & uRemote.Path & uRemote.QueryString & " HTTP/1.1" & vbCrLf & _
