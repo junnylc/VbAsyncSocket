@@ -29,8 +29,11 @@ Public Function DesignDumpMemory(ByVal lPtr As Long, ByVal lSize As Long) As Str
         Else
             sHex = sHex & "   "
         End If
+        If ((lIdx + 1) Mod 4) = 0 Then
+            sHex = sHex & " "
+        End If
         If ((lIdx + 1) Mod 16) = 0 Then
-            aResult(lIdx \ 16) = Right$("000" & Hex$(lIdx - 15), 4) & " - " & sHex & "  " & sChar
+            aResult(lIdx \ 16) = Right$("000" & Hex$(lIdx - 15), 4) & " - " & sHex & sChar
             sHex = vbNullString
             sChar = vbNullString
         End If
