@@ -13,6 +13,9 @@ Attribute VB_Name = "mdTlsSupport"
 Option Explicit
 DefObj A-Z
 
+#Const ImplUseLibSodium = False
+#Const ImplUseBCrypt = False
+
 '=========================================================================
 ' API
 '=========================================================================
@@ -89,17 +92,31 @@ Private Const TLS_MAX_ENCRYPTED_RECORD_SIZE             As Long = (16384 + 256)
 Private Const TLS_RECORD_VERSION                        As Long = TLS_PROTOCOL_VERSION_TLS12 '--- always legacy version
 Private Const TLS_CLIENT_LEGACY_VERSION                 As Long = &H303
 Private Const TLS_HELLO_RANDOM_SIZE                     As Long = 32
-Private Const TLS_SECP256R1_PRIVATE_KEY_SIZE            As Long = 3 * 32
-Private Const TLS_SECP256R1_PUBLIC_KEY_SIZE             As Long = 1 + 2 * 32 '-- including the header
-Private Const TLS_SECP256R1_TAG_PUBKEY_UNCOMPRESSED     As Long = 4
-Private Const BCRYPT_ECDH_PUBLIC_P256_MAGIC             As Long = &H314B4345
-Private Const BCRYPT_ECDH_PRIVATE_P256_MAGIC            As Long = &H324B4345
+#If ImplUseBCrypt Then
+    Private Const TLS_SECP256R1_PRIVATE_KEY_SIZE        As Long = 3 * 32
+    Private Const TLS_SECP256R1_PUBLIC_KEY_SIZE         As Long = 1 + 2 * 32 '-- including the header
+    Private Const TLS_SECP256R1_TAG_PUBKEY_UNCOMPRESSED As Long = 4
+    Private Const BCRYPT_ECDH_PUBLIC_P256_MAGIC         As Long = &H314B4345
+    Private Const BCRYPT_ECDH_PRIVATE_P256_MAGIC        As Long = &H324B4345
+#Else
+    Private Const TLS_SECP256R1_PRIVATE_KEY_SIZE        As Long = 32
+    Private Const TLS_SECP256R1_PUBLIC_KEY_SIZE         As Long = 1 + 32 '-- 1 byte tag
+#End If
+'--- for CryptAcquireContext
+Private Const PROV_RSA_FULL                             As Long = 1
+Private Const CRYPT_VERIFYCONTEXT                       As Long = &HF0000000
 
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Sub FillMemory Lib "kernel32" Alias "RtlFillMemory" (Destination As Any, ByVal Length As Long, ByVal Fill As Byte)
 Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As Long
 Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal ucb As Long) As Long
+Private Declare Function GetModuleHandle Lib "kernel32" Alias "GetModuleHandleA" (ByVal lpModuleName As String) As Long
+Private Declare Function LoadLibrary Lib "kernel32" Alias "LoadLibraryA" (ByVal lpLibFileName As String) As Long
+Private Declare Function CryptAcquireContext Lib "advapi32" Alias "CryptAcquireContextW" (phProv As Long, ByVal pszContainer As Long, ByVal pszProvider As Long, ByVal dwProvType As Long, ByVal dwFlags As Long) As Long
+Private Declare Function CryptReleaseContext Lib "advapi32" (ByVal hProv As Long, ByVal dwFlags As Long) As Long
+Private Declare Function CryptGenRandom Lib "advapi32" (ByVal hProv As Long, ByVal dwLen As Long, ByVal pbBuffer As Long) As Long
 '--- libsodium
+Private Declare Function sodium_init Lib "libsodium" () As Long
 Private Declare Function randombytes_buf Lib "libsodium" (lpOut As Any, ByVal lSize As Long) As Long
 Private Declare Function crypto_scalarmult_curve25519 Lib "libsodium" (lpOut As Any, lpConstN As Any, lpConstP As Any) As Long
 Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpConstN As Any) As Long
@@ -116,16 +133,18 @@ Private Declare Function crypto_aead_aes256gcm_is_available Lib "libsodium" () A
 Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
 Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
 '--- BCrypt
-Private Declare Function BCryptOpenAlgorithmProvider Lib "bcrypt" (ByRef hAlgorithm As Long, ByVal pszAlgId As Long, ByVal pszImplementation As Long, ByVal dwFlags As Long) As Long
-Private Declare Function BCryptCloseAlgorithmProvider Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal dwFlags As Long) As Long
-Private Declare Function BCryptImportKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, ByRef hKey As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
-Private Declare Function BCryptExportKey Lib "bcrypt" (ByVal hKey As Long, ByVal hExportKey As Long, ByVal pszBlobType As Long, ByVal pbOutput As Long, ByVal cbOutput As Long, ByRef cbResult As Long, ByVal dwFlags As Long) As Long
-Private Declare Function BCryptDestroyKey Lib "bcrypt" (ByVal hKey As Long) As Long
-Private Declare Function BCryptSecretAgreement Lib "bcrypt" (ByVal hPrivKey As Long, ByVal hPubKey As Long, ByRef phSecret As Long, ByVal dwFlags As Long) As Long
-Private Declare Function BCryptDestroySecret Lib "bcrypt" (ByVal hSecret As Long) As Long
-Private Declare Function BCryptDeriveKey Lib "bcrypt" (ByVal hSharedSecret As Long, ByVal pwszKDF As Long, ByVal pParameterList As Long, ByVal pbDerivedKey As Long, ByVal cbDerivedKey As Long, ByRef pcbResult As Long, ByVal dwFlags As Long) As Long
-Private Declare Function BCryptGenerateKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByRef hKey As Long, ByVal dwLength As Long, ByVal dwFlags As Long) As Long
-Private Declare Function BCryptFinalizeKeyPair Lib "bcrypt" (ByVal hKey As Long, ByVal dwFlags As Long) As Long
+#If ImplUseBCrypt Then
+    Private Declare Function BCryptOpenAlgorithmProvider Lib "bcrypt" (ByRef hAlgorithm As Long, ByVal pszAlgId As Long, ByVal pszImplementation As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptCloseAlgorithmProvider Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptImportKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, ByRef hKey As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptExportKey Lib "bcrypt" (ByVal hKey As Long, ByVal hExportKey As Long, ByVal pszBlobType As Long, ByVal pbOutput As Long, ByVal cbOutput As Long, ByRef cbResult As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptDestroyKey Lib "bcrypt" (ByVal hKey As Long) As Long
+    Private Declare Function BCryptSecretAgreement Lib "bcrypt" (ByVal hPrivKey As Long, ByVal hPubKey As Long, ByRef phSecret As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptDestroySecret Lib "bcrypt" (ByVal hSecret As Long) As Long
+    Private Declare Function BCryptDeriveKey Lib "bcrypt" (ByVal hSharedSecret As Long, ByVal pwszKDF As Long, ByVal pParameterList As Long, ByVal pbDerivedKey As Long, ByVal cbDerivedKey As Long, ByRef pcbResult As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptGenerateKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByRef hKey As Long, ByVal dwLength As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptFinalizeKeyPair Lib "bcrypt" (ByVal hKey As Long, ByVal dwFlags As Long) As Long
+#End If
 
 '=========================================================================
 ' Constants and member variables
@@ -145,7 +164,7 @@ Private Const LNG_AAD_SIZE              As Long = 5     '--- size of Additional 
 Private Const LNG_LEGACY_AAD_SIZE       As Long = 13    '--- for TLS 1.2
 '--- errors
 Private Const ERR_CONNECTION_CLOSED     As String = "Connection closed"
-Private Const ERR_BCRYPTECDHP256KEYPAIR_FAILED As String = "pvBCryptEcdhP256KeyPair failed"
+Private Const ERR_SECP256R1_KEYPAIR_FAILED As String = "Failed generating key pair (secp256r1)"
 Private Const ERR_UNSUPPORTED_EX_GROUP  As String = "Unsupported exchange group (%1)"
 Private Const ERR_UNSUPPORTED_CIPHER_SUITE As String = "Unsupported cipher suite (%1)"
 Private Const ERR_ENCRYPTION_FAILED     As String = "Encryption failed"
@@ -218,62 +237,62 @@ End Enum
 
 Public Type UcsTlsContext
     '--- config
-    TargetHost                  As String
-    ClientFeatures              As UcsTlsClientFeaturesEnum
-    ResumeSessionID()           As Byte
-    ClientRandom()              As Byte
-    RandomSize                  As Long
+    TargetHost          As String
+    ClientFeatures      As UcsTlsClientFeaturesEnum
+    ResumeSessionID()   As Byte
+    ClientRandom()      As Byte
+    RandomSize          As Long
     '--- state
-    State                       As UcsTlsStatesEnum
-    LastError                   As String
-    LastAlertCode               As UcsTlsAlertDescriptionsEnum
-    BlocksStack                 As Collection
+    State               As UcsTlsStatesEnum
+    LastError           As String
+    LastAlertCode       As UcsTlsAlertDescriptionsEnum
+    BlocksStack         As Collection
     '--- hello retry request
-    HelloRetryCipherSuite       As Long
-    HelloRetryExchangeGroup     As Long
-    HelloRetryCookie()          As Byte
+    HelloRetryCipherSuite As Long
+    HelloRetryExchangeGroup As Long
+    HelloRetryCookie()  As Byte
     '--- server handshake
-    ServerProtocol              As Long
-    ServerRandom()              As Byte
-    ServerPublic()              As Byte
-    ServerCertificate()         As Byte
-    ServerSessionID()           As Byte
+    ServerProtocol      As Long
+    ServerRandom()      As Byte
+    ServerPublic()      As Byte
+    ServerCertificate() As Byte
+    ServerSessionID()   As Byte
     '--- crypto settings
-    ExchangeGroup               As Long
-    ExchangeAlgo                As UcsTlsCryptoAlgorithmsEnum
-    ClientPrivate()             As Byte
-    ClientPublic()              As Byte
-    CipherSuite                 As Long
-    AeadAlgo                    As UcsTlsCryptoAlgorithmsEnum
-    MacSize                     As Long '--- always 0 (not used w/ AEAD ciphers)
-    KeySize                     As Long
-    IvSize                      As Long
-    IvDynamicSize               As Long '--- only for AES in TLS 1.2
-    TagSize                     As Long
-    DigestAlgo                  As UcsTlsCryptoAlgorithmsEnum
-    DigestSize                  As Long
+    ExchangeGroup       As Long
+    ExchangeAlgo        As UcsTlsCryptoAlgorithmsEnum
+    ClientPrivate()     As Byte
+    ClientPublic()      As Byte
+    CipherSuite         As Long
+    AeadAlgo            As UcsTlsCryptoAlgorithmsEnum
+    MacSize             As Long '--- always 0 (not used w/ AEAD ciphers)
+    KeySize             As Long
+    IvSize              As Long
+    IvDynamicSize       As Long '--- only for AES in TLS 1.2
+    TagSize             As Long
+    DigestAlgo          As UcsTlsCryptoAlgorithmsEnum
+    DigestSize          As Long
     '--- bulk secrets
-    HandshakeMessages()         As Byte '--- ToDo: reduce to HandshakeHash only
-    HandshakeSecret()           As Byte
-    MasterSecret()              As Byte
-    ServerTrafficSecret()       As Byte
-    ServerTrafficKey()          As Byte
-    ServerTrafficIV()           As Byte
-    ServerTrafficSeqNo          As Long
-    ClientTrafficSecret()       As Byte
-    ClientTrafficKey()          As Byte
-    ClientTrafficIV()           As Byte
-    ClientTrafficSeqNo          As Long
+    HandshakeMessages() As Byte '--- ToDo: reduce to HandshakeHash only
+    HandshakeSecret()   As Byte
+    MasterSecret()      As Byte
+    ServerTrafficSecret() As Byte
+    ServerTrafficKey()  As Byte
+    ServerTrafficIV()   As Byte
+    ServerTrafficSeqNo  As Long
+    ClientTrafficSecret() As Byte
+    ClientTrafficKey()  As Byte
+    ClientTrafficIV()   As Byte
+    ClientTrafficSeqNo  As Long
     '--- I/O buffers
-    RecvBuffer()                As Byte
-    RecvPos                     As Long
-    DecrBuffer()                As Byte
-    DecrPos                     As Long
-    SendBuffer()                As Byte
-    SendPos                     As Long
-    MessBuffer()                As Byte
-    MessPos                     As Long
-    MessSize                    As Long
+    RecvBuffer()        As Byte
+    RecvPos             As Long
+    DecrBuffer()        As Byte
+    DecrPos             As Long
+    SendBuffer()        As Byte
+    SendPos             As Long
+    MessBuffer()        As Byte
+    MessPos             As Long
+    MessSize            As Long
 End Type
 
 '=========================================================================
@@ -286,6 +305,15 @@ Public Function TlsInitClient( _
     Dim uCtx            As UcsTlsContext
     
     On Error GoTo EH
+    #If ImplUseLibSodium Or True Then
+        If GetModuleHandle("libsodium.dll") = 0 Then
+            Call LoadLibrary(App.Path & "\libsodium.dll")
+            Call sodium_init
+        End If
+    #End If
+    If Not EccInit() Then
+        GoTo QH
+    End If
     With uCtx
         pvSetLastError uCtx, vbNullString
         .State = ucsTlsStateHandshakeStart
@@ -461,6 +489,8 @@ End Function
 '= private ===============================================================
 
 Private Function pvSetupKeyExchangeGroup(uCtx As UcsTlsContext, ByVal lExchangeGroup As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
+    Dim bResult         As Boolean
+    
     With uCtx
         If .ExchangeGroup <> lExchangeGroup Then
             .ExchangeGroup = lExchangeGroup
@@ -472,11 +502,20 @@ Private Function pvSetupKeyExchangeGroup(uCtx As UcsTlsContext, ByVal lExchangeG
                 .ClientPrivate(0) = .ClientPrivate(0) And 248
                 .ClientPrivate(UBound(.ClientPrivate)) = (.ClientPrivate(UBound(.ClientPrivate)) And 127) Or 64
                 ReDim .ClientPublic(0 To TLS_X25519_KEY_SIZE - 1) As Byte
-                Call crypto_scalarmult_curve25519_base(.ClientPublic(0), .ClientPrivate(0))
+                #If ImplUseLibSodium Then
+                    Call crypto_scalarmult_curve25519_base(.ClientPublic(0), .ClientPrivate(0))
+                #Else
+                    EccCurve25519MakeKey .ClientPrivate, .ClientPublic
+                #End If
             Case TLS_GROUP_SECP256R1
                 .ExchangeAlgo = ucsTlsAlgoKeySecp256r1
-                If Not pvBCryptEcdhP256KeyPair(.ClientPrivate, .ClientPublic) Then
-                    sError = ERR_BCRYPTECDHP256KEYPAIR_FAILED
+                #If ImplUseBCrypt Then
+                    bResult = pvBCryptEcdhP256KeyPair(.ClientPrivate, .ClientPublic)
+                #Else
+                    bResult = EccSecp256r1MakeKey(.ClientPrivate, .ClientPublic)
+                #End If
+                If Not bResult Then
+                    sError = ERR_SECP256R1_KEYPAIR_FAILED
                     eAlertCode = uscTlsAlertInternalError
                     GoTo QH
                 End If
@@ -1429,7 +1468,7 @@ Private Function pvDeriveHandshakeSecrets(uCtx As UcsTlsContext, sError As Strin
         baEmptyHash = pvCryptoHash(.DigestAlgo, EmptyByteArray, 0)
         '--- for ucsTlsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
         baDerivedSecret = pvHkdfExpandLabel(.DigestAlgo, baEarlySecret, "derived", baEmptyHash, .DigestSize)
-        baSharedSecret = pvCryptoScalarMultiply(.ExchangeAlgo, .ClientPrivate, .ServerPublic)
+        baSharedSecret = pvCryptoSharedSecret(.ExchangeAlgo, .ClientPrivate, .ServerPublic)
         .HandshakeSecret = pvHkdfExtract(.DigestAlgo, baDerivedSecret, baSharedSecret)
         .ServerTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, "s hs traffic", baHandshakeHash, .DigestSize)
         .ServerTrafficKey = pvHkdfExpandLabel(.DigestAlgo, .ServerTrafficSecret, "key", EmptyByteArray, .KeySize)
@@ -1561,7 +1600,7 @@ Private Function pvDeriveLegacySecrets(uCtx As UcsTlsContext, sError As String, 
         End If
         Debug.Assert pvArraySize(.ClientRandom) = TLS_HELLO_RANDOM_SIZE
         Debug.Assert pvArraySize(.ServerRandom) = TLS_HELLO_RANDOM_SIZE
-        baPreMasterSecret = pvCryptoScalarMultiply(.ExchangeAlgo, .ClientPrivate, .ServerPublic)
+        baPreMasterSecret = pvCryptoSharedSecret(.ExchangeAlgo, .ClientPrivate, .ServerPublic)
         ReDim baRandom(0 To pvArraySize(.ClientRandom) + pvArraySize(.ServerRandom) - 1) As Byte
         lPos = pvWriteArray(baRandom, 0, .ClientRandom)
         lPos = pvWriteArray(baRandom, lPos, .ServerRandom)
@@ -1705,6 +1744,8 @@ Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey()
     Static baCtx(0 To LNG_SHA512_CTX_SIZE - 1) As Byte
     Static baFinal(0 To LNG_SHA512_DIGEST_SIZE - 1) As Byte
     Static baPad(0 To LNG_SHA512_BLOCK_SIZE - 1) As Byte
+    Const LNG_INNER_PAD As Long = &H36
+    Const LNG_OUTER_PAD As Long = &H5C
     Dim baRetVal()      As Byte
     Dim lPtr            As Long
     Dim lIdx            As Long
@@ -1722,18 +1763,18 @@ Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey()
         Debug.Assert pvArraySize(baKey) <= LNG_SHA256_BLOCK_SIZE
         '-- inner hash
         Call crypto_hash_sha256_init(baCtx(0))
-        Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, &H36)
+        Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, LNG_INNER_PAD)
         For lIdx = 0 To UBound(baKey)
-            baPad(lIdx) = baKey(lIdx) Xor &H36
+            baPad(lIdx) = baKey(lIdx) Xor LNG_INNER_PAD
         Next
         Call crypto_hash_sha256_update(baCtx(0), baPad(0), LNG_SHA256_BLOCK_SIZE)
         Call crypto_hash_sha256_update(baCtx(0), ByVal lPtr, Size)
         Call crypto_hash_sha256_final(baCtx(0), baFinal(0))
         '-- outer hash
         Call crypto_hash_sha256_init(baCtx(0))
-        Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, &H5C)
+        Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, LNG_OUTER_PAD)
         For lIdx = 0 To UBound(baKey)
-            baPad(lIdx) = baKey(lIdx) Xor &H5C
+            baPad(lIdx) = baKey(lIdx) Xor LNG_OUTER_PAD
         Next
         Call crypto_hash_sha256_update(baCtx(0), baPad(0), LNG_SHA256_BLOCK_SIZE)
         Call crypto_hash_sha256_update(baCtx(0), baFinal(0), TLS_SHA256_DIGEST_SIZE)
@@ -1743,18 +1784,18 @@ Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey()
         Debug.Assert pvArraySize(baKey) <= LNG_SHA384_BLOCK_SIZE
         '-- inner hash
         pvCryptoInitSha384 baCtx
-        Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, &H36)
+        Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_INNER_PAD)
         For lIdx = 0 To UBound(baKey)
-            baPad(lIdx) = baKey(lIdx) Xor &H36
+            baPad(lIdx) = baKey(lIdx) Xor LNG_INNER_PAD
         Next
         Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
         Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
         Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
         '-- outer hash
         pvCryptoInitSha384 baCtx
-        Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, &H5C)
+        Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_OUTER_PAD)
         For lIdx = 0 To UBound(baKey)
-            baPad(lIdx) = baKey(lIdx) Xor &H5C
+            baPad(lIdx) = baKey(lIdx) Xor LNG_OUTER_PAD
         Next
         Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
         Call crypto_hash_sha512_update(baCtx(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
@@ -1767,23 +1808,31 @@ Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey()
     pvCryptoHmac = baRetVal
 End Function
 
-Private Function pvCryptoScalarMultiply(ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum, baPriv() As Byte, baPub() As Byte) As Byte()
+Private Function pvCryptoSharedSecret(ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum, baPriv() As Byte, baPub() As Byte) As Byte()
     Dim baRetVal()      As Byte
     
     Select Case eKeyX
     Case ucsTlsAlgoKeyX25519
         Debug.Assert pvArraySize(baPriv) = TLS_X25519_KEY_SIZE
         Debug.Assert pvArraySize(baPub) = TLS_X25519_KEY_SIZE
-        ReDim baRetVal(0 To TLS_X25519_KEY_SIZE - 1) As Byte
-        Call crypto_scalarmult_curve25519(baRetVal(0), baPriv(0), baPub(0))
+        #If ImplUseLibSodium Then
+            ReDim baRetVal(0 To TLS_X25519_KEY_SIZE - 1) As Byte
+            Call crypto_scalarmult_curve25519(baRetVal(0), baPriv(0), baPub(0))
+        #Else
+            baRetVal = EccCurve25519SharedSecret(baPriv, baPub)
+        #End If
     Case ucsTlsAlgoKeySecp256r1
         Debug.Assert pvArraySize(baPriv) = TLS_SECP256R1_PRIVATE_KEY_SIZE
-        Debug.Assert pvArraySize(baPub) = TLS_SECP256R1_PUBLIC_KEY_SIZE
-        baRetVal = pvBCryptEcdhP256ScalarMultiply(baPriv, baPub)
+        Debug.Assert pvArraySize(baPub) >= TLS_SECP256R1_PUBLIC_KEY_SIZE
+        #If ImplUseBCrypt Then
+            baRetVal = pvBCryptEcdhP256AgreedSecret(baPriv, baPub)
+        #Else
+            baRetVal = EccSecp256r1SharedSecret(baPriv, baPub)
+        #End If
     Case Else
-        Err.Raise vbObjectError, "pvCryptoScalarMultiply", "Unsupported exchange curve " & eKeyX
+        Err.Raise vbObjectError, "pvCryptoSharedSecret", "Unsupported exchange curve " & eKeyX
     End Select
-    pvCryptoScalarMultiply = baRetVal
+    pvCryptoSharedSecret = baRetVal
 End Function
 
 Private Function pvCryptoRandomBytes(ByVal lSize As Long) As Byte()
@@ -1791,7 +1840,16 @@ Private Function pvCryptoRandomBytes(ByVal lSize As Long) As Byte()
     
     If lSize > 0 Then
         ReDim baRetVal(0 To lSize - 1) As Byte
-        Call randombytes_buf(baRetVal(0), lSize)
+        #If ImplUseLibSodium Then
+            Call randombytes_buf(baRetVal(0), lSize)
+        #Else
+            Dim hProv           As Long
+            
+            If CryptAcquireContext(hProv, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) <> 0 Then
+                Call CryptGenRandom(hProv, lSize, VarPtr(baRetVal(0)))
+                Call CryptReleaseContext(hProv, 0)
+            End If
+        #End If
     End If
     pvCryptoRandomBytes = baRetVal
 End Function
@@ -1998,6 +2056,7 @@ End Sub
 
 '= BCrypt helpers ========================================================
 
+#If ImplUseBCrypt Then
 Private Function pvBCryptEcdhP256KeyPair(baPriv() As Byte, baPub() As Byte) As Boolean
     Dim hProv           As Long
     Dim hResult         As Long
@@ -2048,7 +2107,7 @@ QH:
     End If
 End Function
 
-Private Function pvBCryptEcdhP256ScalarMultiply(baPriv() As Byte, baPub() As Byte) As Byte()
+Private Function pvBCryptEcdhP256AgreedSecret(baPriv() As Byte, baPub() As Byte) As Byte()
     Dim baRetVal()      As Byte
     Dim hProv           As Long
     Dim hPrivKey        As Long
@@ -2089,7 +2148,7 @@ Private Function pvBCryptEcdhP256ScalarMultiply(baPriv() As Byte, baPub() As Byt
     End If
     ReDim Preserve baRetVal(0 To cbAgreedSecret - 1) As Byte
     pvBCryptSwapEndianness baRetVal
-    pvBCryptEcdhP256ScalarMultiply = baRetVal
+    pvBCryptEcdhP256AgreedSecret = baRetVal
 QH:
     If hAgreedSecret <> 0 Then
         Call BCryptDestroySecret(hAgreedSecret)
@@ -2174,6 +2233,7 @@ Private Sub pvBCryptSwapEndianness(baData() As Byte)
         baData(UBound(baData) - lIdx) = bTemp
     Next
 End Sub
+#End If
 
 '= global helpers ========================================================
 

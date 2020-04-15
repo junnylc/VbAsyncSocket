@@ -75,19 +75,15 @@ Private Const SB_BOTTOM                 As Long = 7
 
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As Long
-Private Declare Function GetModuleHandle Lib "kernel32" Alias "GetModuleHandleA" (ByVal lpModuleName As String) As Long
-Private Declare Function LoadLibrary Lib "kernel32" Alias "LoadLibraryA" (ByVal lpLibFileName As String) As Long
 Private Declare Function SendMessage Lib "user32" Alias "SendMessageA" (ByVal hWnd As Long, ByVal wMsg As Long, ByVal wParam As Long, lParam As Any) As Long
-'--- libsodium
-Private Declare Function sodium_init Lib "libsodium" () As Long
 
 '=========================================================================
 ' Constants and member variables
 '=========================================================================
 
-Private m_oSocket           As cAsyncSocket
-Private m_sServerName       As String
-Private m_uCtx              As UcsTlsContext
+Private m_oSocket               As cAsyncSocket
+Private m_sServerName           As String
+Private m_uCtx                  As UcsTlsContext
 
 Private Type UcsParsedUrl
     Protocol        As String
@@ -105,10 +101,6 @@ End Type
 '=========================================================================
 
 Private Sub Form_Load()
-    If GetModuleHandle("libsodium.dll") = 0 Then
-        Call LoadLibrary(App.Path & "\libsodium.dll")
-        Call sodium_init
-    End If
     If txtResult.Font.Name = "Arial" Then
         txtResult.Font.Name = "Courier New"
     End If
