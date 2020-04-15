@@ -76,6 +76,7 @@ Private Const SB_BOTTOM                 As Long = 7
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As Long
 Private Declare Function SendMessage Lib "user32" Alias "SendMessageA" (ByVal hWnd As Long, ByVal wMsg As Long, ByVal wParam As Long, lParam As Any) As Long
+Private Declare Function GetAsyncKeyState Lib "user32" (ByVal vKey As Long) As Integer
 
 '=========================================================================
 ' Constants and member variables
@@ -116,11 +117,14 @@ Private Sub Command1_Click()
     Dim uRemote         As UcsParsedUrl
     Dim sResult         As String
     Dim sError          As String
+    Dim bKeepDebug      As Boolean
     
     On Error GoTo EH
+    Screen.MousePointer = vbHourglass
+    bKeepDebug = IsKeyPressed(vbKeyControl)
     ' tls13.1d.pw, localhost:44330, tls.ctf.network
-    If Not ParseUrl(txtUrl.Text, uRemote, DefProtocol:="https") Then
-        MsgBox "Wrong URL", vbCritical
+    If Not ParseUrl(Trim$(txtUrl.Text), uRemote, DefProtocol:="https") Then
+        txtResult.Text = "Error: Invalid URL"
         GoTo QH
     End If
     txtResult.Text = vbNullString
@@ -130,13 +134,17 @@ Private Sub Command1_Click()
         GoTo QH
     End If
     If LenB(sResult) <> 0 Then
-        txtResult.Text = vbNullString
+        If Not bKeepDebug Then
+            txtResult.Text = vbNullString
+        End If
         pvAppendLogText txtResult, sResult
         txtResult.SelStart = 0
     End If
 QH:
+    Screen.MousePointer = vbDefault
     Exit Sub
 EH:
+    Screen.MousePointer = vbDefault
     MsgBox Err.Description & " [" & Err.Source & "]", vbCritical
     Set m_oSocket = Nothing
 End Sub
@@ -153,7 +161,7 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
     Dim baDecr()        As Byte
     Dim dblTimer        As Double
     
-    txtResult.Text = vbNullString
+    pvAppendLogText txtResult, "Connecting to " & uRemote.Host & vbCrLf
     If m_sServerName <> uRemote.Host & ":" & uRemote.Port Or m_oSocket Is Nothing Then
         Set m_oSocket = New cAsyncSocket
         If Not m_oSocket.SyncConnect(uRemote.Host, uRemote.Port) Then
@@ -222,7 +230,8 @@ InLoop:
             dblTimer = Timer
         ElseIf lSize > 0 And Timer > dblTimer + 0.2 Then
             Exit Do
-        ElseIf Timer > dblTimer + 1 Then
+        ElseIf Timer > dblTimer + 2 Then
+            sError = "Timeout waiting for response for " & Format$(Timer - dblTimer, "0.000") & " seconds"
             Exit Do
         End If
         If Not TlsReceive(uCtx, baRecv, -1, baDecr, lSize) Then
@@ -326,3 +335,8 @@ Private Sub pvAppendLogText(txtLog As TextBox, sValue As String)
     Call SendMessage(txtLog.hWnd, WM_SETREDRAW, 1, ByVal 0)
     Call SendMessage(txtLog.hWnd, WM_VSCROLL, SB_BOTTOM, ByVal 0)
 End Sub
+
+Public Function IsKeyPressed(ByVal lVirtKey As KeyCodeConstants) As Boolean
+    IsKeyPressed = ((GetAsyncKeyState(lVirtKey) And &H8000) = &H8000)
+End Function
+
