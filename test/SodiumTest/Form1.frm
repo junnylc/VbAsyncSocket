@@ -40,7 +40,7 @@ Begin VB.Form Form1
       Height          =   348
       Left            =   1260
       TabIndex        =   0
-      Text            =   "tls13.1d.pw"
+      Text            =   "www.mikestoolbox.org"
       Top             =   168
       Width           =   7068
    End
@@ -122,7 +122,7 @@ Private Sub Command1_Click()
     On Error GoTo EH
     Screen.MousePointer = vbHourglass
     bKeepDebug = IsKeyPressed(vbKeyControl)
-    ' tls13.1d.pw, localhost:44330, tls.ctf.network
+    ' tls13.1d.pw, localhost:44330, tls.ctf.network, www.mikestoolbox.org
     If Not ParseUrl(Trim$(txtUrl.Text), uRemote, DefProtocol:="https") Then
         txtResult.Text = "Error: Invalid URL"
         GoTo QH

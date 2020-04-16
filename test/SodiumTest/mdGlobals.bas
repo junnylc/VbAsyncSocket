@@ -4,6 +4,15 @@ Option Explicit
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal ucb As Long) As Long
 
+Public Function DesignDumpArray(baData() As Byte, Optional ByVal lPos As Long, Optional ByVal lSize As Long = -1) As String
+    If lSize < 0 Then
+        lSize = UBound(baData) + 1 - lPos
+    End If
+    If lSize > 0 Then
+        DesignDumpArray = DesignDumpMemory(VarPtr(baData(lPos)), lSize)
+    End If
+End Function
+
 Public Function DesignDumpMemory(ByVal lPtr As Long, ByVal lSize As Long) As String
     Dim lIdx            As Long
     Dim sHex            As String
@@ -41,3 +50,14 @@ Public Function DesignDumpMemory(ByVal lPtr As Long, ByVal lSize As Long) As Str
     Next
     DesignDumpMemory = Join(aResult, vbCrLf)
 End Function
+
+Public Sub WriteBinaryFile(sFile As String, baBuffer() As Byte)
+    Dim nFile           As Integer
+    
+    nFile = FreeFile
+    Open sFile For Binary Access Write Shared As nFile
+    If UBound(baBuffer) >= 0 Then
+        Put nFile, , baBuffer
+    End If
+    Close nFile
+End Sub
