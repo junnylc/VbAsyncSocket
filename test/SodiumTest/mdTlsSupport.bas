@@ -1848,29 +1848,40 @@ QH:
 End Function
 
 Private Function pvCryptoHash(eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
-    Static baCtx(0 To LNG_SHA512_CTX_SIZE - 1) As Byte
-    Static baFinal(0 To LNG_SHA512_DIGEST_SIZE - 1) As Byte
     Dim baRetVal()      As Byte
-    Dim lPtr            As Long
     
     If Size < 0 Then
         Size = pvArraySize(baInput) - lPos
     Else
         Debug.Assert pvArraySize(baInput) >= lPos + Size
     End If
-    If Size > 0 Then
-        lPtr = VarPtr(baInput(lPos))
-    End If
+    #If ImplUseLibSodium Then
+        Static baCtx(0 To LNG_SHA512_CTX_SIZE - 1) As Byte
+        Static baFinal(0 To LNG_SHA512_DIGEST_SIZE - 1) As Byte
+        Dim lPtr            As Long
+        
+        If Size > 0 Then
+            lPtr = VarPtr(baInput(lPos))
+        End If
+    #End If
     Select Case eHash
     Case ucsTlsAlgoDigestSha256
-        ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
-        Call crypto_hash_sha256(baRetVal(0), ByVal lPtr, Size)
+        #If ImplUseLibSodium Then
+            ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
+            Call crypto_hash_sha256(baRetVal(0), ByVal lPtr, Size)
+        #Else
+            baRetVal = HashSha256(baInput, lPos, Size)
+        #End If
     Case ucsTlsAlgoDigestSha384
-        pvCryptoInitSha384 baCtx
-        Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
-        Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
-        ReDim baRetVal(0 To TLS_SHA384_DIGEST_SIZE - 1) As Byte
-        Call CopyMemory(baRetVal(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
+        #If ImplUseLibSodium Then
+            pvCryptoInitSha384 baCtx
+            Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
+            Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
+            ReDim baRetVal(0 To TLS_SHA384_DIGEST_SIZE - 1) As Byte
+            Call CopyMemory(baRetVal(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
+        #Else
+            baRetVal = HashSha384(baInput, lPos, Size)
+        #End If
     Case Else
         Err.Raise vbObjectError, "pvCryptoHash", "Unsupported hash type " & eHash
     End Select
@@ -1878,67 +1889,78 @@ Private Function pvCryptoHash(eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As 
 End Function
 
 Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
-    Static baCtx(0 To LNG_SHA512_CTX_SIZE - 1) As Byte
-    Static baFinal(0 To LNG_SHA512_DIGEST_SIZE - 1) As Byte
-    Static baPad(0 To LNG_SHA512_BLOCK_SIZE - 1) As Byte
-    Const LNG_INNER_PAD As Long = &H36
-    Const LNG_OUTER_PAD As Long = &H5C
     Dim baRetVal()      As Byte
-    Dim lPtr            As Long
-    Dim lIdx            As Long
     
     If Size < 0 Then
         Size = pvArraySize(baInput) - lPos
     Else
         Debug.Assert pvArraySize(baInput) >= lPos + Size
     End If
-    If Size > 0 Then
-        lPtr = VarPtr(baInput(lPos))
-    End If
+    #If ImplUseLibSodium Then
+        Static baCtx(0 To LNG_SHA512_CTX_SIZE - 1) As Byte
+        Static baFinal(0 To LNG_SHA512_DIGEST_SIZE - 1) As Byte
+        Static baPad(0 To LNG_SHA512_BLOCK_SIZE - 1) As Byte
+        Const LNG_INNER_PAD As Long = &H36
+        Const LNG_OUTER_PAD As Long = &H5C
+        Dim lPtr            As Long
+        Dim lIdx            As Long
+        
+        If Size > 0 Then
+            lPtr = VarPtr(baInput(lPos))
+        End If
+    #End If
     Select Case eHash
     Case ucsTlsAlgoDigestSha256
-        Debug.Assert pvArraySize(baKey) <= LNG_SHA256_BLOCK_SIZE
-        '-- inner hash
-        Call crypto_hash_sha256_init(baCtx(0))
-        Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, LNG_INNER_PAD)
-        For lIdx = 0 To UBound(baKey)
-            baPad(lIdx) = baKey(lIdx) Xor LNG_INNER_PAD
-        Next
-        Call crypto_hash_sha256_update(baCtx(0), baPad(0), LNG_SHA256_BLOCK_SIZE)
-        Call crypto_hash_sha256_update(baCtx(0), ByVal lPtr, Size)
-        Call crypto_hash_sha256_final(baCtx(0), baFinal(0))
-        '-- outer hash
-        Call crypto_hash_sha256_init(baCtx(0))
-        Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, LNG_OUTER_PAD)
-        For lIdx = 0 To UBound(baKey)
-            baPad(lIdx) = baKey(lIdx) Xor LNG_OUTER_PAD
-        Next
-        Call crypto_hash_sha256_update(baCtx(0), baPad(0), LNG_SHA256_BLOCK_SIZE)
-        Call crypto_hash_sha256_update(baCtx(0), baFinal(0), TLS_SHA256_DIGEST_SIZE)
-        ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
-        Call crypto_hash_sha256_final(baCtx(0), baRetVal(0))
+        #If ImplUseLibSodium Then
+            Debug.Assert pvArraySize(baKey) <= LNG_SHA256_BLOCK_SIZE
+            '-- inner hash
+            Call crypto_hash_sha256_init(baCtx(0))
+            Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, LNG_INNER_PAD)
+            For lIdx = 0 To UBound(baKey)
+                baPad(lIdx) = baKey(lIdx) Xor LNG_INNER_PAD
+            Next
+            Call crypto_hash_sha256_update(baCtx(0), baPad(0), LNG_SHA256_BLOCK_SIZE)
+            Call crypto_hash_sha256_update(baCtx(0), ByVal lPtr, Size)
+            Call crypto_hash_sha256_final(baCtx(0), baFinal(0))
+            '-- outer hash
+            Call crypto_hash_sha256_init(baCtx(0))
+            Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, LNG_OUTER_PAD)
+            For lIdx = 0 To UBound(baKey)
+                baPad(lIdx) = baKey(lIdx) Xor LNG_OUTER_PAD
+            Next
+            Call crypto_hash_sha256_update(baCtx(0), baPad(0), LNG_SHA256_BLOCK_SIZE)
+            Call crypto_hash_sha256_update(baCtx(0), baFinal(0), TLS_SHA256_DIGEST_SIZE)
+            ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
+            Call crypto_hash_sha256_final(baCtx(0), baRetVal(0))
+        #Else
+            baRetVal = HmacSha256(baKey, baInput, lPos, Size)
+        #End If
     Case ucsTlsAlgoDigestSha384
-        Debug.Assert pvArraySize(baKey) <= LNG_SHA384_BLOCK_SIZE
-        '-- inner hash
-        pvCryptoInitSha384 baCtx
-        Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_INNER_PAD)
-        For lIdx = 0 To UBound(baKey)
-            baPad(lIdx) = baKey(lIdx) Xor LNG_INNER_PAD
-        Next
-        Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
-        Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
-        Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
-        '-- outer hash
-        pvCryptoInitSha384 baCtx
-        Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_OUTER_PAD)
-        For lIdx = 0 To UBound(baKey)
-            baPad(lIdx) = baKey(lIdx) Xor LNG_OUTER_PAD
-        Next
-        Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
-        Call crypto_hash_sha512_update(baCtx(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
-        Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
-        ReDim baRetVal(0 To TLS_SHA384_DIGEST_SIZE - 1) As Byte
-        Call CopyMemory(baRetVal(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
+        #If ImplUseLibSodium Then
+            Debug.Assert pvArraySize(baKey) <= LNG_SHA384_BLOCK_SIZE
+            '-- inner hash
+            pvCryptoInitSha384 baCtx
+            Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_INNER_PAD)
+            For lIdx = 0 To UBound(baKey)
+                baPad(lIdx) = baKey(lIdx) Xor LNG_INNER_PAD
+            Next
+            Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
+            Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
+            Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
+            '-- outer hash
+            pvCryptoInitSha384 baCtx
+            Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_OUTER_PAD)
+            For lIdx = 0 To UBound(baKey)
+                baPad(lIdx) = baKey(lIdx) Xor LNG_OUTER_PAD
+            Next
+            Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
+            Call crypto_hash_sha512_update(baCtx(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
+            Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
+            ReDim baRetVal(0 To TLS_SHA384_DIGEST_SIZE - 1) As Byte
+            Call CopyMemory(baRetVal(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
+        #Else
+            baRetVal = HmacSha384(baKey, baInput, lPos, Size)
+        #End If
     Case Else
         Err.Raise vbObjectError, "pvCryptoHmac", "Unsupported hash type " & eHash
     End Select
