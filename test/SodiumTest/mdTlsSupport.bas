@@ -124,25 +124,27 @@ Private Declare Function CryptGenRandom Lib "advapi32" (ByVal hProv As Long, ByV
 Private Declare Function CryptEncrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long, dwBufLen As Long) As Long
 Private Declare Function CertCreateCertificateContext Lib "crypt32" (ByVal dwCertEncodingType As Long, pbCertEncoded As Any, ByVal cbCertEncoded As Long) As Long
 Private Declare Function CertFreeCertificateContext Lib "crypt32" (ByVal pCertContext As Long) As Long
-'--- libsodium
-Private Declare Function sodium_init Lib "libsodium" () As Long
-Private Declare Function randombytes_buf Lib "libsodium" (lpOut As Any, ByVal lSize As Long) As Long
-Private Declare Function crypto_scalarmult_curve25519 Lib "libsodium" (lpOut As Any, lpConstN As Any, lpConstP As Any) As Long
-Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpConstN As Any) As Long
-Private Declare Function crypto_hash_sha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
-Private Declare Function crypto_hash_sha256_init Lib "libsodium" (lpState As Any) As Long
-Private Declare Function crypto_hash_sha256_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
-Private Declare Function crypto_hash_sha256_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
-Private Declare Function crypto_hash_sha512_init Lib "libsodium" (lpState As Any) As Long
-Private Declare Function crypto_hash_sha512_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
-Private Declare Function crypto_hash_sha512_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
-Private Declare Function crypto_aead_chacha20poly1305_ietf_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-Private Declare Function crypto_aead_chacha20poly1305_ietf_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-Private Declare Function crypto_aead_aes256gcm_is_available Lib "libsodium" () As Long
-Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-'--- BCrypt
+#If ImplUseLibSodium Then
+    '--- libsodium
+    Private Declare Function sodium_init Lib "libsodium" () As Long
+    Private Declare Function randombytes_buf Lib "libsodium" (lpOut As Any, ByVal lSize As Long) As Long
+    Private Declare Function crypto_scalarmult_curve25519 Lib "libsodium" (lpOut As Any, lpConstN As Any, lpConstP As Any) As Long
+    Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpConstN As Any) As Long
+    Private Declare Function crypto_hash_sha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
+    Private Declare Function crypto_hash_sha256_init Lib "libsodium" (lpState As Any) As Long
+    Private Declare Function crypto_hash_sha256_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
+    Private Declare Function crypto_hash_sha256_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
+    Private Declare Function crypto_hash_sha512_init Lib "libsodium" (lpState As Any) As Long
+    Private Declare Function crypto_hash_sha512_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
+    Private Declare Function crypto_hash_sha512_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
+    Private Declare Function crypto_aead_chacha20poly1305_ietf_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+    Private Declare Function crypto_aead_chacha20poly1305_ietf_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+    Private Declare Function crypto_aead_aes256gcm_is_available Lib "libsodium" () As Long
+    Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+    Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+#End If
 #If ImplUseBCrypt Then
+    '--- BCrypt
     Private Declare Function BCryptOpenAlgorithmProvider Lib "bcrypt" (ByRef hAlgorithm As Long, ByVal pszAlgId As Long, ByVal pszImplementation As Long, ByVal dwFlags As Long) As Long
     Private Declare Function BCryptCloseAlgorithmProvider Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal dwFlags As Long) As Long
     Private Declare Function BCryptImportKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, ByRef hKey As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
@@ -319,7 +321,7 @@ Public Function TlsInitClient( _
     Dim uCtx            As UcsTlsContext
     
     On Error GoTo EH
-    #If ImplUseLibSodium Or True Then
+    #If ImplUseLibSodium Then
         If GetModuleHandle("libsodium.dll") = 0 Then
             Call LoadLibrary(App.Path & "\libsodium.dll")
             Call sodium_init
@@ -1736,7 +1738,9 @@ End Function
 
 Private Function pvCryptoIsSupported(eAead As UcsTlsCryptoAlgorithmsEnum) As Boolean
     If eAead = ucsTlsAlgoAeadAes256 Then
-        pvCryptoIsSupported = (crypto_aead_aes256gcm_is_available() <> 0)
+        #If ImplUseLibSodium Then
+            pvCryptoIsSupported = (crypto_aead_aes256gcm_is_available() <> 0)
+        #End If
     Else
         pvCryptoIsSupported = True
     End If
@@ -1748,15 +1752,23 @@ Private Function pvCryptoAeadDecrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baServ
     Case ucsTlsAlgoAeadChacha20Poly1305
         Debug.Assert pvArraySize(baServerIV) = TLS_CHACHA20POLY1305_IV_SIZE
         Debug.Assert pvArraySize(baServerKey) = TLS_CHACHA20_KEY_SIZE
-        If crypto_aead_chacha20poly1305_ietf_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAad(lAadPos), lAdSize, 0, baServerIV(0), baServerKey(0)) <> 0 Then
-            GoTo QH
-        End If
+        #If ImplUseLibSodium Then
+            If crypto_aead_chacha20poly1305_ietf_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAad(lAadPos), lAdSize, 0, baServerIV(0), baServerKey(0)) <> 0 Then
+                GoTo QH
+            End If
+        #Else
+            If Not AeadChacha20Poly1305Decrypt(baServerIV, baServerKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
+                GoTo QH
+            End If
+        #End If
     Case ucsTlsAlgoAeadAes256
         Debug.Assert pvArraySize(baServerIV) = TLS_AESGCM_IV_SIZE
         Debug.Assert pvArraySize(baServerKey) = TLS_AES256_KEY_SIZE
-        If crypto_aead_aes256gcm_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAad(lAadPos), lAdSize, 0, baServerIV(0), baServerKey(0)) <> 0 Then
-            GoTo QH
-        End If
+        #If ImplUseLibSodium Then
+            If crypto_aead_aes256gcm_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAad(lAadPos), lAdSize, 0, baServerIV(0), baServerKey(0)) <> 0 Then
+                GoTo QH
+            End If
+        #End If
     Case Else
         Err.Raise vbObjectError, "pvCryptoAeadDecrypt", "Unsupported AEAD type " & eAead
     End Select
@@ -1776,15 +1788,23 @@ Private Function pvCryptoAeadEncrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baClie
     Case ucsTlsAlgoAeadChacha20Poly1305
         Debug.Assert pvArraySize(baClientIV) = TLS_CHACHA20POLY1305_IV_SIZE
         Debug.Assert pvArraySize(baClientKey) = TLS_CHACHA20_KEY_SIZE
-        If crypto_aead_chacha20poly1305_ietf_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baClientIV(0), baClientKey(0)) <> 0 Then
-            GoTo QH
-        End If
+        #If ImplUseLibSodium Then
+            If crypto_aead_chacha20poly1305_ietf_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baClientIV(0), baClientKey(0)) <> 0 Then
+                GoTo QH
+            End If
+        #Else
+            If Not AeadChacha20Poly1305Encrypt(baClientIV, baClientKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
+                GoTo QH
+            End If
+        #End If
     Case ucsTlsAlgoAeadAes256
         Debug.Assert pvArraySize(baClientIV) = TLS_AESGCM_IV_SIZE
         Debug.Assert pvArraySize(baClientKey) = TLS_AES256_KEY_SIZE
-        If crypto_aead_aes256gcm_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baClientIV(0), baClientKey(0)) <> 0 Then
-            GoTo QH
-        End If
+        #If ImplUseLibSodium Then
+            If crypto_aead_aes256gcm_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baClientIV(0), baClientKey(0)) <> 0 Then
+                GoTo QH
+            End If
+        #End If
     Case Else
         Err.Raise vbObjectError, "pvCryptoAeadEncrypt", "Unsupported AEAD type " & eAead
     End Select
@@ -1874,7 +1894,7 @@ Private Function pvCryptoHash(eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As 
         #End If
     Case ucsTlsAlgoDigestSha384
         #If ImplUseLibSodium Then
-            pvCryptoInitSha384 baCtx
+            Call crypto_hash_sha384_init(baCtx)
             Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
             Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
             ReDim baRetVal(0 To TLS_SHA384_DIGEST_SIZE - 1) As Byte
@@ -1939,7 +1959,7 @@ Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey()
         #If ImplUseLibSodium Then
             Debug.Assert pvArraySize(baKey) <= LNG_SHA384_BLOCK_SIZE
             '-- inner hash
-            pvCryptoInitSha384 baCtx
+            Call crypto_hash_sha384_init(baCtx)
             Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_INNER_PAD)
             For lIdx = 0 To UBound(baKey)
                 baPad(lIdx) = baKey(lIdx) Xor LNG_INNER_PAD
@@ -1948,7 +1968,7 @@ Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey()
             Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
             Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
             '-- outer hash
-            pvCryptoInitSha384 baCtx
+            Call crypto_hash_sha384_init(baCtx)
             Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_OUTER_PAD)
             For lIdx = 0 To UBound(baKey)
                 baPad(lIdx) = baKey(lIdx) Xor LNG_OUTER_PAD
@@ -2015,16 +2035,6 @@ Private Function pvCryptoRandomBytes(ByVal lSize As Long) As Byte()
     pvCryptoRandomBytes = baRetVal
 End Function
 
-Private Sub pvCryptoInitSha384(baCtx() As Byte)
-    Static baSha384State() As Byte
-    
-    If pvArraySize(baSha384State) = 0 Then
-        baSha384State = FromHex(STR_SHA384_STATE)
-    End If
-    Call crypto_hash_sha512_init(baCtx(0))
-    Call CopyMemory(baCtx(0), baSha384State(0), UBound(baSha384State) + 1)
-End Sub
-
 Private Function pvCryptoCipherSuiteName(ByVal lCipherSuite As Long) As String
     Select Case lCipherSuite
     Case TLS_CIPHER_SUITE_AES_256_GCM_SHA384
@@ -2043,6 +2053,18 @@ Private Function pvCryptoCipherSuiteName(ByVal lCipherSuite As Long) As String
         pvCryptoCipherSuiteName = "AES256-GCM-SHA384"
     End Select
 End Function
+
+#If ImplUseLibSodium Then
+    Private Sub crypto_hash_sha384_init(baCtx() As Byte)
+        Static baSha384State() As Byte
+        
+        If pvArraySize(baSha384State) = 0 Then
+            baSha384State = FromHex(STR_SHA384_STATE)
+        End If
+        Call crypto_hash_sha512_init(baCtx(0))
+        Call CopyMemory(baCtx(0), baSha384State(0), UBound(baSha384State) + 1)
+    End Sub
+#End If
 
 '= buffer management =====================================================
 
