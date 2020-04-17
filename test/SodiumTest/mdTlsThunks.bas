@@ -20,7 +20,6 @@ DefObj A-Z
 '--- for thunks
 Private Const MEM_COMMIT                    As Long = &H1000
 Private Const PAGE_EXECUTE_READWRITE        As Long = &H40
-Private Const CRYPT_STRING_BASE64           As Long = 1
 '--- for CryptAcquireContext
 Private Const PROV_RSA_FULL                 As Long = 1
 Private Const CRYPT_VERIFYCONTEXT           As Long = &HF0000000
@@ -28,7 +27,6 @@ Private Const CRYPT_VERIFYCONTEXT           As Long = &HF0000000
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Function VirtualAlloc Lib "kernel32" (ByVal lpAddress As Long, ByVal dwSize As Long, ByVal flAllocationType As Long, ByVal flProtect As Long) As Long
 Private Declare Function VirtualProtect Lib "kernel32" (ByVal lpAddress As Long, ByVal dwSize As Long, ByVal flNewProtect As Long, ByRef lpflOldProtect As Long) As Long
-Private Declare Function CryptStringToBinary Lib "crypt32" Alias "CryptStringToBinaryW" (ByVal pszString As Long, ByVal cchString As Long, ByVal dwFlags As Long, ByVal pbBinary As Long, pcbBinary As Long, pdwSkip As Long, pdwFlags As Long) As Long
 Private Declare Function CryptAcquireContext Lib "advapi32" Alias "CryptAcquireContextW" (phProv As Long, ByVal pszContainer As Long, ByVal pszProvider As Long, ByVal dwProvType As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptReleaseContext Lib "advapi32" (ByVal hProv As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptGenRandom Lib "advapi32" (ByVal hProv As Long, ByVal dwLen As Long, ByVal pbBuffer As Long) As Long
@@ -70,7 +68,7 @@ End Enum
 
 Private Type UcsEccThunkData
     Thunk               As Long
-    Ctx()               As Byte
+    Glob                As Long
     Pfn(0 To [_ucsPfnMax] - 1) As Long
     KeySize             As Long
 End Type
@@ -80,20 +78,19 @@ End Type
 '=========================================================================
 
 Public Function EccInit() As Boolean
-    Dim baThunk()       As Byte
+'    Dim baThunk()       As Byte
     Dim lOffset         As Long
     Dim lIdx            As Long
     
     If m_uEcc.Thunk = 0 Then
     With m_uEcc
         .KeySize = 32
-        '--- prepare thunk in executable memory
-        baThunk = FromBase64Array(STR_ECC_THUNK1 & STR_ECC_THUNK2)
-        .Thunk = VirtualAlloc(0, UBound(baThunk) + 1, MEM_COMMIT, PAGE_EXECUTE_READWRITE)
-        If .Thunk = 0 Then
+        '--- prepare thunk/context in executable memory
+        .Thunk = pvThunkAllocate(STR_ECC_THUNK1 & STR_ECC_THUNK2)
+        .Glob = pvThunkAllocate(STR_ECC_CTX)
+        If .Thunk = 0 Or .Glob = 0 Then
             GoTo QH
         End If
-        Call CopyMemory(ByVal .Thunk, baThunk(0), UBound(baThunk) + 1)
         '--- init pfns from thunk addr + offsets stored at beginning of it
         For lIdx = 0 To UBound(.Pfn)
             Call CopyMemory(lOffset, ByVal UnsignedAdd(.Thunk, 4 * lIdx), 4)
@@ -104,10 +101,8 @@ Public Function EccInit() As Boolean
         Call pvPatchProto(AddressOf pvEccCallSecp256r1SharedSecret)
         Call pvPatchProto(AddressOf pvEccCallCurve25519Multiply)
         Call pvPatchProto(AddressOf pvEccCallCurve25519MulBase)
-        '--- init thunk's first 4 bytes -> context pointer (used to be global data in C/C++)
-        .Ctx = FromBase64Array(STR_ECC_CTX)
-        lOffset = VarPtr(.Ctx(0))
-        Call CopyMemory(ByVal .Thunk, lOffset, 4)
+        '--- init thunk's first 4 bytes -> global data in C/C++
+        Call CopyMemory(ByVal .Thunk, .Glob, 4)
     End With
     End If
     '--- success
@@ -192,19 +187,36 @@ Private Sub pvEccRandomBytes(ByVal lPtr As Long, ByVal lSize As Long)
     End If
 End Sub
 
-Public Function FromBase64Array(sText As String) As Byte()
-    Dim lSize           As Long
-    Dim baOutput()      As Byte
+Private Function pvThunkAllocate(sText As String, Optional ByVal Size As Long) As Long
+    Static Map(0 To &H3FF) As Long
+    Dim baInput()       As Byte
+    Dim lIdx            As Long
+    Dim lChar           As Long
+    Dim lPtr            As Long
     
-    lSize = Len(sText) + 1
-    ReDim baOutput(0 To lSize - 1) As Byte
-    Call CryptStringToBinary(StrPtr(sText), Len(sText), CRYPT_STRING_BASE64, VarPtr(baOutput(0)), lSize, 0, 0)
-    If lSize > 0 Then
-        ReDim Preserve baOutput(0 To lSize - 1) As Byte
-        FromBase64Array = baOutput
-    Else
-        FromBase64Array = vbNullString
+    pvThunkAllocate = VirtualAlloc(0, IIf(Size > 0, Size, (Len(sText) \ 4) * 3), MEM_COMMIT, PAGE_EXECUTE_READWRITE)
+    If pvThunkAllocate = 0 Then
+        Exit Function
     End If
+    '--- init decoding maps
+    If Map(65) = 0 Then
+        baInput = StrConv("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", vbFromUnicode)
+        For lIdx = 0 To UBound(baInput)
+            lChar = baInput(lIdx)
+            Map(&H0 + lChar) = lIdx * (2 ^ 2)
+            Map(&H100 + lChar) = (lIdx And &H30) \ (2 ^ 4) Or (lIdx And &HF) * (2 ^ 12)
+            Map(&H200 + lChar) = (lIdx And &H3) * (2 ^ 22) Or (lIdx And &H3C) * (2 ^ 6)
+            Map(&H300 + lChar) = lIdx * (2 ^ 16)
+        Next
+    End If
+    '--- base64 decode loop
+    baInput = StrConv(Replace(Replace(sText, vbCr, vbNullString), vbLf, vbNullString) & "===", vbFromUnicode)
+    lPtr = pvThunkAllocate
+    For lIdx = 0 To UBound(baInput) - 3 Step 4
+        lChar = Map(baInput(lIdx + 0)) Or Map(&H100 + baInput(lIdx + 1)) Or Map(&H200 + baInput(lIdx + 2)) Or Map(&H300 + baInput(lIdx + 3))
+        Call CopyMemory(ByVal lPtr, lChar, 3)
+        lPtr = UnsignedAdd(lPtr, 3)
+    Next
 End Function
 
 Private Sub pvPatchProto(ByVal Pfn As Long)
