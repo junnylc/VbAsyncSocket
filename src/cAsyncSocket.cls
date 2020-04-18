@@ -1790,7 +1790,7 @@ Private Function pvThunkAllocate(sText As String, Optional ByVal Size As Long) A
         Next
     End If
     '--- base64 decode loop
-    baInput = StrConv(Replace(Replace(sText, vbCr, vbNullString), vbLf, vbNullString) & "===", vbFromUnicode)
+    baInput = StrConv(Replace(Replace(sText, vbCr, vbNullString), vbLf, vbNullString), vbFromUnicode)
     lPtr = pvThunkAllocate
     For lIdx = 0 To UBound(baInput) - 3 Step 4
         lChar = Map(baInput(lIdx + 0)) Or Map(&H100 + baInput(lIdx + 1)) Or Map(&H200 + baInput(lIdx + 2)) Or Map(&H300 + baInput(lIdx + 3))
