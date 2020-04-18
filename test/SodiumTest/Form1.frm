@@ -170,17 +170,20 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
         End If
         m_sServerName = uRemote.Host & ":" & uRemote.Port
         '--- send TLS handshake
-        uCtx = TlsInitClient(TargetHost:=uRemote.Host) ' , ClientFeatures:=ucsTlsSupportTls12)
+        If Not TlsInitClient(uCtx, TargetHost:=uRemote.Host) Then ' , ClientFeatures:=ucsTlsSupportTls12)
+            sError = TlsGetLastError(uCtx)
+            GoTo QH
+        End If
         GoTo InLoop
         Do
             If Not m_oSocket.SyncReceiveArray(baRecv, Timeout:=1000) Then
                 sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
                 GoTo QH
             End If
-InLoop:
             If pvArraySize(baRecv) <> 0 Then
                 pvAppendLogText txtResult, String$(2, ">") & " Recv " & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
             End If
+InLoop:
             lSize = 0
             If Not TlsHandshake(uCtx, baRecv, -1, baSend, lSize) Then
                 sError = TlsGetLastError(uCtx)

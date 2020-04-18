@@ -318,9 +318,10 @@ End Type
 '=========================================================================
 
 Public Function TlsInitClient( _
+            uCtx As UcsTlsContext, _
             Optional TargetHost As String, _
-            Optional ByVal ClientFeatures As UcsTlsClientFeaturesEnum = ucsTlsSupportAll) As UcsTlsContext
-    Dim uCtx            As UcsTlsContext
+            Optional ByVal ClientFeatures As UcsTlsClientFeaturesEnum = ucsTlsSupportAll) As Boolean
+    Dim uEmpty          As UcsTlsContext
     
     On Error GoTo EH
     #If ImplUseLibSodium Then
@@ -332,20 +333,23 @@ Public Function TlsInitClient( _
     If Not InitThunks() Then
         GoTo QH
     End If
-    With uCtx
-        pvSetLastError uCtx, vbNullString
+    With uEmpty
+        pvSetLastError uEmpty, vbNullString
         .State = ucsTlsStateHandshakeStart
         .TargetHost = TargetHost
         .ClientFeatures = ClientFeatures
         .ClientRandom = pvCryptoRandomArray(TLS_HELLO_RANDOM_SIZE)
         .RandomSize = TLS_HELLO_RANDOM_SIZE
-        '--- note: TLS 1.3 uses X25519 only and uCtx.ClientPublic has to be ready for pvBuildClientHello
-        If Not pvSetupKeyExchangeGroup(uCtx, TLS_GROUP_X25519, .LastError, .LastAlertCode) Then
+        '--- note: TLS 1.3 uses X25519 only and ClientPublic has to be ready for pvBuildClientHello
+        If Not pvSetupKeyExchangeGroup(uEmpty, TLS_GROUP_X25519, .LastError, .LastAlertCode) Then
             pvSetLastError uCtx, .LastError, .LastAlertCode
+            GoTo QH
         End If
     End With
+    uCtx = uEmpty
+    '--- success
+    TlsInitClient = True
 QH:
-    TlsInitClient = uCtx
     Exit Function
 EH:
     pvSetLastError uCtx, Err.Description
