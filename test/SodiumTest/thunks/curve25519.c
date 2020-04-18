@@ -61,7 +61,7 @@ static void pack25519(uint8_t out[32], const gf n)
   for (size_t i = 0; i < 16; i++)
   {
     out[2 * i] = t[i] & 0xff;
-    out[2 * i + 1] = t[i] >> 8;
+    out[2 * i + 1] = (uint8_t)(t[i] >> 8);
   }
 }
 
@@ -154,7 +154,7 @@ void cf_curve25519_mul(uint8_t out[32], const uint8_t priv[32], const uint8_t pu
 
   for (int i = 254; i >= 0; i--)
   {
-    int64_t r = (z[i >> 3] >> (i & 7)) & 1;
+    int r = (z[i >> 3] >> (i & 7)) & 1;
     sel25519(a, b, r);
     sel25519(c, d, r);
     add(e, a, c);

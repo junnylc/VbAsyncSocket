@@ -4,10 +4,6 @@
 
 #pragma intrinsic(memset, memcpy)
 
-//#define IMPL_ADDRESSOFMETHOD_THUNK
-//#define IMPL_SUBCLASSING_THUNK
-//#define IMPL_HOOKING_THUNK
-//#define IMPL_FIREONCETIMER_THUNK
 #define IMPL_ECC_THUNK
 
 #include <stdio.h>

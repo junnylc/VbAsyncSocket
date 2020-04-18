@@ -298,3 +298,10 @@ void cf_sha224_digest_final(cf_sha256_context *ctx, uint8_t hash[CF_SHA224_HASHS
   cf_sha256_digest_final(ctx, full);
   memcpy(hash, full, CF_SHA224_HASHSZ);
 }
+
+# undef CH
+# undef MAJ
+# undef BSIG0
+# undef BSIG1
+# undef SSIG0
+# undef SSIG1

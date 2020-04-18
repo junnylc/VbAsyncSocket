@@ -535,7 +535,7 @@ static void vli_mmod_fast(uint64_t *p_result, uint64_t *p_product)
 static void vli_mmod_fast(uint64_t *p_result, uint64_t *p_product)
 {
     uint64_t l_tmp[NUM_ECC_DIGITS];
-    int l_carry;
+    int l_carry; // don't change to uint64_t as it stops working
     
     /* t */
     vli_set(p_result, p_product);
@@ -545,70 +545,70 @@ static void vli_mmod_fast(uint64_t *p_result, uint64_t *p_product)
     l_tmp[1] = p_product[5] & 0xffffffff00000000ull;
     l_tmp[2] = p_product[6];
     l_tmp[3] = p_product[7];
-    l_carry = vli_lshift(l_tmp, l_tmp, 1);
-    l_carry += vli_add(p_result, p_result, l_tmp);
+    l_carry = (int)vli_lshift(l_tmp, l_tmp, 1);
+    l_carry += (int)vli_add(p_result, p_result, l_tmp);
     
     /* s2 */
     l_tmp[1] = p_product[6] << 32;
     l_tmp[2] = (p_product[6] >> 32) | (p_product[7] << 32);
     l_tmp[3] = p_product[7] >> 32;
-    l_carry += vli_lshift(l_tmp, l_tmp, 1);
-    l_carry += vli_add(p_result, p_result, l_tmp);
+    l_carry += (int)vli_lshift(l_tmp, l_tmp, 1);
+    l_carry += (int)vli_add(p_result, p_result, l_tmp);
     
     /* s3 */
     l_tmp[0] = p_product[4];
     l_tmp[1] = p_product[5] & 0xffffffff;
     l_tmp[2] = 0;
     l_tmp[3] = p_product[7];
-    l_carry += vli_add(p_result, p_result, l_tmp);
+    l_carry += (int)vli_add(p_result, p_result, l_tmp);
     
     /* s4 */
     l_tmp[0] = (p_product[4] >> 32) | (p_product[5] << 32);
     l_tmp[1] = (p_product[5] >> 32) | (p_product[6] & 0xffffffff00000000ull);
     l_tmp[2] = p_product[7];
     l_tmp[3] = (p_product[6] >> 32) | (p_product[4] << 32);
-    l_carry += vli_add(p_result, p_result, l_tmp);
+    l_carry += (int)vli_add(p_result, p_result, l_tmp);
     
     /* d1 */
     l_tmp[0] = (p_product[5] >> 32) | (p_product[6] << 32);
     l_tmp[1] = (p_product[6] >> 32);
     l_tmp[2] = 0;
     l_tmp[3] = (p_product[4] & 0xffffffff) | (p_product[5] << 32);
-    l_carry -= vli_sub(p_result, p_result, l_tmp);
+    l_carry -= (int)vli_sub(p_result, p_result, l_tmp);
     
     /* d2 */
     l_tmp[0] = p_product[6];
     l_tmp[1] = p_product[7];
     l_tmp[2] = 0;
     l_tmp[3] = (p_product[4] >> 32) | (p_product[5] & 0xffffffff00000000ull);
-    l_carry -= vli_sub(p_result, p_result, l_tmp);
+    l_carry -= (int)vli_sub(p_result, p_result, l_tmp);
     
     /* d3 */
     l_tmp[0] = (p_product[6] >> 32) | (p_product[7] << 32);
     l_tmp[1] = (p_product[7] >> 32) | (p_product[4] << 32);
     l_tmp[2] = (p_product[4] >> 32) | (p_product[5] << 32);
     l_tmp[3] = (p_product[6] << 32);
-    l_carry -= vli_sub(p_result, p_result, l_tmp);
+    l_carry -= (int)vli_sub(p_result, p_result, l_tmp);
     
     /* d4 */
     l_tmp[0] = p_product[7];
     l_tmp[1] = p_product[4] & 0xffffffff00000000ull;
     l_tmp[2] = p_product[5];
     l_tmp[3] = p_product[6] & 0xffffffff00000000ull;
-    l_carry -= vli_sub(p_result, p_result, l_tmp);
+    l_carry -= (int)vli_sub(p_result, p_result, l_tmp);
     
     if(l_carry < 0)
     {
         do
         {
-            l_carry += vli_add(p_result, p_result, curve_p);
+            l_carry += (int)vli_add(p_result, p_result, curve_p);
         } while(l_carry < 0);
     }
     else
     {
         while(l_carry || vli_cmp(curve_p, p_result) != 1)
         {
-            l_carry -= vli_sub(p_result, p_result, curve_p);
+            l_carry -= (int)vli_sub(p_result, p_result, curve_p);
         }
     }
 }
@@ -1006,14 +1006,14 @@ static void ecc_native2bytes(uint8_t p_bytes[ECC_BYTES], const uint64_t p_native
     for(i=0; i<NUM_ECC_DIGITS; ++i)
     {
         uint8_t *p_digit = p_bytes + 8 * (NUM_ECC_DIGITS - 1 - i);
-        p_digit[0] = p_native[i] >> 56;
-        p_digit[1] = p_native[i] >> 48;
-        p_digit[2] = p_native[i] >> 40;
-        p_digit[3] = p_native[i] >> 32;
-        p_digit[4] = p_native[i] >> 24;
-        p_digit[5] = p_native[i] >> 16;
-        p_digit[6] = p_native[i] >> 8;
-        p_digit[7] = p_native[i];
+        p_digit[0] = (uint8_t)(p_native[i] >> 56);
+        p_digit[1] = (uint8_t)(p_native[i] >> 48);
+        p_digit[2] = (uint8_t)(p_native[i] >> 40);
+        p_digit[3] = (uint8_t)(p_native[i] >> 32);
+        p_digit[4] = (uint8_t)(p_native[i] >> 24);
+        p_digit[5] = (uint8_t)(p_native[i] >> 16);
+        p_digit[6] = (uint8_t)(p_native[i] >> 8);
+        p_digit[7] = (uint8_t)(p_native[i]);
     }
 }
 

@@ -12,14 +12,6 @@
  * <http://creativecommons.org/publicdomain/zero/1.0/>.
  */
 
-//#include "poly1305.h"
-//#include "bitops.h"
-//#include "handy.h"
-//#include "blockwise.h"
-//
-//#include <string.h>
-//#include <stdio.h>
-
 typedef struct
 {
   uint32_t h[17];

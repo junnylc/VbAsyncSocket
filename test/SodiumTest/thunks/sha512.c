@@ -303,3 +303,9 @@ void cf_sha384_digest_final(cf_sha512_context *ctx, uint8_t hash[CF_SHA384_HASHS
   memcpy(hash, full, CF_SHA384_HASHSZ);
 }
 
+# undef CH
+# undef MAJ
+# undef BSIG0
+# undef BSIG1
+# undef SSIG0
+# undef SSIG1
