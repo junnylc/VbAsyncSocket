@@ -341,7 +341,7 @@ Public Function TlsInitClient( _
         .ClientRandom = pvCryptoRandomArray(TLS_HELLO_RANDOM_SIZE)
         .RandomSize = TLS_HELLO_RANDOM_SIZE
         '--- note: TLS 1.3 uses X25519 only and ClientPublic has to be ready for pvBuildClientHello
-        If Not pvSetupKeyExchangeGroup(uEmpty, TLS_GROUP_X25519, .LastError, .LastAlertCode) Then
+        If Not pvSetupKeyExchangeEccGroup(uEmpty, TLS_GROUP_X25519, .LastError, .LastAlertCode) Then
             pvSetLastError uCtx, .LastError, .LastAlertCode
             GoTo QH
         End If
@@ -510,7 +510,7 @@ End Function
 
 '= private ===============================================================
 
-Private Function pvSetupKeyExchangeGroup(uCtx As UcsTlsContext, ByVal lExchangeGroup As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
+Private Function pvSetupKeyExchangeEccGroup(uCtx As UcsTlsContext, ByVal lExchangeGroup As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
     Dim bResult         As Boolean
     
     With uCtx
@@ -549,11 +549,11 @@ Private Function pvSetupKeyExchangeGroup(uCtx As UcsTlsContext, ByVal lExchangeG
         End If
     End With
     '--- success
-    pvSetupKeyExchangeGroup = True
+    pvSetupKeyExchangeEccGroup = True
 QH:
 End Function
 
-Private Function pvSetupKeyExchangeRSA(uCtx As UcsTlsContext, baCert() As Byte, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
+Private Function pvSetupKeyExchangeRsaCertificate(uCtx As UcsTlsContext, baCert() As Byte, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
     On Error GoTo EH
     With uCtx
         .ExchangeAlgo = ucsTlsAlgoKeyCertificate
@@ -562,7 +562,7 @@ Private Function pvSetupKeyExchangeRSA(uCtx As UcsTlsContext, baCert() As Byte, 
         .ClientEncrPrivate = pvCryptoRsaEncrypt(baCert, .ClientPrivate)
     End With
     '--- success
-    pvSetupKeyExchangeRSA = True
+    pvSetupKeyExchangeRsaCertificate = True
     Exit Function
 EH:
     sError = Trim$(Replace(Err.Description, vbLf, ". "))
@@ -1163,28 +1163,6 @@ HandleHandshakeContent:
 QH:
 End Function
 
-Private Sub pvPrepareLegacyDecryptParams(uCtx As UcsTlsContext, baInput() As Byte, ByVal lRecordPos As Long, ByVal lRecordSize As Long, lPos As Long, lEnd As Long, baServerIV() As Byte, baAad() As Byte)
-    Dim lAadPos         As Long
-    
-    With uCtx
-        lEnd = lPos + lRecordSize - .TagSize
-        If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
-            ReDim baServerIV(0 To .IvSize - 1) As Byte
-            pvWriteArray baServerIV, 0, .ServerTrafficIV
-            pvWriteBuffer baServerIV, .IvSize - .IvDynamicSize, VarPtr(baInput(lPos)), .IvDynamicSize
-            lPos = lPos + .IvDynamicSize
-        Else
-            baServerIV = pvArrayXor(.ServerTrafficIV, .ServerTrafficSeqNo)
-        End If
-        ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
-        lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
-        lAadPos = pvWriteLong(baAad, lAadPos, .ServerTrafficSeqNo, Size:=4)
-        lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baInput(lRecordPos)), 3)
-        lAadPos = pvWriteLong(baAad, lAadPos, lEnd - lPos, Size:=2)
-        Debug.Assert lAadPos = LNG_LEGACY_AAD_SIZE
-    End With
-End Sub
-
 Private Function pvParseHandshakeContent(uCtx As UcsTlsContext, baInput() As Byte, ByVal lPos As Long, ByVal lEnd As Long, ByVal lRecordProtocol As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
@@ -1295,7 +1273,7 @@ Private Function pvParseHandshakeContent(uCtx As UcsTlsContext, baInput() As Byt
                             lPos = pvReadLong(baInput, lPos, lCurveType)
                             Debug.Assert lCurveType = 3 '--- 3 = named_curve
                             lPos = pvReadLong(baInput, lPos, lNamedCurve, Size:=2)
-                            If Not pvSetupKeyExchangeGroup(uCtx, lNamedCurve, sError, eAlertCode) Then
+                            If Not pvSetupKeyExchangeEccGroup(uCtx, lNamedCurve, sError, eAlertCode) Then
                                 GoTo QH
                             End If
                             lPos = pvReadBeginOfBlock(baInput, lPos, .BlocksStack, BlockSize:=lSignatureSize)
@@ -1333,7 +1311,7 @@ Private Function pvParseHandshakeContent(uCtx As UcsTlsContext, baInput() As Byt
                                 eAlertCode = uscTlsAlertHandshakeFailure
                                 GoTo QH
                             End If
-                            If Not pvSetupKeyExchangeRSA(uCtx, baCert, sError, eAlertCode) Then
+                            If Not pvSetupKeyExchangeRsaCertificate(uCtx, baCert, sError, eAlertCode) Then
                                 GoTo QH
                             End If
                             If Not pvDeriveLegacySecrets(uCtx, sError, eAlertCode) Then
@@ -1476,7 +1454,7 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
                             .HelloRetryExchangeGroup = lExchangeGroup
                         Else
                             Debug.Assert lExchangeGroup = TLS_GROUP_X25519
-                            If Not pvSetupKeyExchangeGroup(uCtx, lExchangeGroup, sError, eAlertCode) Then
+                            If Not pvSetupKeyExchangeEccGroup(uCtx, lExchangeGroup, sError, eAlertCode) Then
                                 GoTo QH
                             End If
                             If lBlockSize > 4 Then
@@ -1522,6 +1500,28 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
 QH:
 End Function
 
+Private Sub pvPrepareLegacyDecryptParams(uCtx As UcsTlsContext, baInput() As Byte, ByVal lRecordPos As Long, ByVal lRecordSize As Long, lPos As Long, lEnd As Long, baServerIV() As Byte, baAad() As Byte)
+    Dim lAadPos         As Long
+    
+    With uCtx
+        lEnd = lPos + lRecordSize - .TagSize
+        If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
+            ReDim baServerIV(0 To .IvSize - 1) As Byte
+            pvWriteArray baServerIV, 0, .ServerTrafficIV
+            pvWriteBuffer baServerIV, .IvSize - .IvDynamicSize, VarPtr(baInput(lPos)), .IvDynamicSize
+            lPos = lPos + .IvDynamicSize
+        Else
+            baServerIV = pvArrayXor(.ServerTrafficIV, .ServerTrafficSeqNo)
+        End If
+        ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
+        lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
+        lAadPos = pvWriteLong(baAad, lAadPos, .ServerTrafficSeqNo, Size:=4)
+        lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baInput(lRecordPos)), 3)
+        lAadPos = pvWriteLong(baAad, lAadPos, lEnd - lPos, Size:=2)
+        Debug.Assert lAadPos = LNG_LEGACY_AAD_SIZE
+    End With
+End Sub
+
 Private Sub pvSetLastError(uCtx As UcsTlsContext, sError As String, Optional ByVal AlertDesc As UcsTlsAlertDescriptionsEnum = -1)
     With uCtx
         .LastError = sError
@@ -1553,11 +1553,8 @@ Private Function pvDeriveHandshakeSecrets(uCtx As UcsTlsContext, sError As Strin
             GoTo QH
         End If
         baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
-        '--- for ucsTlsAlgoDigestSha256 always 33AD0A1C607EC03B09E6CD9893680CE210ADF300AA1F2660E1B22E10F170F92A
         baEarlySecret = pvHkdfExtract(.DigestAlgo, EmptyByteArray(.DigestSize), EmptyByteArray(.DigestSize))
-        '--- for ucsTlsAlgoDigestSha256 always E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
         baEmptyHash = pvCryptoHash(.DigestAlgo, EmptyByteArray, 0)
-        '--- for ucsTlsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
         baDerivedSecret = pvHkdfExpandLabel(.DigestAlgo, baEarlySecret, "derived", baEmptyHash, .DigestSize)
         baSharedSecret = pvCryptoSharedSecret(.ExchangeAlgo, .ClientPrivate, .ServerPublic)
         .HandshakeSecret = pvHkdfExtract(.DigestAlgo, baDerivedSecret, baSharedSecret)
@@ -1587,9 +1584,7 @@ Private Function pvDeriveApplicationSecrets(uCtx As UcsTlsContext, sError As Str
             GoTo QH
         End If
         baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
-        '--- for ucsTlsAlgoDigestSha256 always E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855
         baEmptyHash = pvCryptoHash(.DigestAlgo, EmptyByteArray, 0)
-        '--- for ucsTlsAlgoDigestSha256 always 6F2615A108C702C5678F54FC9DBAB69716C076189C48250CEBEAC3576C3611BA
         baDerivedSecret = pvHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, "derived", baEmptyHash, .DigestSize)
         .MasterSecret = pvHkdfExtract(.DigestAlgo, baDerivedSecret, EmptyByteArray(.DigestSize))
         .ServerTrafficSecret = pvHkdfExpandLabel(.DigestAlgo, .MasterSecret, "s ap traffic", baHandshakeHash, .DigestSize)
@@ -1672,7 +1667,6 @@ Private Function pvHkdfExpandLabel(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, ba
         ReDim Preserve baRetVal(0 To lSize - 1) As Byte
     End If
     pvHkdfExpandLabel = baRetVal
-'    Debug.Print "sLabel=" & sLabel & ", pvHkdfExpandLabel=" & ToHex(baRetVal), Timer
 End Function
 
 '= legacy PRF-based key derivation functions =============================
@@ -1736,8 +1730,6 @@ Private Function pvKdfLegacyTls1Prf(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, b
         ReDim Preserve baRetVal(0 To lSize - 1) As Byte
     End If
     pvKdfLegacyTls1Prf = baRetVal
-'    Debug.Print "pvKdfLegacyTls1Prf, lSize=" & lSize & ", sLabel=" & sLabel & ", baContext=" & ToHex(baContext), Timer
-'    Debug.Print "pvKdfLegacyTls1Prf=" & ToHex(baRetVal), Timer
 End Function
 
 '= crypto wrappers =======================================================
