@@ -28,6 +28,7 @@ Private Const MODULE_NAME As String = "cAsyncSocket"
 #Const ImplUseShared = (ASYNCSOCKET_USE_SHARED <> 0)
 #Const ImplSync = Not (ASYNCSOCKET_NO_SYNC <> 0)
 #Const ImplNoIdeProtection = (MST_NO_IDE_PROTECTION <> 0)
+#Const ImplUseDebugLog = (USE_DEBUG_LOG <> 0)
 
 '=========================================================================
 ' Public events
@@ -278,7 +279,11 @@ End Type
 '=========================================================================
 
 Private Sub PrintError(sFunction As String)
-    Debug.Print "Critical error: " & Err.Description & " [" & MODULE_NAME & "." & sFunction & "]"
+    #If ImplUseDebugLog Then
+        DebugLog MODULE_NAME, sFunction & "(" & Erl & ")", Err.Description & " &H" & Hex$(Err.Number), vbLogEventTypeError
+    #Else
+        Debug.Print "Critical error: " & Err.Description & " [" & MODULE_NAME & "." & sFunction & "]"
+    #End If
 End Sub
 
 '=========================================================================
