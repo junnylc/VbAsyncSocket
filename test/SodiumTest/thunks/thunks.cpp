@@ -2,14 +2,14 @@
 //#pragma comment(linker, "/entry:main")
 //#pragma comment(linker, "/INCLUDE:_mainCRTStartup")
 
-#pragma intrinsic(memset, memcpy)
-
 #define IMPL_ECC_THUNK
 
 #include <stdio.h>
 #include <windows.h>
 #include <commctrl.h>
+#include <string.h>
 
+#pragma intrinsic(memset, memcpy)
 #pragma comment(lib, "crypt32")
 #pragma comment(lib, "comctl32")
 
@@ -51,6 +51,9 @@ typedef struct {
     uint8_t m_chacha20_tau[17];  // "expand 16-byte k";
     uint8_t m_chacha20_sigma[17]; // "expand 32-byte k";
     uint32_t m_negative_1305[17];
+    uint8_t m_S[256];
+    uint8_t m_Rcon[11];
+    uint8_t m_S_inv[256];
 } thunk_context_t;
 
 #define getRandomNumber (getContext()->m_getRandomNumber)
@@ -63,6 +66,9 @@ typedef struct {
 #define chacha20_tau (getContext()->m_chacha20_tau)
 #define chacha20_sigma (getContext()->m_chacha20_sigma)
 #define negative_1305 (getContext()->m_negative_1305)
+#define S (getContext()->m_S)
+#define Rcon (getContext()->m_Rcon)
+#define S_inv (getContext()->m_S_inv)
 
 #pragma code_seg(push, r1, ".mythunk")
 
@@ -75,7 +81,8 @@ __declspec(naked) thunk_context_t *getContext() {
         call    _next
 _next:
         pop     eax
-        sub     eax, 5 + 16*4
+        sub     eax, 5 + getContext
+        add     eax, beginOfThunk
         mov     eax, [eax]
         ret
     }
@@ -86,7 +93,8 @@ __declspec(naked) char *getThunk() {
         call    _next
 _next:
         pop     eax
-        sub     eax, 5 + 16 + 16*4
+        sub     eax, 5 + getThunk
+        add     eax, beginOfThunk
         ret
     }
 }
@@ -105,6 +113,10 @@ extern "C" {
 #include "chacha20.c"
 #include "poly1305.c"
 #include "chacha20poly1305.c"
+#include "aes.c"
+#include "gf128.c"
+#include "modes.c"
+#include "gcm.c"
 
 #ifdef __cplusplus
 }
@@ -145,6 +157,24 @@ typedef int (*cf_chacha20poly1305_decrypt_t)(const uint8_t key[32],
                                              const uint8_t *ciphertext, size_t nbytes,
                                              const uint8_t tag[16],
                                              uint8_t *plaintext);
+typedef void (*cf_aesgcm_encrypt_t)(uint8_t *c,
+                                    uint8_t *mac,
+                                    const uint8_t *m,
+                                    const size_t mlen,
+                                    const uint8_t *ad,
+                                    const size_t adlen,
+                                    const uint8_t *npub,
+                                    const uint8_t *k,
+                                    size_t klen);
+typedef void (*cf_aesgcm_decrypt_t)(uint8_t *m,
+                                    const uint8_t *c,
+                                    const size_t clen,
+                                    const uint8_t *mac,
+                                    const uint8_t *ad,
+                                    const size_t adlen,
+                                    const uint8_t *npub,
+                                    const uint8_t *k,
+                                    const size_t klen);
 
 void __cdecl main()
 {
@@ -161,6 +191,9 @@ void __cdecl main()
     memcpy(&ctx.m_chacha20_tau, &_chacha20_tau, sizeof _chacha20_tau);
     memcpy(&ctx.m_chacha20_sigma, &_chacha20_sigma, sizeof _chacha20_sigma);
     memcpy(&ctx.m_negative_1305, &_negative_1305, sizeof _negative_1305);
+    memcpy(&ctx.m_S, &_S, sizeof _S);
+    memcpy(&ctx.m_Rcon, &_Rcon, sizeof _Rcon);
+    memcpy(&ctx.m_S_inv, &_S_inv, sizeof _S_inv);
 
     CoInitialize(0);
     DWORD dwDummy;
@@ -189,6 +222,8 @@ void __cdecl main()
 
     cf_chacha20poly1305_encrypt_t pfn_cf_chacha20poly1305_encrypt = (cf_chacha20poly1305_encrypt_t)(((char *)hThunk) + ((char *)cf_chacha20poly1305_encrypt - (char *)beginOfThunk));
     cf_chacha20poly1305_decrypt_t pfn_cf_chacha20poly1305_decrypt = (cf_chacha20poly1305_decrypt_t)(((char *)hThunk) + ((char *)cf_chacha20poly1305_decrypt - (char *)beginOfThunk));
+    cf_aesgcm_encrypt_t pfn_cf_aesgcm_encrypt = (cf_aesgcm_encrypt_t)(((char *)hThunk) + ((char *)cf_aesgcm_encrypt - (char *)beginOfThunk));
+    cf_aesgcm_decrypt_t pfn_cf_aesgcm_decrypt = (cf_aesgcm_decrypt_t)(((char *)hThunk) + ((char *)cf_aesgcm_decrypt - (char *)beginOfThunk));
 
     uint8_t pubkey[ECC_BYTES+1] = { 0 };
     uint8_t privkey[ECC_BYTES] = { 0 };
@@ -225,6 +260,10 @@ void __cdecl main()
     pfn_cf_chacha20poly1305_encrypt(key, nonce, aad, sizeof aad, plaintext, sizeof plaintext, cyphertext, tag);
     pfn_cf_chacha20poly1305_decrypt(key, nonce, aad, sizeof aad, cyphertext, sizeof plaintext, tag, cyphertext);
 
+    uint8_t *mac = cyphertext + sizeof plaintext;
+    cf_aesgcm_encrypt(cyphertext, mac, plaintext, sizeof plaintext, aad, sizeof aad, nonce, key, sizeof key);
+    pfn_cf_aesgcm_decrypt(cyphertext, cyphertext, sizeof plaintext, mac, aad, sizeof aad, nonce, key, sizeof key);
+
     // init offsets
     int i = 0;
     ((int *)hThunk)[i++] = ((char *)ecc_make_key - (char *)beginOfThunk);
@@ -245,7 +284,9 @@ void __cdecl main()
 
     ((int *)hThunk)[i++] = ((char *)cf_chacha20poly1305_encrypt - (char *)beginOfThunk);
     ((int *)hThunk)[i++] = ((char *)cf_chacha20poly1305_decrypt - (char *)beginOfThunk);
-    
+    ((int *)hThunk)[i++] = ((char *)cf_aesgcm_encrypt - (char *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((char *)cf_aesgcm_decrypt - (char *)beginOfThunk);
+    printf("i=%d, needed=0x%02X, allocated=0x%02X\n", i, (i*4 + 15) & -16, ((char *)getContext) - ((char *)beginOfThunk));
 
     WCHAR szBuffer[50000] = { 0 };
     DWORD dwBufSize = _countof(szBuffer);

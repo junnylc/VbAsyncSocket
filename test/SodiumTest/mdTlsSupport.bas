@@ -53,13 +53,16 @@ Private Const TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS     As Long = 43
 Private Const TLS_EXTENSION_TYPE_COOKIE                 As Long = 44
 'Private Const TLS_EXTENSION_TYPE_PSK_KEY_EXCHANGE_MODES As Long = 45
 Private Const TLS_EXTENSION_TYPE_KEY_SHARE              As Long = 51
-'Private Const TLS_CIPHER_SUITE_AES_128_GCM_SHA256       As Long = &H1301
+Private Const TLS_CIPHER_SUITE_AES_128_GCM_SHA256       As Long = &H1301
 Private Const TLS_CIPHER_SUITE_AES_256_GCM_SHA384       As Long = &H1302
 Private Const TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256 As Long = &H1303
-Private Const TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384 As Long = &HC030&
+Private Const TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 As Long = &HC02B&
 Private Const TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 As Long = &HC02C&
+Private Const TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_128_GCM_SHA256 As Long = &HC02F&
+Private Const TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384 As Long = &HC030&
 Private Const TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 As Long = &HCCA8&
 Private Const TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 As Long = &HCCA9&
+Private Const TLS_CIPHER_SUITE_RSA_WITH_AES_128_GCM_SHA256 As Long = &H9C
 Private Const TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384 As Long = &H9D
 Private Const TLS_GROUP_SECP256R1                       As Long = 23
 'Private Const TLS_GROUP_SECP384R1                       As Long = 24
@@ -80,6 +83,7 @@ Private Const TLS_PROTOCOL_VERSION_TLS13_FINAL          As Long = &H304
 Private Const TLS_CHACHA20_KEY_SIZE                     As Long = 32
 Private Const TLS_CHACHA20POLY1305_IV_SIZE              As Long = 12
 Private Const TLS_CHACHA20POLY1305_TAG_SIZE             As Long = 16
+Private Const TLS_AES128_KEY_SIZE                       As Long = 16
 Private Const TLS_AES256_KEY_SIZE                       As Long = 32
 Private Const TLS_AESGCM_IV_SIZE                        As Long = 12
 Private Const TLS_AESGCM_TAG_SIZE                       As Long = 16
@@ -223,7 +227,8 @@ Public Enum UcsTlsCryptoAlgorithmsEnum
     ucsTlsAlgoKeyCertificate = 3
     '--- authenticated encryption w/ additional data
     ucsTlsAlgoAeadChacha20Poly1305 = 11
-    ucsTlsAlgoAeadAes256 = 12
+    ucsTlsAlgoAeadAes128 = 12
+    ucsTlsAlgoAeadAes256 = 13
     '--- digest
     ucsTlsAlgoDigestSha256 = 21
     ucsTlsAlgoDigestSha384 = 22
@@ -585,6 +590,16 @@ Private Function pvSetupCipherSuite(uCtx As UcsTlsContext, ByVal lCipherSuite As
                 .TagSize = TLS_CHACHA20POLY1305_TAG_SIZE
                 .DigestAlgo = ucsTlsAlgoDigestSha256
                 .DigestSize = TLS_SHA256_DIGEST_SIZE
+            Case TLS_CIPHER_SUITE_AES_128_GCM_SHA256, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS_CIPHER_SUITE_RSA_WITH_AES_128_GCM_SHA256
+                .AeadAlgo = ucsTlsAlgoAeadAes128
+                .KeySize = TLS_AES128_KEY_SIZE
+                .IvSize = TLS_AESGCM_IV_SIZE
+                If lCipherSuite <> TLS_CIPHER_SUITE_AES_128_GCM_SHA256 Then
+                    .IvDynamicSize = 8 '--- AES in TLS 1.2
+                End If
+                .TagSize = TLS_AESGCM_TAG_SIZE
+                .DigestAlgo = ucsTlsAlgoDigestSha256
+                .DigestSize = TLS_SHA256_DIGEST_SIZE
             Case TLS_CIPHER_SUITE_AES_256_GCM_SHA384, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384
                 .AeadAlgo = ucsTlsAlgoAeadAes256
                 .KeySize = TLS_AES256_KEY_SIZE
@@ -628,6 +643,9 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                 '--- Cipher Suites
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
                     If (.ClientFeatures And ucsTlsSupportTls13) <> 0 And pvCryptoIsSupported(ucsTlsAlgoKeyX25519) Then
+                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_128_GCM_SHA256, Size:=2)
+                        End If
                         If pvCryptoIsSupported(ucsTlsAlgoAeadAes256) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
                         End If
@@ -636,6 +654,10 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                         End If
                     End If
                     If (.ClientFeatures And ucsTlsSupportTls12) <> 0 And pvCryptoIsSupported(ucsTlsAlgoKeySecp256r1) Then
+                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, Size:=2)
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_128_GCM_SHA256, Size:=2)
+                        End If
                         If pvCryptoIsSupported(ucsTlsAlgoAeadAes256) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, Size:=2)
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
@@ -645,6 +667,9 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
                         End If
                         '--- no "perfect forward secrecy" -> least preferred
+                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_RSA_WITH_AES_128_GCM_SHA256, Size:=2)
+                        End If
                         If pvCryptoIsSupported(ucsTlsAlgoAeadAes256) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
                         End If
@@ -1302,7 +1327,7 @@ Private Function pvParseHandshakeContent(uCtx As UcsTlsContext, baInput() As Byt
                     pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
                     '--- post-process ucsTlsStateExpectExtensions
                     If .State = ucsTlsStateExpectServerFinish And .ServerProtocol = TLS_PROTOCOL_VERSION_TLS12 Then
-                        If .CipherSuite = TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384 Then
+                        If pvCryptoCipherSuiteUseRsaCertificate(.CipherSuite) Then
                             On Error Resume Next
                             baCert = .ServerCertificates.Item(1)
                             On Error GoTo 0
@@ -1734,17 +1759,20 @@ End Function
 
 '= crypto wrappers =======================================================
 
-Private Function pvCryptoIsSupported(eAead As UcsTlsCryptoAlgorithmsEnum) As Boolean
-    If eAead = ucsTlsAlgoAeadAes256 Then
+Private Function pvCryptoIsSupported(ByVal eAead As UcsTlsCryptoAlgorithmsEnum) As Boolean
+    Select Case eAead
+    Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
         #If ImplUseLibSodium Then
-            pvCryptoIsSupported = (crypto_aead_aes256gcm_is_available() <> 0)
+            pvCryptoIsSupported = (crypto_aead_aes256gcm_is_available() <> 0 And eAead = ucsTlsAlgoAeadAes256)
+        #Else
+            pvCryptoIsSupported = True
         #End If
-    Else
+    Case Else
         pvCryptoIsSupported = True
-    End If
+    End Select
 End Function
 
-Private Function pvCryptoAeadDecrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baServerIV() As Byte, baServerKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
+Private Function pvCryptoAeadDecrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, baServerIV() As Byte, baServerKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
     Debug.Assert pvArraySize(baBuffer) >= lPos + lSize
     Select Case eAead
     Case ucsTlsAlgoAeadChacha20Poly1305
@@ -1759,11 +1787,15 @@ Private Function pvCryptoAeadDecrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baServ
                 GoTo QH
             End If
         #End If
-    Case ucsTlsAlgoAeadAes256
+    Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
         Debug.Assert pvArraySize(baServerIV) = TLS_AESGCM_IV_SIZE
-        Debug.Assert pvArraySize(baServerKey) = TLS_AES256_KEY_SIZE
+        Debug.Assert pvArraySize(baServerKey) = IIf(eAead = ucsTlsAlgoAeadAes128, TLS_AES128_KEY_SIZE, TLS_AES256_KEY_SIZE)
         #If ImplUseLibSodium Then
             If crypto_aead_aes256gcm_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAad(lAadPos), lAdSize, 0, baServerIV(0), baServerKey(0)) <> 0 Then
+                GoTo QH
+            End If
+        #Else
+            If Not AeadAesGcmDecrypt(baServerIV, baServerKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
                 GoTo QH
             End If
         #End If
@@ -1775,7 +1807,7 @@ Private Function pvCryptoAeadDecrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baServ
 QH:
 End Function
 
-Private Function pvCryptoAeadEncrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baClientIV() As Byte, baClientKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
+Private Function pvCryptoAeadEncrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, baClientIV() As Byte, baClientKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
     Dim lAdPtr          As Long
     
     Debug.Assert pvArraySize(baBuffer) >= lPos + lSize + TLS_CHACHA20POLY1305_TAG_SIZE
@@ -1795,11 +1827,15 @@ Private Function pvCryptoAeadEncrypt(eAead As UcsTlsCryptoAlgorithmsEnum, baClie
                 GoTo QH
             End If
         #End If
-    Case ucsTlsAlgoAeadAes256
+    Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
         Debug.Assert pvArraySize(baClientIV) = TLS_AESGCM_IV_SIZE
-        Debug.Assert pvArraySize(baClientKey) = TLS_AES256_KEY_SIZE
+        Debug.Assert pvArraySize(baClientKey) = IIf(eAead = ucsTlsAlgoAeadAes128, TLS_AES128_KEY_SIZE, TLS_AES256_KEY_SIZE)
         #If ImplUseLibSodium Then
             If crypto_aead_aes256gcm_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baClientIV(0), baClientKey(0)) <> 0 Then
+                GoTo QH
+            End If
+        #Else
+            If Not AeadAesGcmEncrypt(baClientIV, baClientKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
                 GoTo QH
             End If
         #End If
@@ -1865,7 +1901,7 @@ QH:
     End If
 End Function
 
-Private Function pvCryptoHash(eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
+Private Function pvCryptoHash(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
     Dim baRetVal()      As Byte
     
     If Size < 0 Then
@@ -2035,20 +2071,35 @@ End Function
 
 Private Function pvCryptoCipherSuiteName(ByVal lCipherSuite As Long) As String
     Select Case lCipherSuite
+    Case TLS_CIPHER_SUITE_AES_128_GCM_SHA256
+        pvCryptoCipherSuiteName = "TLS_AES_128_GCM_SHA256"
     Case TLS_CIPHER_SUITE_AES_256_GCM_SHA384
         pvCryptoCipherSuiteName = "TLS_AES_256_GCM_SHA384"
     Case TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256
         pvCryptoCipherSuiteName = "TLS_CHACHA20_POLY1305_SHA256"
-    Case TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-        pvCryptoCipherSuiteName = "ECDHE-RSA-AES256-GCM-SHA384"
+    Case TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        pvCryptoCipherSuiteName = "ECDHE-ECDSA-AES128-GCM-SHA256"
     Case TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
         pvCryptoCipherSuiteName = "ECDHE-ECDSA-AES256-GCM-SHA384"
+    Case TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        pvCryptoCipherSuiteName = "ECDHE-RSA-AES128-GCM-SHA256"
+    Case TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        pvCryptoCipherSuiteName = "ECDHE-RSA-AES256-GCM-SHA384"
     Case TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         pvCryptoCipherSuiteName = "ECDHE-RSA-CHACHA20-POLY1305"
     Case TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
         pvCryptoCipherSuiteName = "ECDHE-ECDSA-CHACHA20-POLY1305"
+    Case TLS_CIPHER_SUITE_RSA_WITH_AES_128_GCM_SHA256
+        pvCryptoCipherSuiteName = "AES128-GCM-SHA256"
     Case TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384
         pvCryptoCipherSuiteName = "AES256-GCM-SHA384"
+    End Select
+End Function
+
+Private Function pvCryptoCipherSuiteUseRsaCertificate(ByVal lCipherSuite As Long) As Boolean
+    Select Case lCipherSuite
+    Case TLS_CIPHER_SUITE_RSA_WITH_AES_128_GCM_SHA256, TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384
+        pvCryptoCipherSuiteUseRsaCertificate = True
     End Select
 End Function
 
