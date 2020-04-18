@@ -7,7 +7,9 @@ Attribute VB_Name = "mdTlsSupport"
 ' More TLS 1.3 implementations at https://github.com/h2o/picotls
 '   and https://github.com/openssl/openssl
 '
-' List of resources at https://github.com/tlswg/tls13-spec/wiki/Implementations
+' Additional links TLS 1.3 resources
+'   https://github.com/tlswg/tls13-spec/wiki/Implementations
+'   https://sans-io.readthedocs.io/how-to-sans-io.html
 '
 '=========================================================================
 Option Explicit
@@ -327,7 +329,7 @@ Public Function TlsInitClient( _
             Call sodium_init
         End If
     #End If
-    If Not EccInit() Then
+    If Not InitThunks() Then
         GoTo QH
     End If
     With uCtx
@@ -335,7 +337,7 @@ Public Function TlsInitClient( _
         .State = ucsTlsStateHandshakeStart
         .TargetHost = TargetHost
         .ClientFeatures = ClientFeatures
-        .ClientRandom = pvCryptoRandomBytes(TLS_HELLO_RANDOM_SIZE)
+        .ClientRandom = pvCryptoRandomArray(TLS_HELLO_RANDOM_SIZE)
         .RandomSize = TLS_HELLO_RANDOM_SIZE
         '--- note: TLS 1.3 uses X25519 only and uCtx.ClientPublic has to be ready for pvBuildClientHello
         If Not pvSetupKeyExchangeGroup(uCtx, TLS_GROUP_X25519, .LastError, .LastAlertCode) Then
@@ -513,7 +515,7 @@ Private Function pvSetupKeyExchangeGroup(uCtx As UcsTlsContext, ByVal lExchangeG
             Select Case lExchangeGroup
             Case TLS_GROUP_X25519
                 .ExchangeAlgo = ucsTlsAlgoKeyX25519
-                .ClientPrivate = pvCryptoRandomBytes(TLS_X25519_KEY_SIZE)
+                .ClientPrivate = pvCryptoRandomArray(TLS_X25519_KEY_SIZE)
                 '--- fix issues w/ specific privkeys
                 .ClientPrivate(0) = .ClientPrivate(0) And 248
                 .ClientPrivate(UBound(.ClientPrivate)) = (.ClientPrivate(UBound(.ClientPrivate)) And 127) Or 64
@@ -551,7 +553,7 @@ Private Function pvSetupKeyExchangeRSA(uCtx As UcsTlsContext, baCert() As Byte, 
     On Error GoTo EH
     With uCtx
         .ExchangeAlgo = ucsTlsAlgoKeyCertificate
-        .ClientPrivate = pvCryptoRandomBytes(48)
+        .ClientPrivate = pvCryptoRandomArray(48)
         pvWriteLong .ClientPrivate, 0, TLS_CLIENT_LEGACY_VERSION, Size:=2
         .ClientEncrPrivate = pvCryptoRsaEncrypt(baCert, .ClientPrivate)
     End With
@@ -774,7 +776,7 @@ Private Function pvBuildLegacyClientKeyExchange(uCtx As UcsTlsContext, baOutput(
             If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
                 ReDim baClientIV(0 To .IvSize - 1) As Byte
                 pvWriteArray baClientIV, 0, .ClientTrafficIV
-                pvWriteArray baClientIV, .IvSize - .IvDynamicSize, pvCryptoRandomBytes(.IvDynamicSize)
+                pvWriteArray baClientIV, .IvSize - .IvDynamicSize, pvCryptoRandomArray(.IvDynamicSize)
                 lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baClientIV(.IvSize - .IvDynamicSize)), .IvDynamicSize)
             Else
                 baClientIV = pvArrayXor(.ClientTrafficIV, .ClientTrafficSeqNo)
@@ -870,7 +872,7 @@ Private Function pvBuildClientApplicationData(uCtx As UcsTlsContext, baOutput() 
             If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
                 ReDim baClientIV(0 To .IvSize - 1) As Byte
                 pvWriteArray baClientIV, 0, .ClientTrafficIV
-                pvWriteArray baClientIV, .IvSize - .IvDynamicSize, pvCryptoRandomBytes(.IvDynamicSize)
+                pvWriteArray baClientIV, .IvSize - .IvDynamicSize, pvCryptoRandomArray(.IvDynamicSize)
                 lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baClientIV(.IvSize - .IvDynamicSize)), .IvDynamicSize)
             Else
                 baClientIV = pvArrayXor(.ClientTrafficIV, .ClientTrafficSeqNo)
@@ -922,7 +924,7 @@ Private Function pvBuildClientAlert(uCtx As UcsTlsContext, baOutput() As Byte, B
             ReDim baClientIV(0 To 3) As Byte
             baClientIV(0) = eAlertDesc
             baClientIV(1) = lAlertLevel
-            baClientIV(1) = TLS_CONTENT_TYPE_ALERT
+            baClientIV(2) = TLS_CONTENT_TYPE_ALERT
             pvBuildClientAlert = pvBuildClientApplicationData(uCtx, baOutput, lPos, baClientIV, UBound(baClientIV) + 1, sError, eAlertCode)
             GoTo QH
         End If
@@ -935,7 +937,7 @@ Private Function pvBuildClientAlert(uCtx As UcsTlsContext, baOutput() As Byte, B
                 If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
                     ReDim baClientIV(0 To .IvSize - 1) As Byte
                     pvWriteArray baClientIV, 0, .ClientTrafficIV
-                    pvWriteArray baClientIV, .IvSize - .IvDynamicSize, pvCryptoRandomBytes(.IvDynamicSize)
+                    pvWriteArray baClientIV, .IvSize - .IvDynamicSize, pvCryptoRandomArray(.IvDynamicSize)
                     lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baClientIV(.IvSize - .IvDynamicSize)), .IvDynamicSize)
                 Else
                     baClientIV = pvArrayXor(.ClientTrafficIV, .ClientTrafficSeqNo)
@@ -2016,7 +2018,7 @@ Private Function pvCryptoSharedSecret(ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum,
     pvCryptoSharedSecret = baRetVal
 End Function
 
-Private Function pvCryptoRandomBytes(ByVal lSize As Long) As Byte()
+Private Function pvCryptoRandomArray(ByVal lSize As Long) As Byte()
     Dim baRetVal()      As Byte
     
     If lSize > 0 Then
@@ -2032,7 +2034,7 @@ Private Function pvCryptoRandomBytes(ByVal lSize As Long) As Byte()
             End If
         #End If
     End If
-    pvCryptoRandomBytes = baRetVal
+    pvCryptoRandomArray = baRetVal
 End Function
 
 Private Function pvCryptoCipherSuiteName(ByVal lCipherSuite As Long) As String
