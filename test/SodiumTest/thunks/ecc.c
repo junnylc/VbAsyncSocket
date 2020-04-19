@@ -56,10 +56,10 @@ typedef struct
 #define Curve_N_32 {0xF3B9CAC2FC632551ull, 0xBCE6FAADA7179E84ull, 0xFFFFFFFFFFFFFFFFull, 0xFFFFFFFF00000000ull}
 #define Curve_N_48 {0xECEC196ACCC52973, 0x581A0DB248B0A77A, 0xC7634D81F4372DDF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}
 
-static uint64_t _curve_p[NUM_ECC_DIGITS] = CONCAT(Curve_P_, ECC_CURVE);
-static uint64_t _curve_b[NUM_ECC_DIGITS] = CONCAT(Curve_B_, ECC_CURVE);
-static EccPoint _curve_G = CONCAT(Curve_G_, ECC_CURVE);
-static uint64_t _curve_n[NUM_ECC_DIGITS] = CONCAT(Curve_N_, ECC_CURVE);
+static uint64_t g_curve_p[NUM_ECC_DIGITS] = CONCAT(Curve_P_, ECC_CURVE);
+static uint64_t g_curve_b[NUM_ECC_DIGITS] = CONCAT(Curve_B_, ECC_CURVE);
+static EccPoint g_curve_G = CONCAT(Curve_G_, ECC_CURVE);
+static uint64_t g_curve_n[NUM_ECC_DIGITS] = CONCAT(Curve_N_, ECC_CURVE);
 
 #if (defined(_WIN32) || defined(_WIN64))
 /* Windows */

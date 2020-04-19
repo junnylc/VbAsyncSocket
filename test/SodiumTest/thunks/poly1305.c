@@ -93,7 +93,7 @@ static void poly1305_min_reduce(uint32_t x[17])
 }
 
 /* This is - 2 ** 130 - 5 in twos complement. */
-static const uint32_t _negative_1305[17] = {
+static const uint32_t g_negative_1305[17] = {
   0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0xfc
 };

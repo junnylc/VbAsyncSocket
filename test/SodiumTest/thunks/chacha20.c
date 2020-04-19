@@ -101,8 +101,8 @@ void cf_chacha20_core(const uint8_t key0[16],
   write32_le(xf, out + 60);
 }
 
-static const uint8_t _chacha20_tau[] = "expand 16-byte k";
-static const uint8_t _chacha20_sigma[] = "expand 32-byte k";
+static const uint8_t g_chacha20_tau[] = "expand 16-byte k";
+static const uint8_t g_chacha20_sigma[] = "expand 32-byte k";
 
 static void set_key(cf_chacha20_ctx *ctx, const uint8_t *key, size_t nkey)
 {

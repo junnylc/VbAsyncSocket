@@ -58,7 +58,7 @@ typedef struct
 
 void cf_sha512_digest_final(cf_sha512_context *ctx, uint8_t hash[CF_SHA512_HASHSZ]);
 
-static const uint64_t _K512[80] = {
+static const uint64_t g_K512[80] = {
   UINT64_C(0x428a2f98d728ae22), UINT64_C(0x7137449123ef65cd),
   UINT64_C(0xb5c0fbcfec4d3b2f), UINT64_C(0xe9b5dba58189dbbc),
   UINT64_C(0x3956c25bf348b538), UINT64_C(0x59f111f1b605d019),
@@ -101,12 +101,12 @@ static const uint64_t _K512[80] = {
   UINT64_C(0x5fcb6fab3ad6faec), UINT64_C(0x6c44198c4a475817)
 };
 
-# define CH(x, y, z) (((x) & (y)) ^ (~(x) & (z)))
-# define MAJ(x, y, z) (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
-# define BSIG0(x) (rotr64((x), 28) ^ rotr64((x), 34) ^ rotr64((x), 39))
-# define BSIG1(x) (rotr64((x), 14) ^ rotr64((x), 18) ^ rotr64((x), 41))
-# define SSIG0(x) (rotr64((x), 1) ^ rotr64((x), 8) ^ ((x) >> 7))
-# define SSIG1(x) (rotr64((x), 19) ^ rotr64((x), 61) ^ ((x) >> 6))
+#define CH(x, y, z) (((x) & (y)) ^ (~(x) & (z)))
+#define MAJ(x, y, z) (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
+#define BSIG0(x) (rotr64((x), 28) ^ rotr64((x), 34) ^ rotr64((x), 39))
+#define BSIG1(x) (rotr64((x), 14) ^ rotr64((x), 18) ^ rotr64((x), 41))
+#define SSIG0(x) (rotr64((x), 1) ^ rotr64((x), 8) ^ ((x) >> 7))
+#define SSIG1(x) (rotr64((x), 19) ^ rotr64((x), 61) ^ ((x) >> 6))
 
 static
 void cf_sha512_init(cf_sha512_context *ctx)
@@ -278,9 +278,9 @@ void cf_sha384_digest_final(cf_sha512_context *ctx, uint8_t hash[CF_SHA384_HASHS
   memcpy(hash, full, CF_SHA384_HASHSZ);
 }
 
-# undef CH
-# undef MAJ
-# undef BSIG0
-# undef BSIG1
-# undef SSIG0
-# undef SSIG1
+#undef CH
+#undef MAJ
+#undef BSIG0
+#undef BSIG1
+#undef SSIG0
+#undef SSIG1

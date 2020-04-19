@@ -109,7 +109,7 @@ _next:
     }
 }
 
-#define DECLARE_PFN(t, f) const t pfn_##f = (t)(getThunk() + (((uint8_t *)f) - ((uint8_t *)beginOfThunk)));
+#define DECLARE_PFN(t, f) const t pfn_##f = (t)(getThunk() + (((uint8_t *)f) - ((uint8_t *)beginOfThunk)))
 
 #ifdef __cplusplus
 extern "C" {
@@ -186,28 +186,28 @@ void __cdecl main()
     printf("sizeof(cf_sha512_context)=%d\n", sizeof cf_sha512_context);
 #endif
 #ifdef IMPL_CHACHA20_THUNK
-    printf("sizeof(_chacha20_tau)=%d\n", sizeof _chacha20_tau);
+    printf("sizeof(g_chacha20_tau)=%d\n", sizeof g_chacha20_tau);
 #endif
     static thunk_context_t ctx;
 #ifdef IMPL_ECC_THUNK
-    memcpy(&ctx.m_curve_p, &_curve_p, sizeof _curve_p);
-    memcpy(&ctx.m_curve_b, &_curve_b, sizeof _curve_b);
-    memcpy(&ctx.m_curve_G, &_curve_G, sizeof _curve_G);
-    memcpy(&ctx.m_curve_n, &_curve_n, sizeof _curve_p);
+    memcpy(&ctx.m_curve_p, &g_curve_p, sizeof g_curve_p);
+    memcpy(&ctx.m_curve_b, &g_curve_b, sizeof g_curve_b);
+    memcpy(&ctx.m_curve_G, &g_curve_G, sizeof g_curve_G);
+    memcpy(&ctx.m_curve_n, &g_curve_n, sizeof g_curve_p);
 #endif
 #ifdef IMPL_SHA_THUNK
-    memcpy(&ctx.m_K256, &_K256, sizeof _K256);
-    memcpy(&ctx.m_K512, &_K512, sizeof _K512);
+    memcpy(&ctx.m_K256, &g_K256, sizeof g_K256);
+    memcpy(&ctx.m_K512, &g_K512, sizeof g_K512);
 #endif
 #ifdef IMPL_CHACHA20_THUNK
-    memcpy(&ctx.m_chacha20_tau, &_chacha20_tau, sizeof _chacha20_tau);
-    memcpy(&ctx.m_chacha20_sigma, &_chacha20_sigma, sizeof _chacha20_sigma);
-    memcpy(&ctx.m_negative_1305, &_negative_1305, sizeof _negative_1305);
+    memcpy(&ctx.m_chacha20_tau, &g_chacha20_tau, sizeof g_chacha20_tau);
+    memcpy(&ctx.m_chacha20_sigma, &g_chacha20_sigma, sizeof g_chacha20_sigma);
+    memcpy(&ctx.m_negative_1305, &g_negative_1305, sizeof g_negative_1305);
 #endif
 #ifdef IMPL_AESGCM_THUNK
-    memcpy(&ctx.m_S, &_S, sizeof _S);
-    memcpy(&ctx.m_Rcon, &_Rcon, sizeof _Rcon);
-    memcpy(&ctx.m_S_inv, &_S_inv, sizeof _S_inv);
+    memcpy(&ctx.m_S, &g_S, sizeof g_S);
+    memcpy(&ctx.m_Rcon, &g_Rcon, sizeof g_Rcon);
+    memcpy(&ctx.m_S_inv, &g_S_inv, sizeof g_S_inv);
 #endif
 
     CoInitialize(0);
@@ -293,33 +293,33 @@ void __cdecl main()
     // init offsets at beginning of thunk
     int i = 1;
 #ifdef IMPL_ECC_THUNK
-    ((int *)hThunk)[i++] = ((char *)ecc_make_key - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)ecdh_shared_secret - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)ecdh_uncompress_key - (char *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)ecc_make_key - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)ecdh_shared_secret - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)ecdh_uncompress_key - (uint8_t *)beginOfThunk);
 #ifndef ECC_NO_SIGN
-    ((int *)hThunk)[i++] = ((char *)ecdsa_sign - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)ecdsa_verify - (char *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)ecdsa_sign - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)ecdsa_verify - (uint8_t *)beginOfThunk);
 #endif
-    ((int *)hThunk)[i++] = ((char *)cf_curve25519_mul - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)cf_curve25519_mul_base - (char *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_curve25519_mul - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_curve25519_mul_base - (uint8_t *)beginOfThunk);
 #endif
 #ifdef IMPL_SHA_THUNK
-    ((int *)hThunk)[i++] = ((char *)cf_sha256_init - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)cf_sha256_update - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)cf_sha256_digest_final - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)cf_sha384_init - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)cf_sha384_update - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)cf_sha384_digest_final - (char *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_sha256_init - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_sha256_update - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_sha256_digest_final - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_sha384_init - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_sha384_update - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_sha384_digest_final - (uint8_t *)beginOfThunk);
 #endif
 #ifdef IMPL_CHACHA20_THUNK
-    ((int *)hThunk)[i++] = ((char *)cf_chacha20poly1305_encrypt - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)cf_chacha20poly1305_decrypt - (char *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_chacha20poly1305_encrypt - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_chacha20poly1305_decrypt - (uint8_t *)beginOfThunk);
 #endif
 #ifdef IMPL_AESGCM_THUNK
-    ((int *)hThunk)[i++] = ((char *)cf_aesgcm_encrypt - (char *)beginOfThunk);
-    ((int *)hThunk)[i++] = ((char *)cf_aesgcm_decrypt - (char *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_aesgcm_encrypt - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((uint8_t *)cf_aesgcm_decrypt - (uint8_t *)beginOfThunk);
 #endif
-    printf("i=%d, needed=0x%02X, allocated=0x%02X\n", i, (i*4 + 15) & -16, ((char *)getContext) - ((char *)beginOfThunk));
+    printf("i=%d, needed=0x%02X, allocated=0x%02X\n", i, (i*4 + 15) & -16, ((uint8_t *)getContext) - ((uint8_t *)beginOfThunk));
 
     WCHAR szBuffer[50000] = { 0 };
     DWORD dwBufSize = _countof(szBuffer);
