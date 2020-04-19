@@ -1102,6 +1102,16 @@ int ecdh_shared_secret(const uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_p
     return !EccPoint_isZero(&l_product);
 }
 
+int ecdh_uncompress_key(const uint8_t p_publicKey[ECC_BYTES + 1], uint8_t p_uncompressedKey[2 * ECC_BYTES + 1])
+{
+    EccPoint l_public;
+    ecc_point_decompress(&l_public, p_publicKey);
+    p_uncompressedKey[0] = 4;
+    ecc_native2bytes(p_uncompressedKey + 1, l_public.x);
+    ecc_native2bytes(p_uncompressedKey + ECC_BYTES + 1, l_public.y);
+    return 1;
+}
+
 #ifndef ECC_NO_SIGN
 
 /* -------- ECDSA code -------- */

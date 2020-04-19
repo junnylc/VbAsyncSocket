@@ -15,7 +15,7 @@ Attribute VB_Name = "mdTlsSupport"
 Option Explicit
 DefObj A-Z
 
-#Const ImplUseLibSodium = False
+#Const ImplUseLibSodium = (ASYNCSOCKET_USE_LIBSODIUM <> 0)
 
 '=========================================================================
 ' API
@@ -109,20 +109,17 @@ Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination
 Private Declare Sub FillMemory Lib "kernel32" Alias "RtlFillMemory" (Destination As Any, ByVal Length As Long, ByVal Fill As Byte)
 Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As Long
 Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal ucb As Long) As Long
-Private Declare Function GetModuleHandle Lib "kernel32" Alias "GetModuleHandleA" (ByVal lpModuleName As String) As Long
-Private Declare Function LoadLibrary Lib "kernel32" Alias "LoadLibraryA" (ByVal lpLibFileName As String) As Long
 Private Declare Function CryptAcquireContext Lib "advapi32" Alias "CryptAcquireContextW" (phProv As Long, ByVal pszContainer As Long, ByVal pszProvider As Long, ByVal dwProvType As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptReleaseContext Lib "advapi32" (ByVal hProv As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptImportPublicKeyInfo Lib "crypt32" (ByVal hCryptProv As Long, ByVal dwCertEncodingType As Long, pInfo As Any, phKey As Long) As Long
 Private Declare Function CryptDestroyKey Lib "advapi32" (ByVal hKey As Long) As Long
-Private Declare Function CryptGenRandom Lib "advapi32" (ByVal hProv As Long, ByVal dwLen As Long, pbBuffer As Any) As Long
 Private Declare Function CryptEncrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long, dwBufLen As Long) As Long
 Private Declare Function CertCreateCertificateContext Lib "crypt32" (ByVal dwCertEncodingType As Long, pbCertEncoded As Any, ByVal cbCertEncoded As Long) As Long
 Private Declare Function CertFreeCertificateContext Lib "crypt32" (ByVal pCertContext As Long) As Long
 #If ImplUseLibSodium Then
     '--- libsodium
-    Private Declare Function sodium_init Lib "libsodium" () As Long
-    Private Declare Function randombytes_buf Lib "libsodium" (lpOut As Any, ByVal lSize As Long) As Long
+'    Private Declare Function sodium_init Lib "libsodium" () As Long
+'    Private Declare Function randombytes_buf Lib "libsodium" (lpOut As Any, ByVal lSize As Long) As Long
     Private Declare Function crypto_scalarmult_curve25519 Lib "libsodium" (lpOut As Any, lpConstN As Any, lpConstP As Any) As Long
     Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpConstN As Any) As Long
     Private Declare Function crypto_hash_sha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
@@ -305,12 +302,6 @@ Public Function TlsInitClient( _
     Dim uEmpty          As UcsTlsContext
     
     On Error GoTo EH
-    #If ImplUseLibSodium Then
-        If GetModuleHandle("libsodium.dll") = 0 Then
-            Call LoadLibrary(App.Path & "\libsodium.dll")
-            Call sodium_init
-        End If
-    #End If
     If Not CryptoInit() Then
         GoTo QH
     End If
@@ -1869,7 +1860,7 @@ QH:
         Call CertFreeCertificateContext(pContext)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(Err.LastDllError < 0, Err.LastDllError, Err.LastDllError Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
     End If
 End Function
 
@@ -2021,16 +2012,7 @@ Private Function pvCryptoRandomArray(ByVal lSize As Long) As Byte()
     
     If lSize > 0 Then
         ReDim baRetVal(0 To lSize - 1) As Byte
-        #If ImplUseLibSodium Then
-            Call randombytes_buf(baRetVal(0), lSize)
-        #Else
-            Dim hProv           As Long
-            
-            If CryptAcquireContext(hProv, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) <> 0 Then
-                Call CryptGenRandom(hProv, lSize, baRetVal(0))
-                Call CryptReleaseContext(hProv, 0)
-            End If
-        #End If
+        CryptoRandomBytes VarPtr(baRetVal(0)), lSize
     End If
     pvCryptoRandomArray = baRetVal
 End Function

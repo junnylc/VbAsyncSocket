@@ -295,6 +295,7 @@ void __cdecl main()
 #ifdef IMPL_ECC_THUNK
     ((int *)hThunk)[i++] = ((char *)ecc_make_key - (char *)beginOfThunk);
     ((int *)hThunk)[i++] = ((char *)ecdh_shared_secret - (char *)beginOfThunk);
+    ((int *)hThunk)[i++] = ((char *)ecdh_uncompress_key - (char *)beginOfThunk);
 #ifndef ECC_NO_SIGN
     ((int *)hThunk)[i++] = ((char *)ecdsa_sign - (char *)beginOfThunk);
     ((int *)hThunk)[i++] = ((char *)ecdsa_verify - (char *)beginOfThunk);
