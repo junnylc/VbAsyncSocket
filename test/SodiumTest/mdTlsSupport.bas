@@ -7,15 +7,13 @@ Attribute VB_Name = "mdTlsSupport"
 ' More TLS 1.3 implementations at https://github.com/h2o/picotls
 '   and https://github.com/openssl/openssl
 '
-' Additional links TLS 1.3 resources
+' Additional links with TLS 1.3 resources
 '   https://github.com/tlswg/tls13-spec/wiki/Implementations
 '   https://sans-io.readthedocs.io/how-to-sans-io.html
 '
 '=========================================================================
 Option Explicit
 DefObj A-Z
-
-#Const ImplUseLibSodium = (ASYNCSOCKET_USE_LIBSODIUM <> 0)
 
 '=========================================================================
 ' API
@@ -98,64 +96,25 @@ Private Const TLS_MAX_ENCRYPTED_RECORD_SIZE             As Long = (16384 + 256)
 Private Const TLS_RECORD_VERSION                        As Long = TLS_PROTOCOL_VERSION_TLS12 '--- always legacy version
 Private Const TLS_CLIENT_LEGACY_VERSION                 As Long = &H303
 Private Const TLS_HELLO_RANDOM_SIZE                     As Long = 32
-'--- for CryptAcquireContext
-Private Const PROV_RSA_FULL                             As Long = 1
-Private Const CRYPT_VERIFYCONTEXT                       As Long = &HF0000000
-'--- for CryptDecodeObjectEx
-Private Const X509_ASN_ENCODING                         As Long = 1
-Private Const PKCS_7_ASN_ENCODING                       As Long = &H10000
 
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
-Private Declare Sub FillMemory Lib "kernel32" Alias "RtlFillMemory" (Destination As Any, ByVal Length As Long, ByVal Fill As Byte)
 Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As Long
 Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal ucb As Long) As Long
-Private Declare Function CryptAcquireContext Lib "advapi32" Alias "CryptAcquireContextW" (phProv As Long, ByVal pszContainer As Long, ByVal pszProvider As Long, ByVal dwProvType As Long, ByVal dwFlags As Long) As Long
-Private Declare Function CryptReleaseContext Lib "advapi32" (ByVal hProv As Long, ByVal dwFlags As Long) As Long
-Private Declare Function CryptImportPublicKeyInfo Lib "crypt32" (ByVal hCryptProv As Long, ByVal dwCertEncodingType As Long, pInfo As Any, phKey As Long) As Long
-Private Declare Function CryptDestroyKey Lib "advapi32" (ByVal hKey As Long) As Long
-Private Declare Function CryptEncrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long, dwBufLen As Long) As Long
-Private Declare Function CertCreateCertificateContext Lib "crypt32" (ByVal dwCertEncodingType As Long, pbCertEncoded As Any, ByVal cbCertEncoded As Long) As Long
-Private Declare Function CertFreeCertificateContext Lib "crypt32" (ByVal pCertContext As Long) As Long
-#If ImplUseLibSodium Then
-    '--- libsodium
-'    Private Declare Function sodium_init Lib "libsodium" () As Long
-'    Private Declare Function randombytes_buf Lib "libsodium" (lpOut As Any, ByVal lSize As Long) As Long
-    Private Declare Function crypto_scalarmult_curve25519 Lib "libsodium" (lpOut As Any, lpConstN As Any, lpConstP As Any) As Long
-    Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpConstN As Any) As Long
-    Private Declare Function crypto_hash_sha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
-    Private Declare Function crypto_hash_sha256_init Lib "libsodium" (lpState As Any) As Long
-    Private Declare Function crypto_hash_sha256_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
-    Private Declare Function crypto_hash_sha256_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
-    Private Declare Function crypto_hash_sha512_init Lib "libsodium" (lpState As Any) As Long
-    Private Declare Function crypto_hash_sha512_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
-    Private Declare Function crypto_hash_sha512_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
-    Private Declare Function crypto_aead_chacha20poly1305_ietf_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-    Private Declare Function crypto_aead_chacha20poly1305_ietf_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-    Private Declare Function crypto_aead_aes256gcm_is_available Lib "libsodium" () As Long
-    Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-    Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-#End If
 
 '=========================================================================
 ' Constants and member variables
 '=========================================================================
 
 Private Const STR_VL_ALERTS             As String = "0|Close notify|10|Unexpected message|20|Bad record mac|40|Handshake failure|42|Bad certificate|44|Certificate revoked|45|Certificate expired|46|Certificate unknown|47|Illegal parameter|48|Unknown CA|50|Decode error|51|Decrypt error|70|Protocol version|80|Internal error|90|User canceled|109|Missing extension|112|Unrecognized name|116|Certificate required|120|No application protocol"
-Private Const STR_SHA384_STATE          As String = "d89e05c15d9dbbcb07d57c362a299a6217dd70305a01599139590ef7d8ec2f15310bc0ff6726336711155868874ab48ea78ff9640d2e0cdba44ffabe1d48b547"
 Private Const STR_HELLO_RETRY_RANDOM    As String = "cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c"
 Private Const STR_UNKNOWN_ALERT         As String = "Unknown (%1)"
 Private Const STR_FORMAT_ALERT          As String = """%1"" alert"
-Private Const LNG_SHA256_BLOCK_SIZE     As Long = 64
-Private Const LNG_SHA384_BLOCK_SIZE     As Long = 128
-Private Const LNG_SHA512_CTX_SIZE       As Long = 64 + 16 + 128
-Private Const LNG_SHA512_BLOCK_SIZE     As Long = 128
-Private Const LNG_SHA512_DIGEST_SIZE    As Long = 64
-Private Const LNG_AAD_SIZE              As Long = 5     '--- size of Additional Authenticated Data
+'--- numeric
+Private Const LNG_AAD_SIZE              As Long = 5     '--- size of additional authenticated data for TLS 1.3
 Private Const LNG_LEGACY_AAD_SIZE       As Long = 13    '--- for TLS 1.2
-Private Const LNG_FACILITY_WIN32        As Long = &H80070000
 '--- errors
 Private Const ERR_CONNECTION_CLOSED     As String = "Connection closed"
-Private Const ERR_SECP256R1_KEYPAIR_FAILED As String = "Failed generating key pair (secp256r1)"
+Private Const ERR_GEN_KEYPAIR_FAILED    As String = "Failed generating key pair (%1)"
 Private Const ERR_UNSUPPORTED_EX_GROUP  As String = "Unsupported exchange group (%1)"
 Private Const ERR_UNSUPPORTED_CIPHER_SUITE As String = "Unsupported cipher suite (%1)"
 Private Const ERR_ENCRYPTION_FAILED     As String = "Encryption failed"
@@ -312,10 +271,12 @@ Public Function TlsInitClient( _
         .ClientFeatures = ClientFeatures
         .ClientRandom = pvCryptoRandomArray(TLS_HELLO_RANDOM_SIZE)
         .RandomSize = TLS_HELLO_RANDOM_SIZE
-        '--- note: TLS 1.3 uses X25519 only and ClientPublic has to be ready for pvBuildClientHello
-        If Not pvSetupKeyExchangeEccGroup(uEmpty, TLS_GROUP_X25519, .LastError, .LastAlertCode) Then
-            pvSetLastError uCtx, .LastError, .LastAlertCode
-            GoTo QH
+        If (ClientFeatures And ucsTlsSupportTls13) <> 0 Then
+            '--- note: TLS 1.3 uses X25519 only and ClientPublic has to be ready for pvBuildClientHello
+            If Not pvSetupKeyExchangeEccGroup(uEmpty, TLS_GROUP_X25519, .LastError, .LastAlertCode) Then
+                pvSetLastError uCtx, .LastError, .LastAlertCode
+                GoTo QH
+            End If
         End If
     End With
     uCtx = uEmpty
@@ -483,29 +444,21 @@ End Function
 '= private ===============================================================
 
 Private Function pvSetupKeyExchangeEccGroup(uCtx As UcsTlsContext, ByVal lExchangeGroup As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
-    Dim bResult         As Boolean
-    
     With uCtx
         If .ExchangeGroup <> lExchangeGroup Then
             .ExchangeGroup = lExchangeGroup
             Select Case lExchangeGroup
             Case TLS_GROUP_X25519
                 .ExchangeAlgo = ucsTlsAlgoKeyX25519
-                .ClientPrivate = pvCryptoRandomArray(TLS_X25519_KEY_SIZE)
-                '--- fix issues w/ specific privkeys
-                .ClientPrivate(0) = .ClientPrivate(0) And 248
-                .ClientPrivate(UBound(.ClientPrivate)) = (.ClientPrivate(UBound(.ClientPrivate)) And 127) Or 64
-                ReDim .ClientPublic(0 To TLS_X25519_KEY_SIZE - 1) As Byte
-                #If ImplUseLibSodium Then
-                    Call crypto_scalarmult_curve25519_base(.ClientPublic(0), .ClientPrivate(0))
-                #Else
-                    CryptoEccCurve25519MakeKey .ClientPrivate, .ClientPublic
-                #End If
+                If Not CryptoEccCurve25519MakeKey(.ClientPrivate, .ClientPublic) Then
+                    sError = Replace(ERR_GEN_KEYPAIR_FAILED, "%1", "Curve25519")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
             Case TLS_GROUP_SECP256R1
                 .ExchangeAlgo = ucsTlsAlgoKeySecp256r1
-                bResult = CryptoEccSecp256r1MakeKey(.ClientPrivate, .ClientPublic)
-                If Not bResult Then
-                    sError = ERR_SECP256R1_KEYPAIR_FAILED
+                If Not CryptoEccSecp256r1MakeKey(.ClientPrivate, .ClientPublic) Then
+                    sError = Replace(ERR_GEN_KEYPAIR_FAILED, "%1", "secp256r1")
                     eAlertCode = uscTlsAlertInternalError
                     GoTo QH
                 End If
@@ -527,7 +480,7 @@ Private Function pvSetupKeyExchangeRsaCertificate(uCtx As UcsTlsContext, baCert(
         .ExchangeAlgo = ucsTlsAlgoKeyCertificate
         .ClientPrivate = pvCryptoRandomArray(48)
         pvWriteLong .ClientPrivate, 0, TLS_CLIENT_LEGACY_VERSION, Size:=2
-        .ClientEncrPrivate = pvCryptoRsaEncrypt(baCert, .ClientPrivate)
+        .ClientEncrPrivate = CryptoRsaEncrypt(baCert, .ClientPrivate)
     End With
     '--- success
     pvSetupKeyExchangeRsaCertificate = True
@@ -605,35 +558,35 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Cipher Suites
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-                    If (.ClientFeatures And ucsTlsSupportTls13) <> 0 And pvCryptoIsSupported(ucsTlsAlgoKeyX25519) Then
-                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                    If (.ClientFeatures And ucsTlsSupportTls13) <> 0 And CryptoIsSupported(ucsTlsAlgoKeyX25519) Then
+                        If CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_128_GCM_SHA256, Size:=2)
                         End If
-                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+                        If CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
                         End If
-                        If pvCryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
+                        If CryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
                         End If
                     End If
-                    If (.ClientFeatures And ucsTlsSupportTls12) <> 0 And pvCryptoIsSupported(ucsTlsAlgoKeySecp256r1) Then
-                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                    If (.ClientFeatures And ucsTlsSupportTls12) <> 0 And CryptoIsSupported(ucsTlsAlgoKeySecp256r1) Then
+                        If CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, Size:=2)
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_128_GCM_SHA256, Size:=2)
                         End If
-                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+                        If CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, Size:=2)
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
                         End If
-                        If pvCryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
+                        If CryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
                         End If
                         '--- no "perfect forward secrecy" -> least preferred
-                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                        If CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_RSA_WITH_AES_128_GCM_SHA256, Size:=2)
                         End If
-                        If pvCryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+                        If CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
                             lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
                         End If
                     End If
@@ -660,12 +613,12 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                     lPos = pvWriteLong(baOutput, lPos, TLS_EXTENSION_TYPE_SUPPORTED_GROUPS, Size:=2)
                     lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
                         lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-                            If pvCryptoIsSupported(ucsTlsAlgoKeyX25519) Then
+                            If CryptoIsSupported(ucsTlsAlgoKeyX25519) Then
                                 If .HelloRetryExchangeGroup = 0 Or .HelloRetryExchangeGroup = TLS_GROUP_X25519 Then
                                     lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_X25519, Size:=2)
                                 End If
                             End If
-                            If (.ClientFeatures And ucsTlsSupportTls12) <> 0 And pvCryptoIsSupported(ucsTlsAlgoKeySecp256r1) Then
+                            If (.ClientFeatures And ucsTlsSupportTls12) <> 0 And CryptoIsSupported(ucsTlsAlgoKeySecp256r1) Then
                                 If .HelloRetryExchangeGroup = 0 Or .HelloRetryExchangeGroup = TLS_GROUP_SECP256R1 Then
                                     lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_SECP256R1, Size:=2)
                                 End If
@@ -1722,46 +1675,16 @@ End Function
 
 '= crypto wrappers =======================================================
 
-Private Function pvCryptoIsSupported(ByVal eAead As UcsTlsCryptoAlgorithmsEnum) As Boolean
-    Select Case eAead
-    Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
-        #If ImplUseLibSodium Then
-            pvCryptoIsSupported = (crypto_aead_aes256gcm_is_available() <> 0 And eAead = ucsTlsAlgoAeadAes256)
-        #Else
-            pvCryptoIsSupported = True
-        #End If
-    Case Else
-        pvCryptoIsSupported = True
-    End Select
-End Function
-
 Private Function pvCryptoAeadDecrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, baServerIV() As Byte, baServerKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
-    Debug.Assert pvArraySize(baBuffer) >= lPos + lSize
     Select Case eAead
     Case ucsTlsAlgoAeadChacha20Poly1305
-        Debug.Assert pvArraySize(baServerIV) = TLS_CHACHA20POLY1305_IV_SIZE
-        Debug.Assert pvArraySize(baServerKey) = TLS_CHACHA20_KEY_SIZE
-        #If ImplUseLibSodium Then
-            If crypto_aead_chacha20poly1305_ietf_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAad(lAadPos), lAdSize, 0, baServerIV(0), baServerKey(0)) <> 0 Then
-                GoTo QH
-            End If
-        #Else
-            If Not CryptoAeadChacha20Poly1305Decrypt(baServerIV, baServerKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-                GoTo QH
-            End If
-        #End If
+        If Not CryptoAeadChacha20Poly1305Decrypt(baServerIV, baServerKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
+            GoTo QH
+        End If
     Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
-        Debug.Assert pvArraySize(baServerIV) = TLS_AESGCM_IV_SIZE
-        Debug.Assert pvArraySize(baServerKey) = IIf(eAead = ucsTlsAlgoAeadAes128, TLS_AES128_KEY_SIZE, TLS_AES256_KEY_SIZE)
-        #If ImplUseLibSodium Then
-            If crypto_aead_aes256gcm_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAad(lAadPos), lAdSize, 0, baServerIV(0), baServerKey(0)) <> 0 Then
-                GoTo QH
-            End If
-        #Else
-            If Not CryptoAeadAesGcmDecrypt(baServerIV, baServerKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-                GoTo QH
-            End If
-        #End If
+        If Not CryptoAeadAesGcmDecrypt(baServerIV, baServerKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
+            GoTo QH
+        End If
     Case Else
         Err.Raise vbObjectError, "pvCryptoAeadDecrypt", "Unsupported AEAD type " & eAead
     End Select
@@ -1771,37 +1694,15 @@ QH:
 End Function
 
 Private Function pvCryptoAeadEncrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, baClientIV() As Byte, baClientKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
-    Dim lAdPtr          As Long
-    
-    Debug.Assert pvArraySize(baBuffer) >= lPos + lSize + TLS_CHACHA20POLY1305_TAG_SIZE
-    If lAdSize > 0 Then
-        lAdPtr = VarPtr(baAad(lAadPos))
-    End If
     Select Case eAead
     Case ucsTlsAlgoAeadChacha20Poly1305
-        Debug.Assert pvArraySize(baClientIV) = TLS_CHACHA20POLY1305_IV_SIZE
-        Debug.Assert pvArraySize(baClientKey) = TLS_CHACHA20_KEY_SIZE
-        #If ImplUseLibSodium Then
-            If crypto_aead_chacha20poly1305_ietf_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baClientIV(0), baClientKey(0)) <> 0 Then
-                GoTo QH
-            End If
-        #Else
-            If Not CryptoAeadChacha20Poly1305Encrypt(baClientIV, baClientKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-                GoTo QH
-            End If
-        #End If
+        If Not CryptoAeadChacha20Poly1305Encrypt(baClientIV, baClientKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
+            GoTo QH
+        End If
     Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
-        Debug.Assert pvArraySize(baClientIV) = TLS_AESGCM_IV_SIZE
-        Debug.Assert pvArraySize(baClientKey) = IIf(eAead = ucsTlsAlgoAeadAes128, TLS_AES128_KEY_SIZE, TLS_AES256_KEY_SIZE)
-        #If ImplUseLibSodium Then
-            If crypto_aead_aes256gcm_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baClientIV(0), baClientKey(0)) <> 0 Then
-                GoTo QH
-            End If
-        #Else
-            If Not CryptoAeadAesGcmEncrypt(baClientIV, baClientKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-                GoTo QH
-            End If
-        #End If
+        If Not CryptoAeadAesGcmEncrypt(baClientIV, baClientKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
+            GoTo QH
+        End If
     Case Else
         Err.Raise vbObjectError, "pvCryptoAeadEncrypt", "Unsupported AEAD type " & eAead
     End Select
@@ -1810,178 +1711,26 @@ Private Function pvCryptoAeadEncrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, 
 QH:
 End Function
 
-Private Function pvCryptoRsaEncrypt(baCert() As Byte, baPlainText() As Byte) As Byte()
-    Dim pContext        As Long
-    Dim hProv           As Long
-    Dim hKey            As Long
-    Dim baRetVal()      As Byte
-    Dim lSize           As Long
-    Dim lPtr            As Long
-    Dim hResult         As Long
-    Dim sApiSource      As String
-    
-    pContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
-    If pContext = 0 Then
-        hResult = Err.LastDllError
-        sApiSource = "CertCreateCertificateContext"
-        GoTo QH
-    End If
-    If CryptAcquireContext(hProv, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) = 0 Then
-        hResult = Err.LastDllError
-        sApiSource = "CryptAcquireContext"
-        GoTo QH
-    End If
-    Call CopyMemory(lPtr, ByVal UnsignedAdd(pContext, 12), 4)       ' pContext->pCertInfo
-    lPtr = UnsignedAdd(lPtr, 56)                                    ' &pContext->pCertInfo->SubjectPublicKeyInfo
-    If CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal lPtr, hKey) = 0 Then
-        hResult = Err.LastDllError
-        sApiSource = "CryptImportPublicKeyInfo"
-        GoTo QH
-    End If
-    lSize = UBound(baPlainText) + 1
-    ReDim baRetVal(0 To (lSize + 1023) And Not 1023 - 1) As Byte
-    Call CopyMemory(baRetVal(0), baPlainText(0), lSize)
-    If CryptEncrypt(hKey, 0, 1, 0, baRetVal(0), lSize, UBound(baRetVal) + 1) = 0 Then
-        hResult = Err.LastDllError
-        sApiSource = "CryptEncrypt"
-        GoTo QH
-    End If
-    ReDim Preserve baRetVal(0 To lSize - 1) As Byte
-    pvArrayReverse baRetVal
-    pvCryptoRsaEncrypt = baRetVal
-QH:
-    If hKey <> 0 Then
-        Call CryptDestroyKey(hKey)
-    End If
-    If hProv <> 0 Then
-        Call CryptReleaseContext(hProv, 0)
-    End If
-    If pContext <> 0 Then
-        Call CertFreeCertificateContext(pContext)
-    End If
-    If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
-    End If
-End Function
-
 Private Function pvCryptoHash(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
-    Dim baRetVal()      As Byte
-    
-    If Size < 0 Then
-        Size = pvArraySize(baInput) - lPos
-    Else
-        Debug.Assert pvArraySize(baInput) >= lPos + Size
-    End If
-    #If ImplUseLibSodium Then
-        Static baCtx(0 To LNG_SHA512_CTX_SIZE - 1) As Byte
-        Static baFinal(0 To LNG_SHA512_DIGEST_SIZE - 1) As Byte
-        Dim lPtr            As Long
-        
-        If Size > 0 Then
-            lPtr = VarPtr(baInput(lPos))
-        End If
-    #End If
     Select Case eHash
     Case ucsTlsAlgoDigestSha256
-        #If ImplUseLibSodium Then
-            ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
-            Call crypto_hash_sha256(baRetVal(0), ByVal lPtr, Size)
-        #Else
-            baRetVal = CryptoHashSha256(baInput, lPos, Size)
-        #End If
+        pvCryptoHash = CryptoHashSha256(baInput, lPos, Size)
     Case ucsTlsAlgoDigestSha384
-        #If ImplUseLibSodium Then
-            Call crypto_hash_sha384_init(baCtx)
-            Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
-            Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
-            ReDim baRetVal(0 To TLS_SHA384_DIGEST_SIZE - 1) As Byte
-            Call CopyMemory(baRetVal(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
-        #Else
-            baRetVal = CryptoHashSha384(baInput, lPos, Size)
-        #End If
+        pvCryptoHash = CryptoHashSha384(baInput, lPos, Size)
     Case Else
         Err.Raise vbObjectError, "pvCryptoHash", "Unsupported hash type " & eHash
     End Select
-    pvCryptoHash = baRetVal
 End Function
 
 Private Function pvCryptoHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
-    Dim baRetVal()      As Byte
-    
-    If Size < 0 Then
-        Size = pvArraySize(baInput) - lPos
-    Else
-        Debug.Assert pvArraySize(baInput) >= lPos + Size
-    End If
-    #If ImplUseLibSodium Then
-        Static baCtx(0 To LNG_SHA512_CTX_SIZE - 1) As Byte
-        Static baFinal(0 To LNG_SHA512_DIGEST_SIZE - 1) As Byte
-        Static baPad(0 To LNG_SHA512_BLOCK_SIZE - 1) As Byte
-        Const LNG_INNER_PAD As Long = &H36
-        Const LNG_OUTER_PAD As Long = &H5C
-        Dim lPtr            As Long
-        Dim lIdx            As Long
-        
-        If Size > 0 Then
-            lPtr = VarPtr(baInput(lPos))
-        End If
-    #End If
     Select Case eHash
     Case ucsTlsAlgoDigestSha256
-        #If ImplUseLibSodium Then
-            Debug.Assert pvArraySize(baKey) <= LNG_SHA256_BLOCK_SIZE
-            '-- inner hash
-            Call crypto_hash_sha256_init(baCtx(0))
-            Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, LNG_INNER_PAD)
-            For lIdx = 0 To UBound(baKey)
-                baPad(lIdx) = baKey(lIdx) Xor LNG_INNER_PAD
-            Next
-            Call crypto_hash_sha256_update(baCtx(0), baPad(0), LNG_SHA256_BLOCK_SIZE)
-            Call crypto_hash_sha256_update(baCtx(0), ByVal lPtr, Size)
-            Call crypto_hash_sha256_final(baCtx(0), baFinal(0))
-            '-- outer hash
-            Call crypto_hash_sha256_init(baCtx(0))
-            Call FillMemory(baPad(0), LNG_SHA256_BLOCK_SIZE, LNG_OUTER_PAD)
-            For lIdx = 0 To UBound(baKey)
-                baPad(lIdx) = baKey(lIdx) Xor LNG_OUTER_PAD
-            Next
-            Call crypto_hash_sha256_update(baCtx(0), baPad(0), LNG_SHA256_BLOCK_SIZE)
-            Call crypto_hash_sha256_update(baCtx(0), baFinal(0), TLS_SHA256_DIGEST_SIZE)
-            ReDim baRetVal(0 To TLS_SHA256_DIGEST_SIZE - 1) As Byte
-            Call crypto_hash_sha256_final(baCtx(0), baRetVal(0))
-        #Else
-            baRetVal = CryptoHmacSha256(baKey, baInput, lPos, Size)
-        #End If
+        pvCryptoHmac = CryptoHmacSha256(baKey, baInput, lPos, Size)
     Case ucsTlsAlgoDigestSha384
-        #If ImplUseLibSodium Then
-            Debug.Assert pvArraySize(baKey) <= LNG_SHA384_BLOCK_SIZE
-            '-- inner hash
-            Call crypto_hash_sha384_init(baCtx)
-            Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_INNER_PAD)
-            For lIdx = 0 To UBound(baKey)
-                baPad(lIdx) = baKey(lIdx) Xor LNG_INNER_PAD
-            Next
-            Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
-            Call crypto_hash_sha512_update(baCtx(0), ByVal lPtr, Size)
-            Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
-            '-- outer hash
-            Call crypto_hash_sha384_init(baCtx)
-            Call FillMemory(baPad(0), LNG_SHA384_BLOCK_SIZE, LNG_OUTER_PAD)
-            For lIdx = 0 To UBound(baKey)
-                baPad(lIdx) = baKey(lIdx) Xor LNG_OUTER_PAD
-            Next
-            Call crypto_hash_sha512_update(baCtx(0), baPad(0), LNG_SHA384_BLOCK_SIZE)
-            Call crypto_hash_sha512_update(baCtx(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
-            Call crypto_hash_sha512_final(baCtx(0), baFinal(0))
-            ReDim baRetVal(0 To TLS_SHA384_DIGEST_SIZE - 1) As Byte
-            Call CopyMemory(baRetVal(0), baFinal(0), TLS_SHA384_DIGEST_SIZE)
-        #Else
-            baRetVal = CryptoHmacSha384(baKey, baInput, lPos, Size)
-        #End If
+        pvCryptoHmac = CryptoHmacSha384(baKey, baInput, lPos, Size)
     Case Else
         Err.Raise vbObjectError, "pvCryptoHmac", "Unsupported hash type " & eHash
     End Select
-    pvCryptoHmac = baRetVal
 End Function
 
 Private Function pvCryptoSharedSecret(ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum, baPriv() As Byte, baPub() As Byte) As Byte()
@@ -1989,14 +1738,7 @@ Private Function pvCryptoSharedSecret(ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum,
     
     Select Case eKeyX
     Case ucsTlsAlgoKeyX25519
-        Debug.Assert pvArraySize(baPriv) = TLS_X25519_KEY_SIZE
-        Debug.Assert pvArraySize(baPub) = TLS_X25519_KEY_SIZE
-        #If ImplUseLibSodium Then
-            ReDim baRetVal(0 To TLS_X25519_KEY_SIZE - 1) As Byte
-            Call crypto_scalarmult_curve25519(baRetVal(0), baPriv(0), baPub(0))
-        #Else
-            baRetVal = CryptoEccCurve25519SharedSecret(baPriv, baPub)
-        #End If
+        baRetVal = CryptoEccCurve25519SharedSecret(baPriv, baPub)
     Case ucsTlsAlgoKeySecp256r1
         baRetVal = CryptoEccSecp256r1SharedSecret(baPriv, baPub)
     Case ucsTlsAlgoKeyCertificate
@@ -2050,18 +1792,6 @@ Private Function pvCryptoCipherSuiteUseRsaCertificate(ByVal lCipherSuite As Long
         pvCryptoCipherSuiteUseRsaCertificate = True
     End Select
 End Function
-
-#If ImplUseLibSodium Then
-    Private Sub crypto_hash_sha384_init(baCtx() As Byte)
-        Static baSha384State() As Byte
-        
-        If pvArraySize(baSha384State) = 0 Then
-            baSha384State = FromHex(STR_SHA384_STATE)
-        End If
-        Call crypto_hash_sha512_init(baCtx(0))
-        Call CopyMemory(baCtx(0), baSha384State(0), UBound(baSha384State) + 1)
-    End Sub
-#End If
 
 '= buffer management =====================================================
 
@@ -2236,17 +1966,6 @@ Private Sub pvArraySwap(baBuffer() As Byte, lBufferPos As Long, baInput() As Byt
     lInputPos = lTemp
 End Sub
 
-Private Sub pvArrayReverse(baData() As Byte)
-    Dim lIdx            As Long
-    Dim bTemp           As Byte
-    
-    For lIdx = 0 To UBound(baData) \ 2
-        bTemp = baData(lIdx)
-        baData(lIdx) = baData(UBound(baData) - lIdx)
-        baData(UBound(baData) - lIdx) = bTemp
-    Next
-End Sub
-
 '= global helpers ========================================================
 
 Private Function ToHex(baText() As Byte, Optional Delimiter As String = "-") As String
@@ -2317,7 +2036,3 @@ Private Function SplitOrReindex(Expression As String, Delimiter As String) As Va
     End If
 End Function
 
-Private Function UnsignedAdd(ByVal lUnsignedPtr As Long, ByVal lSignedOffset As Long) As Long
-    '--- note: safely add *signed* offset to *unsigned* ptr for *unsigned* retval w/o overflow in LARGEADDRESSAWARE processes
-    UnsignedAdd = ((lUnsignedPtr Xor &H80000000) + lSignedOffset) Xor &H80000000
-End Function
