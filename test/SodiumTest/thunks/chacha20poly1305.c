@@ -13,34 +13,6 @@
  */
 
 
-/** Returns 1 if len bytes at va equal len bytes at vb, 0 if they do not.
- *  Does not leak length of common prefix through timing. */
-static inline unsigned mem_eq(const void *va, const void *vb, size_t len)
-{
-  const volatile uint8_t *a = (const volatile uint8_t *)va;
-  const volatile uint8_t *b = (const volatile uint8_t *)vb;
-  uint8_t diff = 0;
-
-  while (len--)
-  {
-    diff |= *a++ ^ *b++;
-  }
-
-  return !diff;
-}
-
-/** Encode v as a 64-bit little endian quantity into buf. */
-static inline void write64_le(uint64_t v, uint8_t buf[8])
-{
-  *buf++ = v & 0xff;
-  *buf++ = (v >> 8) & 0xff;
-  *buf++ = (v >> 16) & 0xff;
-  *buf++ = (v >> 24) & 0xff;
-  *buf++ = (v >> 32) & 0xff;
-  *buf++ = (v >> 40) & 0xff;
-  *buf++ = (v >> 48) & 0xff;
-  *buf   = (v >> 56) & 0xff;
-}
 
 #define ENCRYPT 1
 #define DECRYPT 0
@@ -172,3 +144,4 @@ int cf_chacha20poly1305_decrypt(const uint8_t key[32],
                  ourtag);
 }
 
+#undef PADLEN

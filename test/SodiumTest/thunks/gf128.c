@@ -12,14 +12,6 @@
  * <http://creativecommons.org/publicdomain/zero/1.0/>.
  */
 
-/* out ^= x
- * out and x may alias. */
-static inline void xor_words(uint32_t *out, const uint32_t *x, size_t nwords)
-{
-  for (size_t i = 0; i < nwords; i++)
-    out[i] ^= x[i];
-}
-
 /**
  * @brief Operations in GF(2^128).
  *

@@ -58,31 +58,6 @@ typedef struct
 
 void cf_sha512_digest_final(cf_sha512_context *ctx, uint8_t hash[CF_SHA512_HASHSZ]);
 
-/** Read 4 bytes from buf, as a 32-bit little endian quantity. */
-static inline uint32_t read32_le(const uint8_t buf[4])
-{
-  return (buf[3] << 24) |
-         (buf[2] << 16) |
-         (buf[1] << 8) |
-         (buf[0]);
-}
-
-/** Read 8 bytes from buf, as a 64-bit big endian quantity. */
-static inline uint64_t read64_be(const uint8_t buf[8])
-{
-  uint32_t hi = read32_be(buf),
-           lo = read32_be(buf + 4);
-  return ((uint64_t)hi) << 32 |
-         lo;
-}
-
-/** Circularly rotate right x by n bits.
- *  0 > n > 64. */
-static inline uint64_t rotr64(uint64_t x, unsigned n)
-{
-  return (x >> n) | (x << (64 - n));
-}
-
 static const uint64_t _K512[80] = {
   UINT64_C(0x428a2f98d728ae22), UINT64_C(0x7137449123ef65cd),
   UINT64_C(0xb5c0fbcfec4d3b2f), UINT64_C(0xe9b5dba58189dbbc),
@@ -218,7 +193,7 @@ static void sha512_update_block(void *vctx, const uint8_t *inp)
 static
 void cf_sha512_update(cf_sha512_context *ctx, const void *data, size_t nbytes)
 {
-  const cf_blockwise_in_fn pfn_sha512_update_block = (cf_blockwise_in_fn)(getThunk() + (((char *)sha512_update_block) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_blockwise_in_fn, sha512_update_block);
   cf_blockwise_accumulate(ctx->partial, &ctx->npartial, sizeof ctx->partial,
                           data, nbytes,
                           pfn_sha512_update_block, ctx);
@@ -261,7 +236,7 @@ void cf_sha512_digest_final(cf_sha512_context *ctx, uint8_t hash[CF_SHA512_HASHS
   size_t padbytes = CF_SHA512_BLOCKSZ - ((digested_bytes + 16) % CF_SHA512_BLOCKSZ);
 
   /* Hash 0x80 00 ... block first. */
-  const cf_blockwise_in_fn pfn_sha512_update_block = (cf_blockwise_in_fn)(getThunk() + (((char *)sha512_update_block) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_blockwise_in_fn, sha512_update_block);
   cf_blockwise_acc_pad(ctx->partial, &ctx->npartial, sizeof ctx->partial,
                        0x80, 0x00, 0x00, padbytes,
                        pfn_sha512_update_block, ctx);

@@ -21,25 +21,6 @@ typedef struct
   size_t npartial;
 } cf_poly1305;
 
-/** Produce 0xffffffff if x == y, zero otherwise, without branching. */
-static inline uint32_t mask_u32(uint32_t x, uint32_t y)
-{
-  uint32_t diff = x ^ y;
-  uint32_t diff_is_zero = ~diff & (diff - 1);
-  return - (diff_is_zero >> 31);
-}
-
-/** Like memset(ptr, 0, len), but not allowed to be removed by
- *  compilers. */
-static inline void mem_clean(volatile void *v, size_t len)
-{
-  if (len)
-  {
-    memset((void *) v, 0, len);
-    (void) *((volatile uint8_t *) v);
-  }
-}
-
 static
 void cf_poly1305_init(cf_poly1305 *ctx,
                       const uint8_t r[16],
@@ -206,7 +187,7 @@ void cf_poly1305_update(cf_poly1305 *ctx,
                         const uint8_t *buf,
                         size_t nbytes)
 {
-  const cf_blockwise_in_fn pfn_poly1305_whole_block = (cf_blockwise_in_fn)(getThunk() + (((char *)poly1305_whole_block) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_blockwise_in_fn, poly1305_whole_block);
   cf_blockwise_accumulate(ctx->partial, &ctx->npartial,
                           sizeof ctx->partial,
                           buf, nbytes,

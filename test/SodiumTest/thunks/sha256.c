@@ -58,44 +58,6 @@ typedef struct
 
 void cf_sha256_digest_final(cf_sha256_context *ctx, uint8_t hash[CF_SHA256_HASHSZ]);
 
-/** Encode v as a 64-bit big endian quantity into buf. */
-static inline void write64_be(uint64_t v, uint8_t buf[8])
-{
-  *buf++ = (v >> 56) & 0xff;
-  *buf++ = (v >> 48) & 0xff;
-  *buf++ = (v >> 40) & 0xff;
-  *buf++ = (v >> 32) & 0xff;
-  *buf++ = (v >> 24) & 0xff;
-  *buf++ = (v >> 16) & 0xff;
-  *buf++ = (v >> 8) & 0xff;
-  *buf   = v & 0xff;
-}
-
-/** Encode v as a 32-bit big endian quantity into buf. */
-static inline void write32_be(uint32_t v, uint8_t buf[4])
-{
-  *buf++ = (v >> 24) & 0xff;
-  *buf++ = (v >> 16) & 0xff;
-  *buf++ = (v >> 8) & 0xff;
-  *buf   = v & 0xff;
-}
-
-/** Read 4 bytes from buf, as a 32-bit big endian quantity. */
-static inline uint32_t read32_be(const uint8_t buf[4])
-{
-  return (buf[0] << 24) |
-         (buf[1] << 16) |
-         (buf[2] << 8) |
-         (buf[3]);
-}
-
-/** Circularly rotate right x by n bits.
- *  0 > n > 32. */
-static inline uint32_t rotr32(uint32_t x, unsigned n)
-{
-  return (x >> n) | (x << (32 - n));
-}
-
 static const uint32_t _K256[64] = {
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
   0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -215,7 +177,7 @@ static void sha256_update_block(void *vctx, const uint8_t *inp)
 static
 void cf_sha256_update(cf_sha256_context *ctx, const void *data, size_t nbytes)
 {
-  const cf_blockwise_in_fn pfn_sha256_update_block = (cf_blockwise_in_fn)(getThunk() + (((char *)sha256_update_block) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_blockwise_in_fn, sha256_update_block);
   cf_blockwise_accumulate(ctx->partial, &ctx->npartial, sizeof ctx->partial,
                           data, nbytes,
                           pfn_sha256_update_block, ctx);
@@ -251,7 +213,7 @@ void cf_sha256_digest(const cf_sha256_context *ctx, uint8_t hash[CF_SHA256_HASHS
 static
 void cf_sha256_digest_final(cf_sha256_context *ctx, uint8_t hash[CF_SHA256_HASHSZ])
 {
-  const cf_blockwise_in_fn pfn_sha256_update_block = (cf_blockwise_in_fn)(getThunk() + (((char *)sha256_update_block) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_blockwise_in_fn, sha256_update_block);
   uint64_t digested_bytes = ctx->blocks;
   digested_bytes = digested_bytes * CF_SHA256_BLOCKSZ + ctx->npartial;
   uint64_t digested_bits = digested_bytes * 8;

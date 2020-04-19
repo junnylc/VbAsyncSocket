@@ -12,21 +12,6 @@
  * <http://creativecommons.org/publicdomain/zero/1.0/>.
  */
 
-/** Increments the integer stored at v (of non-zero length len)
- *  with the most significant byte last. */
-static inline void incr_be(uint8_t *v, size_t len)
-{
-  len--;
-  while (1)
-  {
-    if (++v[len] != 0)
-      return;
-    if (len == 0)
-      return;
-    len--;
-  }
-}
-
 /**
  * General block cipher description
  * ================================
@@ -224,7 +209,7 @@ static void ctr_next_block(void *vctx, uint8_t *out)
 static
 void cf_ctr_cipher(cf_ctr *ctx, const uint8_t *input, uint8_t *output, size_t bytes)
 {
-  const cf_blockwise_out_fn pfn_ctr_next_block = (cf_blockwise_out_fn)(getThunk() + (((char *)ctr_next_block) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_blockwise_out_fn, ctr_next_block);
   cf_blockwise_xor(ctx->keymat, &ctx->nkeymat,
                    ctx->prp->blocksz,
                    input, output, bytes,

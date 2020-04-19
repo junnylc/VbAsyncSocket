@@ -479,3 +479,8 @@ void cf_aes_finish(cf_aes_context *ctx)
 {
   mem_clean(ctx, sizeof *ctx);
 }
+
+#undef word4
+#undef byte
+#undef round_constant
+#undef rot_word

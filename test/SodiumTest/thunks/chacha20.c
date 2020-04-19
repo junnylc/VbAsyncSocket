@@ -22,37 +22,6 @@ typedef struct
   size_t ncounter;
 } cf_salsa20_ctx, cf_chacha20_ctx;
 
-/** Increments the integer stored at v (of non-zero length len)
- *  with the least significant byte first. */
-static inline void incr_le(uint8_t *v, size_t len)
-{
-  size_t i = 0;
-  while (1)
-  {
-    if (++v[i] != 0)
-      return;
-    i++;
-    if (i == len)
-      return;
-  }
-}
-
-/** Circularly rotate left x by n bits.
- *  0 > n > 32. */
-static inline uint32_t rotl32(uint32_t x, unsigned n)
-{
-  return (x << n) | (x >> (32 - n));
-}
-
-/** Encode v as a 32-bit little endian quantity into buf. */
-static inline void write32_le(uint32_t v, uint8_t buf[4])
-{
-  *buf++ = v & 0xff;
-  *buf++ = (v >> 8) & 0xff;
-  *buf++ = (v >> 16) & 0xff;
-  *buf   = (v >> 24) & 0xff;
-}
-
 void cf_chacha20_core(const uint8_t key0[16],
                       const uint8_t key1[16],
                       const uint8_t nonce[16],
@@ -189,9 +158,11 @@ static void cf_chacha20_next_block(void *vctx, uint8_t *out)
 static
 void cf_chacha20_cipher(cf_chacha20_ctx *ctx, const uint8_t *input, uint8_t *output, size_t bytes)
 {
-  const cf_blockwise_out_fn pfn_cf_chacha20_next_block = (cf_blockwise_out_fn)(getThunk() + (((char *)cf_chacha20_next_block) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_blockwise_out_fn, cf_chacha20_next_block);
   cf_blockwise_xor(ctx->block, &ctx->nblock, 64,
                    input, output, bytes,
                    pfn_cf_chacha20_next_block,
                    ctx);
 }
+
+#undef QUARTER

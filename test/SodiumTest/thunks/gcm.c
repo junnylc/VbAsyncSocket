@@ -45,7 +45,7 @@ static void ghash_block(void *vctx, const uint8_t *data)
 
 static void ghash_add(ghash_ctx *ctx, const uint8_t *buf, size_t n)
 {
-  const cf_blockwise_in_fn pfn_ghash_block = (cf_blockwise_in_fn)(getThunk() + (((char *)ghash_block) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_blockwise_in_fn,  ghash_block);
   cf_blockwise_accumulate(ctx->buffer, &ctx->buffer_used,
                           sizeof ctx->buffer,
                           buf, n,
@@ -245,18 +245,12 @@ x_err:
 #define AESGCM_IV_SIZE  12
 #define AESGCM_TAG_SIZE 16
 
-static void cf_aesgcm_encrypt(uint8_t *c,
-                                 uint8_t *mac,
-                                 const uint8_t *m,
-                                 const size_t mlen,
-                                 const uint8_t *ad,
-                                 const size_t adlen,
-                                 const uint8_t *npub,
-                                 const uint8_t *k,
-                                 size_t klen)
+static void cf_aesgcm_encrypt(uint8_t *c, uint8_t *mac, const uint8_t *m, const size_t mlen,
+                              const uint8_t *ad, const size_t adlen,
+                              const uint8_t *npub, const uint8_t *k, const size_t klen)
 {
-  const cf_prp_block pfn_cf_aes_encrypt = (cf_prp_block)(getThunk() + (((char *)cf_aes_encrypt) - ((char *)beginOfThunk)));
-  const cf_prp_block pfn_cf_aes_decrypt = (cf_prp_block)(getThunk() + (((char *)cf_aes_decrypt) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_prp_block, cf_aes_encrypt);
+  DECLARE_PFN(cf_prp_block, cf_aes_decrypt);
   const cf_prp cf_aes = {
       AES_BLOCKSZ,
       pfn_cf_aes_encrypt,
@@ -265,26 +259,15 @@ static void cf_aesgcm_encrypt(uint8_t *c,
   cf_aes_context ctx;
   cf_aes_init(&ctx, k, klen);
 
-  cf_gcm_encrypt(&cf_aes, &ctx,
-                 m, mlen,
-                 ad, adlen,
-                 npub, AESGCM_IV_SIZE,
-                 c,
-                 mac, AESGCM_TAG_SIZE);
+  cf_gcm_encrypt(&cf_aes, &ctx, m, mlen, ad, adlen, npub, AESGCM_IV_SIZE, c, mac, AESGCM_TAG_SIZE);
 }
 
-static int cf_aesgcm_decrypt(uint8_t *m,
-                                 const uint8_t *c,
-                                 const size_t clen,
-                                 const uint8_t *mac,
-                                 const uint8_t *ad,
-                                 const size_t adlen,
-                                 const uint8_t *npub,
-                                 const uint8_t *k,
-                                 const size_t klen)
+static int cf_aesgcm_decrypt(uint8_t *m, const uint8_t *c, const size_t clen, const uint8_t *mac, 
+                             const uint8_t *ad, const size_t adlen,
+                             const uint8_t *npub, const uint8_t *k, const size_t klen)
 {
-  const cf_prp_block pfn_cf_aes_encrypt = (cf_prp_block)(getThunk() + (((char *)cf_aes_encrypt) - ((char *)beginOfThunk)));
-  const cf_prp_block pfn_cf_aes_decrypt = (cf_prp_block)(getThunk() + (((char *)cf_aes_decrypt) - ((char *)beginOfThunk)));
+  DECLARE_PFN(cf_prp_block, cf_aes_encrypt);
+  DECLARE_PFN(cf_prp_block, cf_aes_decrypt);
   const cf_prp cf_aes = {
       AES_BLOCKSZ,
       pfn_cf_aes_encrypt,
@@ -293,10 +276,5 @@ static int cf_aesgcm_decrypt(uint8_t *m,
   cf_aes_context ctx;
   cf_aes_init(&ctx, k, klen);
 
-  return cf_gcm_decrypt(&cf_aes, &ctx,
-                        c, clen,
-                        ad, adlen,
-                        npub, AESGCM_IV_SIZE,
-                        mac, AESGCM_TAG_SIZE,
-                        m);
+  return cf_gcm_decrypt(&cf_aes, &ctx, c, clen, ad, adlen, npub, AESGCM_IV_SIZE, mac, AESGCM_TAG_SIZE, m);
 }
