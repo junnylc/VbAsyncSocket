@@ -1361,13 +1361,12 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
                     Select Case lExtType
                     Case TLS_EXTENSION_TYPE_KEY_SHARE
                         .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS13_FINAL
-                        If lBlockSize >= 2 Then
-                            lPos = pvReadLong(baMessage, lPos, lExchangeGroup, Size:=2)
-                        Else
+                        If lBlockSize < 2 Then
                             sError = ERR_INVALID_SIZE_KEY_SHARE
                             eAlertCode = uscTlsAlertDecodeError
                             GoTo QH
                         End If
+                        lPos = pvReadLong(baMessage, lPos, lExchangeGroup, Size:=2)
                         If bHelloRetryRequest Then
                             .HelloRetryExchangeGroup = lExchangeGroup
                         Else
@@ -1375,21 +1374,19 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
                             If Not pvSetupKeyExchangeEccGroup(uCtx, lExchangeGroup, sError, eAlertCode) Then
                                 GoTo QH
                             End If
-                            If lBlockSize > 4 Then
-                                lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lBlockSize)
-                                    Debug.Assert lBlockSize = TLS_X25519_KEY_SIZE
-                                    If lBlockSize <> TLS_X25519_KEY_SIZE Then
-                                        sError = ERR_INVALID_REMOTE_KEY
-                                        eAlertCode = uscTlsAlertIllegalParameter
-                                        GoTo QH
-                                    End If
-                                    lPos = pvReadArray(baMessage, lPos, .RemotePublic, lBlockSize)
-                                lPos = pvReadEndOfBlock(baMessage, lPos, .BlocksStack)
-                            Else
+                            If lBlockSize <= 4 Then
                                 sError = ERR_INVALID_SIZE_REMOTE_KEY
                                 eAlertCode = uscTlsAlertDecodeError
                                 GoTo QH
                             End If
+                            lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lBlockSize)
+                                If lBlockSize <> TLS_X25519_KEY_SIZE Then
+                                    sError = ERR_INVALID_REMOTE_KEY
+                                    eAlertCode = uscTlsAlertIllegalParameter
+                                    GoTo QH
+                                End If
+                                lPos = pvReadArray(baMessage, lPos, .RemotePublic, lBlockSize)
+                            lPos = pvReadEndOfBlock(baMessage, lPos, .BlocksStack)
                         End If
                     Case TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS
                         If lBlockSize <> 2 Then
@@ -1399,13 +1396,12 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
                         End If
                         lPos = pvReadLong(baMessage, lPos, .ProtocolVersion, Size:=2)
                     Case TLS_EXTENSION_TYPE_COOKIE
-                        If bHelloRetryRequest Then
-                            lPos = pvReadArray(baMessage, lPos, .HelloRetryCookie, lBlockSize)
-                        Else
+                        If Not bHelloRetryRequest Then
                             sError = ERR_COOKIE_NOT_ALLOWED
                             eAlertCode = uscTlsAlertIllegalParameter
                             GoTo QH
                         End If
+                        lPos = pvReadArray(baMessage, lPos, .HelloRetryCookie, lBlockSize)
                     Case Else
                         lPos = lPos + lBlockSize
                     End Select
