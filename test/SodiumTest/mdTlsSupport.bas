@@ -540,6 +540,7 @@ End Function
 
 Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long) As Long
     Dim lMessagePos     As Long
+    Dim vElem           As Variant
     
     With uCtx
         '--- Record Header
@@ -558,38 +559,9 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Cipher Suites
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-                    If (.ClientFeatures And ucsTlsSupportTls13) <> 0 And CryptoIsSupported(ucsTlsAlgoKeyX25519) Then
-                        If CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_128_GCM_SHA256, Size:=2)
-                        End If
-                        If CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_AES_256_GCM_SHA384, Size:=2)
-                        End If
-                        If CryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256, Size:=2)
-                        End If
-                    End If
-                    If (.ClientFeatures And ucsTlsSupportTls12) <> 0 And CryptoIsSupported(ucsTlsAlgoKeySecp256r1) Then
-                        If CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_128_GCM_SHA256, Size:=2)
-                        End If
-                        If CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
-                        End If
-                        If CryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, Size:=2)
-                        End If
-                        '--- no "perfect forward secrecy" -> least preferred
-                        If CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_RSA_WITH_AES_128_GCM_SHA256, Size:=2)
-                        End If
-                        If CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
-                            lPos = pvWriteLong(baOutput, lPos, TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384, Size:=2)
-                        End If
-                    End If
+                    For Each vElem In pvCryptoOrderCiphers(.ClientFeatures)
+                        lPos = pvWriteLong(baOutput, lPos, vElem, Size:=2)
+                    Next
                 lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                 '--- Legacy Compression Methods
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack)
@@ -1674,6 +1646,68 @@ Private Function pvKdfLegacyTls1Prf(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, b
 End Function
 
 '= crypto wrappers =======================================================
+
+Private Function pvCryptoOrderCiphers(ByVal eFilter As UcsTlsClientFeaturesEnum) As Collection
+    Const PREF      As Long = &H1000
+    Dim oRetVal     As Collection
+    
+    Set oRetVal = New Collection
+    If (eFilter And ucsTlsSupportTls13) <> 0 Then
+        If CryptoIsSupported(ucsTlsAlgoKeyX25519) Then
+            '--- first if AES preferred over Chacha20
+            If CryptoIsSupported(PREF + ucsTlsAlgoAeadAes128) And CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                oRetVal.Add TLS_CIPHER_SUITE_AES_128_GCM_SHA256
+            End If
+            If CryptoIsSupported(PREF + ucsTlsAlgoAeadAes256) And CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+                oRetVal.Add TLS_CIPHER_SUITE_AES_256_GCM_SHA384
+            End If
+            If CryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
+                oRetVal.Add TLS_CIPHER_SUITE_CHACHA20_POLY1305_SHA256
+            End If
+            '--- least preferred AES
+            If Not CryptoIsSupported(PREF + ucsTlsAlgoAeadAes128) And CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                oRetVal.Add TLS_CIPHER_SUITE_AES_128_GCM_SHA256
+            End If
+            If Not CryptoIsSupported(PREF + ucsTlsAlgoAeadAes256) And CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+                oRetVal.Add TLS_CIPHER_SUITE_AES_256_GCM_SHA384
+            End If
+        End If
+    End If
+    If (eFilter And ucsTlsSupportTls12) <> 0 Then
+        If CryptoIsSupported(ucsTlsAlgoKeySecp256r1) Then
+            '--- first if AES preferred over Chacha20
+            If CryptoIsSupported(PREF + ucsTlsAlgoAeadAes128) And CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+            End If
+            If CryptoIsSupported(PREF + ucsTlsAlgoAeadAes128) And CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+            End If
+            If CryptoIsSupported(ucsTlsAlgoAeadChacha20Poly1305) Then
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+            End If
+            '--- least preferred AES
+            If Not CryptoIsSupported(PREF + ucsTlsAlgoAeadAes128) And CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+            End If
+            If Not CryptoIsSupported(PREF + ucsTlsAlgoAeadAes128) And CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+                oRetVal.Add TLS_CIPHER_SUITE_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+            End If
+        End If
+        '--- no "perfect forward secrecy" -> least preferred
+        If CryptoIsSupported(ucsTlsAlgoAeadAes128) Then
+            oRetVal.Add TLS_CIPHER_SUITE_RSA_WITH_AES_128_GCM_SHA256
+        End If
+        If CryptoIsSupported(ucsTlsAlgoAeadAes256) Then
+            oRetVal.Add TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384
+        End If
+    End If
+    Set pvCryptoOrderCiphers = oRetVal
+End Function
 
 Private Function pvCryptoAeadDecrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, baServerIV() As Byte, baServerKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
     Select Case eAead

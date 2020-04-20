@@ -196,9 +196,6 @@ InLoop:
                     GoTo QH
                 End If
             End If
-            If LenB(sError) <> 0 Then
-                GoTo QH
-            End If
             If TlsIsClosed(uCtx) Then
                 sError = "Unexpected TLS session close"
                 GoTo QH

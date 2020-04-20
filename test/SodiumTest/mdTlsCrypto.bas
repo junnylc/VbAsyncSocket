@@ -291,12 +291,19 @@ Public Sub CryptoTerminate()
 End Sub
 
 Public Function CryptoIsSupported(ByVal eAead As UcsTlsCryptoAlgorithmsEnum) As Boolean
+    Const PREF          As Long = &H1000
+    
     Select Case eAead
     Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
         #If ImplUseLibSodium Then
             CryptoIsSupported = (crypto_aead_aes256gcm_is_available() <> 0 And eAead = ucsTlsAlgoAeadAes256)
         #Else
             CryptoIsSupported = True
+        #End If
+    Case PREF + ucsTlsAlgoAeadAes128, PREF + ucsTlsAlgoAeadAes256
+        '--- signal if AES preferred over Chacha20
+        #If ImplUseLibSodium Then
+            CryptoIsSupported = (crypto_aead_aes256gcm_is_available() <> 0 And eAead = PREF + ucsTlsAlgoAeadAes256)
         #End If
     Case Else
         CryptoIsSupported = True
