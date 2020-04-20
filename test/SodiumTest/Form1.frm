@@ -170,7 +170,7 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
         End If
         m_sServerName = uRemote.Host & ":" & uRemote.Port
         '--- send TLS handshake
-        If Not TlsInitClient(uCtx, TargetHost:=uRemote.Host) Then ' , ClientFeatures:=ucsTlsSupportTls12)
+        If Not TlsInitClient(uCtx, RemoteHostName:=uRemote.Host) Then ' , LocalFeatures:=ucsTlsSupportTls12)
             sError = TlsGetLastError(uCtx)
             GoTo QH
         End If
@@ -185,7 +185,7 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
             End If
 InLoop:
             lSize = 0
-            If Not TlsHandshake(uCtx, baRecv, -1, baSend, lSize) Then
+            If Not mdTlsSupport.TlsHandshake(uCtx, baRecv, -1, baSend, lSize) Then
                 sError = TlsGetLastError(uCtx)
                 GoTo QH
             End If
@@ -207,7 +207,7 @@ InLoop:
                "Connection: keep-alive" & vbCrLf & _
                "Host: " & uRemote.Host & vbCrLf & vbCrLf
     lSize = 0
-    If Not TlsSend(uCtx, StrConv(sRequest, vbFromUnicode), -1, baSend, lSize) Then
+    If Not mdTlsSupport.TlsSend(uCtx, StrConv(sRequest, vbFromUnicode), -1, baSend, lSize) Then
         sError = TlsGetLastError(uCtx)
         GoTo QH
     End If
@@ -234,7 +234,7 @@ InLoop:
             sError = "Timeout waiting for response for " & Format$(Timer - dblTimer, "0.000") & " seconds"
             Exit Do
         End If
-        If Not TlsReceive(uCtx, baRecv, -1, baDecr, lSize) Then
+        If Not mdTlsSupport.TlsReceive(uCtx, baRecv, -1, baDecr, lSize) Then
             sError = TlsGetLastError(uCtx)
             GoTo QH
         End If
@@ -253,7 +253,7 @@ InLoop:
             End If
         End If
         lSize = 0
-        If Not TlsShutdown(uCtx, baSend, lSize) Then
+        If Not mdTlsSupport.TlsShutdown(uCtx, baSend, lSize) Then
             sError = TlsGetLastError(uCtx)
             GoTo QH
         End If
