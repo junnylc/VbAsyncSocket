@@ -697,6 +697,10 @@ Public Function ReceiveArray( _
         If lBytes = SOCKET_ERROR Then
             m_lLastError = Err.LastDllError
             GoTo QH
+        ElseIf lBytes = 0 Then
+            Buffer = vbNullString
+        ElseIf lBytes <> UBound(Buffer) + 1 Then
+            ReDim Preserve Buffer(0 To lBytes - 1) As Byte
         End If
         If uAddr.sin_family <> 0 Then
             pvFromSockAddr uAddr, HostAddress, HostPort
