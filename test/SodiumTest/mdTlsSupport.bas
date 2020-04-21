@@ -41,6 +41,7 @@ Private Const TLS_HANDSHAKE_TYPE_MESSAGE_HASH           As Long = 254
 Private Const TLS_EXTENSION_TYPE_SERVER_NAME            As Long = 0
 'Private Const TLS_EXTENSION_TYPE_STATUS_REQUEST         As Long = 5
 Private Const TLS_EXTENSION_TYPE_SUPPORTED_GROUPS       As Long = 10
+'Private Const TLS_EXTENSION_TYPE_EC_POINT_FORMAT        As Long = 11
 Private Const TLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS   As Long = 13
 'Private Const TLS_EXTENSION_TYPE_ALPN                   As Long = 16
 'Private Const TLS_EXTENSION_TYPE_COMPRESS_CERTIFICATE   As Long = 27
@@ -106,7 +107,6 @@ Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal uc
 '=========================================================================
 
 Private Const STR_VL_ALERTS             As String = "0|Close notify|10|Unexpected message|20|Bad record mac|40|Handshake failure|42|Bad certificate|44|Certificate revoked|45|Certificate expired|46|Certificate unknown|47|Illegal parameter|48|Unknown CA|50|Decode error|51|Decrypt error|70|Protocol version|80|Internal error|90|User canceled|109|Missing extension|112|Unrecognized name|116|Certificate required|120|No application protocol"
-Private Const STR_HELLO_RETRY_RANDOM    As String = "cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c"
 Private Const STR_UNKNOWN_ALERT         As String = "Unknown (%1)"
 Private Const STR_FORMAT_ALERT          As String = """%1"" alert"
 '--- numeric
@@ -214,6 +214,7 @@ Public Type UcsTlsContext
     RemotePublic()      As Byte
     RemoteCertReqContext() As Byte
     RemoteCertificates  As Collection
+    RemoteExtensions    As Collection
     '--- crypto settings
     ProtocolVersion     As Long
     ExchangeGroup       As Long
@@ -604,9 +605,9 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                     lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                     If (.LocalFeatures And ucsTlsSupportTls12) <> 0 Then
                         '--- Extension - EC Point Formats
-                        lPos = pvWriteArray(baOutput, lPos, FromHex("00:0B:00:02:01:00"))   '--- uncompressed only
+                        lPos = pvWriteArray(baOutput, lPos, pvArrayByte(0, &HB, 0, 2, 1, 0))   '--- uncompressed only
                         '--- Extension - Renegotiation Info
-                        lPos = pvWriteArray(baOutput, lPos, FromHex("FF:01:00:01:00"))      '--- empty info
+                        lPos = pvWriteArray(baOutput, lPos, pvArrayByte(&HFF, 1, 0, 1, 0))     '--- empty info
                     End If
                     '--- Extension - Signature Algorithms
                     lPos = pvWriteLong(baOutput, lPos, TLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, Size:=2)
@@ -689,7 +690,7 @@ Private Function pvBuildClientLegacyKeyExchange(uCtx As UcsTlsContext, baOutput(
             pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baOutput(lMessagePos)), lPos - lMessagePos
         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
         '--- Legacy Change Cipher Spec
-        lPos = pvWriteArray(baOutput, lPos, FromHex("14:03:03:00:01:01"))
+        lPos = pvWriteArray(baOutput, lPos, pvArrayByte(TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, TLS_RECORD_VERSION \ &H100, TLS_RECORD_VERSION, 0, 1, 1))
         '--- Record Header
         lRecordPos = lPos
         lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_HANDSHAKE)
@@ -745,7 +746,7 @@ Private Function pvBuildClientHandshakeFinished(uCtx As UcsTlsContext, baOutput(
     
     With uCtx
         '--- Legacy Change Cipher Spec
-        lPos = pvWriteArray(baOutput, lPos, FromHex("14:03:03:00:01:01"))
+        lPos = pvWriteArray(baOutput, lPos, pvArrayByte(TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, TLS_RECORD_VERSION \ &H100, TLS_RECORD_VERSION, 0, 1, 1))
         '--- Record Header
         lRecordPos = lPos
         lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_APPDATA)
@@ -1221,10 +1222,7 @@ Private Function pvParseHandshakeClientContent(uCtx As UcsTlsContext, baInput() 
                     '--- post-process ucsTlsStateExpectExtensions
                     If .State = ucsTlsStateExpectServerFinished And .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS12 Then
                         If pvCryptoCipherSuiteUseRsaCertificate(.CipherSuite) Then
-                            On Error Resume Next
-                            baCert = .RemoteCertificates.Item(1)
-                            On Error GoTo 0
-                            If pvArraySize(baCert) = 0 Then
+                            If Not SearchCollection(.RemoteCertificates, 1, baCert) Then
                                 sError = ERR_NO_SERVER_CERTIFICATE
                                 eAlertCode = uscTlsAlertHandshakeFailure
                                 GoTo QH
@@ -1292,7 +1290,7 @@ Private Function pvParseHandshakeClientContent(uCtx As UcsTlsContext, baInput() 
                         End If
                         If lRequestUpdate <> 0 Then
                             '--- ack by TLS_HANDSHAKE_TYPE_KEY_UPDATE w/ update_not_requested(0)
-                            If pvBuildApplicationData(uCtx, baMessage, 0, FromHex("18:00:00:01:00"), -1, sError, eAlertCode) = 0 Then
+                            If pvBuildApplicationData(uCtx, baMessage, 0, pvArrayByte(TLS_HANDSHAKE_TYPE_KEY_UPDATE, 0, 0, 1, 0), -1, sError, eAlertCode) = 0 Then
                                 GoTo QH
                             End If
                             .SendPos = pvWriteArray(.SendBuffer, .SendPos, baMessage)
@@ -1329,7 +1327,7 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
     Dim bHelloRetryRequest As Boolean
     
     If pvArraySize(baHelloRetryRandom) = 0 Then
-        baHelloRetryRandom = FromHex(STR_HELLO_RETRY_RANDOM)
+        baHelloRetryRandom = pvArrayByte(&HCF, &H21, &HAD, &H74, &HE5, &H9A, &H61, &H11, &HBE, &H1D, &H8C, &H2, &H1E, &H65, &HB8, &H91, &HC2, &HA2, &H11, &H16, &H7A, &HBB, &H8C, &H5E, &H7, &H9E, &H9, &HE2, &HC8, &HA8, &H33, &H9C)
     End If
     With uCtx
         '--- clear HelloRetryRequest
@@ -1860,7 +1858,8 @@ End Function
 Private Function pvWriteArray(baBuffer() As Byte, ByVal lPos As Long, baSrc() As Byte) As Long
     Dim lSize       As Long
     
-    If pvArraySize(baSrc, RetVal:=lSize) > 0 Then
+    lSize = pvArraySize(baSrc)
+    If lSize > 0 Then
         lPos = pvWriteBuffer(baBuffer, lPos, VarPtr(baSrc(0)), lSize)
     End If
     pvWriteArray = lPos
@@ -1963,17 +1962,14 @@ End Function
 
 '= arrays helpers ========================================================
 
-Private Function pvArraySize(baArray() As Byte, Optional RetVal As Long) As Long
+Private Function pvArraySize(baArray() As Byte) As Long
     Dim lPtr            As Long
     
     '--- peek long at ArrPtr(baArray)
     Call CopyMemory(lPtr, ByVal ArrPtr(baArray), 4)
     If lPtr <> 0 Then
-        RetVal = UBound(baArray) + 1
-    Else
-        RetVal = 0
+        pvArraySize = UBound(baArray) + 1
     End If
-    pvArraySize = RetVal
 End Function
 
 Private Function pvArrayXor(baArray() As Byte, ByVal lSeqNo As Long) As Byte()
@@ -2001,43 +1997,22 @@ Private Sub pvArraySwap(baBuffer() As Byte, lBufferPos As Long, baInput() As Byt
     lInputPos = lTemp
 End Sub
 
-'= global helpers ========================================================
-
-Private Function ToHex(baText() As Byte, Optional Delimiter As String = "-") As String
-    Dim aText()         As String
-    Dim lIdx            As Long
-    
-    If LenB(CStr(baText)) <> 0 Then
-        ReDim aText(0 To UBound(baText)) As String
-        For lIdx = 0 To UBound(baText)
-            aText(lIdx) = Right$("0" & Hex$(baText(lIdx)), 2)
-        Next
-        ToHex = Join(aText, Delimiter)
-    End If
-End Function
-
-Private Function FromHex(sText As String) As Byte()
+Private Function pvArrayByte(ParamArray A() As Variant) As Byte()
     Dim baRetVal()      As Byte
+    Dim vElem           As Variant
     Dim lIdx            As Long
     
-    On Error GoTo QH
-    '--- check for hexdump delimiter
-    If sText Like "*[!0-9A-Fa-f]*" Then
-        ReDim baRetVal(0 To Len(sText) \ 3) As Byte
-        For lIdx = 1 To Len(sText) Step 3
-            baRetVal(lIdx \ 3) = "&H" & Mid$(sText, lIdx, 2)
+    If UBound(A) >= 0 Then
+        ReDim baRetVal(0 To UBound(A)) As Byte
+        For Each vElem In A
+            baRetVal(lIdx) = vElem And &HFF
+            lIdx = lIdx + 1
         Next
-    ElseIf LenB(sText) <> 0 Then
-        ReDim baRetVal(0 To Len(sText) \ 2 - 1) As Byte
-        For lIdx = 1 To Len(sText) Step 2
-            baRetVal(lIdx \ 2) = "&H" & Mid$(sText, lIdx, 2)
-        Next
-    Else
-        baRetVal = vbNullString
     End If
-    FromHex = baRetVal
-QH:
+    pvArrayByte = baRetVal
 End Function
+
+'= global helpers ========================================================
 
 Private Function EmptyByteArray(Optional ByVal Size As Long) As Byte()
     Dim baRetVal()      As Byte

@@ -133,7 +133,7 @@ Private Const STR_THUNK3                As String = "N6IlNzItN9Il99It91Il9tIt90I
                                                     "AA8QCIvEDxEBDxBFwA8RTeAPEQCNRaBQ6Oiw//9mD3PZDA8QEGYPfsgPKMJmD3PYDGYPfsEPEVXAiU38DxFV0DvIdxNyCItF2DtF6HMJuAEAAAAzyesOD1fAZg8TReiLTeyLReiLVfgD0ItF8IlV+BPBRoPrCIlF8Dv3D4ZU////i13U6wOLRfiLTQiLddCJNPmL8YvKi9CJVdyJXP4ER4t12Itd/Il10Ild1IlN2IlV/IP/Bw+C2/7//4tFCF+JcDheiVg8W4vlXcIMAMzMzMzMzMzMVYvsVleLfQhX6EIAAACL8IX2dQZfXl3CBACLVPf4i8qLRPf8M/8LyHQTZg8fRAAAD6zCAUfR6IvKC8h188HmBo1GwAPHX15dwgQAzMzMzMxVi+yLVQi4AwAAAA8fRAAAiwzCC0zCBHUFg+gBefJAXcIEAMzMzMzMzMzMzMzMzMxVi+yD7AiLRQgPV8BTi9hmDxNF+IPAIDvDdjiLTfhWV4t9/IlNCItw+IPoCIvOi1AED6zRAQtNCNHqC9eJCIv+iVAEwecfx0UIAAAAADvDd9VfXluL5V3CBADMzMzMzMxVi+yLVQyLTQiLAokBi0IEiUEEi0IIiUEIi0IMiUEMi0IQiUEQi0IUiUEUi0IYiUEYi0IciUEcXcIIAMzMzMzMVYvsg+xgUw9XwDPJVmYPE0XYi0XcV2YPE0XQi33UiU3oiUXwM/aNQf2D+QQPV8BmDxNF+Itd/A9D8DvxD4cZAQAAi1UMi8EPEEXQK8aJXfQPEUXAjQTCi1X4iUXsiVX8i/kr/jv3D4fqAAAA/3AE/zCLRQz/dPAE/zTwjUWwUOh84P//DxAADxFF0Dv3c0OLTdyLwYtV1Iv6wegfAUX8i0XYg9MAwe8fD" & _
                                                     "6TBAYld9DPbA8AL2Qv4iV3ci0XQD6TCAYl92APAiVXUiUXQDxBF0OsGi13ci33Yg+wQi8SD7BAPEQCLxA8QRcAPEQCNRaBQ6Buu//8PEAgPKMFmD3PYDGYPfsAPEU3AiUXwDxFN0DvDdxByBTl92HMJuAEAAAAzyesOD1fAZg8TReCLTeSLReCLVfyLXfQD0ItF7BPZiVX8i03oRoPoCIld9IlF7DvxD4YK////i33U6wOLVfiLdQiLRdCJBM6LRdiJfM4EQYt98IlV2IvTiUXQiX3UiVXwiVXciU3og/kHD4KV/v//iX48X4lGOF5bi+VdwggAzMxVi+yD7AxTi10MD1fAVleLfRCLE4vyi0MEi8hmDxNF9Cs3G08EO/J1BjvIdQTrGDvIcg93BDvydgm4AQAAADPS6wtmDxNF9ItF9ItV+It9CIlPBItNEIk3i3MIiXX4K3EIi0sMi10QG0sMK/CLXQwbyjt1+HUFO0sMdCA7SwxyEHcFO3MIdgm4AQAAADPS6wtmDxNF9ItV+ItF9IlPDItNEIl3CItzEIl1/CtxEItLFItdEBtLFCvwi10MG8o7dfx1BTtLFHQgO0sUchB3BTtzEHYJuAEAAAAz0usLZg8TRfSLVfiLRfSJTxSJdxCLSxiL8Yt9EItbHIlNDItNECtxGIvLG08cK/CLfQgbyjt1DHUEO8t0LDvLch13BTt1DHYWiXcYuAEAAACJTxwz0l9eW4vlXcIMAGYPE0X0i1X4i0X0iXcYiU8cX15bi+VdwgwAzMzMzMzMzMzMzMzMzMzMVYvsi00IM9JWV4t9DDP2i8eD4D8Pq8aD+CAPQ9Yz8oP4QA9D1sHvBiM0+SNU+QSLxl9eXcIIAMzMzMzMzMzMzFWL7ItVFI" & _
                                                     "PsEDPJhdIPhMIAAABTi10QVot1CFeLfQyD+iAPgosAAACNQ/8DwjvwdwmNRv8DwjvDc3mNR/8DwjvwdwmNRv8DwjvHc2eLwovXK9OD4OCJVfyL1ivTiUXwiVX4i8OLXfiL14t9/CvWiVX0jVYQDxAAi3X0g8EgjUAgjVIgDxBMB+BmD+/IDxFMA+APEEwW4It1CA8QQPBmD+/IDxFK4DtN8HLKi1UUi30Mi10QO8pzGyv7jQQZK/Mr0YoMOI1AATJI/4hMMP+D6gF17l9eW4vlXcIQAAAA" ' 23661, 19.4.2020 19:52:54
-Private Const STR_LIBSODIUM_SHA384_STATE As String = "d89e05c15d9dbbcb07d57c362a299a6217dd70305a01599139590ef7d8ec2f15310bc0ff6726336711155868874ab48ea78ff9640d2e0cdba44ffabe1d48b547"
+Private Const STR_LIBSODIUM_SHA384_STATE As String = "2J4FwV2du8sH1Xw2KimaYhfdcDBaAVmROVkO99jsLxUxC8D/ZyYzZxEVWGiHSrSOp4/5ZA0uDNukT/q+HUi1Rw=="
 '--- numeric
 Private Const LNG_SHA256_HASHSZ         As Long = 32
 Private Const LNG_SHA256_BLOCKSZ        As Long = 64
@@ -246,21 +246,21 @@ Public Function CryptoInit() As Boolean
                 .Pfn(lIdx) = UnsignedAdd(.Thunk, lOffset)
             Next
             '--- init pfns trampolines
-            Call pvPatchProto(AddressOf pvCryptoCallSecp256r1MakeKey)
-            Call pvPatchProto(AddressOf pvCryptoCallSecp256r1SharedSecret)
-            Call pvPatchProto(AddressOf pvCryptoCallSecp256r1UncompressKey)
-            Call pvPatchProto(AddressOf pvCryptoCallCurve25519Multiply)
-            Call pvPatchProto(AddressOf pvCryptoCallCurve25519MulBase)
-            Call pvPatchProto(AddressOf pvCryptoCallSha256Init)
-            Call pvPatchProto(AddressOf pvCryptoCallSha256Update)
-            Call pvPatchProto(AddressOf pvCryptoCallSha256Final)
-            Call pvPatchProto(AddressOf pvCryptoCallSha384Init)
-            Call pvPatchProto(AddressOf pvCryptoCallSha384Update)
-            Call pvPatchProto(AddressOf pvCryptoCallSha384Final)
-            Call pvPatchProto(AddressOf pvCryptoCallChacha20Poly1305Encrypt)
-            Call pvPatchProto(AddressOf pvCryptoCallChacha20Poly1305Decrypt)
-            Call pvPatchProto(AddressOf pvCryptoCallAesGcmEncrypt)
-            Call pvPatchProto(AddressOf pvCryptoCallAesGcmDecrypt)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallSecp256r1MakeKey)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallSecp256r1SharedSecret)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallSecp256r1UncompressKey)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallCurve25519Multiply)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallCurve25519MulBase)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallSha256Init)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallSha256Update)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallSha256Final)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallSha384Init)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallSha384Update)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallSha384Final)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallChacha20Poly1305Encrypt)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallChacha20Poly1305Decrypt)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallAesGcmEncrypt)
+            Call pvPatchTrampoline(AddressOf pvCryptoCallAesGcmDecrypt)
             '--- init thunk's first 4 bytes -> global data in C/C++
             Call CopyMemory(ByVal .Thunk, VarPtr(.Glob(0)), 4)
         End If
@@ -741,6 +741,30 @@ QH:
     End If
 End Function
 
+Public Function SearchCollection(ByVal oCol As Collection, Index As Variant, Optional RetVal As Variant) As Boolean
+    Const IDX_COLLECTION_ITEM As Long = 7
+    Static bIsPatched   As Boolean
+    Dim vItem           As Variant
+    
+    If Not bIsPatched Then
+        pvPatchMethodTrampoline AddressOf pvCryptoCallCollectionItem, IDX_COLLECTION_ITEM
+        bIsPatched = True
+    End If
+    If oCol Is Nothing Then
+        GoTo QH
+    ElseIf pvCryptoCallCollectionItem(oCol, Index, vItem) < 0 Then
+        GoTo QH
+    End If
+    If IsObject(vItem) Then
+        Set RetVal = vItem
+    Else
+        RetVal = vItem
+    End If
+    '--- success
+    SearchCollection = True
+QH:
+End Function
+
 '= BCrypt helpers ========================================================
 
 #If ImplUseBCrypt Then
@@ -907,17 +931,14 @@ End Function
 
 '= private ===============================================================
 
-Private Function pvArraySize(baArray() As Byte, Optional RetVal As Long) As Long
+Private Function pvArraySize(baArray() As Byte) As Long
     Dim lPtr            As Long
     
     '--- peek long at ArrPtr(baArray)
     Call CopyMemory(lPtr, ByVal ArrPtr(baArray), 4)
     If lPtr <> 0 Then
-        RetVal = UBound(baArray) + 1
-    Else
-        RetVal = 0
+        pvArraySize = UBound(baArray) + 1
     End If
-    pvArraySize = RetVal
 End Function
 
 Private Sub pvArrayReverse(baData() As Byte)
@@ -930,42 +951,6 @@ Private Sub pvArrayReverse(baData() As Byte)
         baData(UBound(baData) - lIdx) = bTemp
     Next
 End Sub
-
-Private Function ToHex(baText() As Byte, Optional Delimiter As String = "-") As String
-    Dim aText()         As String
-    Dim lIdx            As Long
-    
-    If LenB(CStr(baText)) <> 0 Then
-        ReDim aText(0 To UBound(baText)) As String
-        For lIdx = 0 To UBound(baText)
-            aText(lIdx) = Right$("0" & Hex$(baText(lIdx)), 2)
-        Next
-        ToHex = Join(aText, Delimiter)
-    End If
-End Function
-
-Private Function FromHex(sText As String) As Byte()
-    Dim baRetVal()      As Byte
-    Dim lIdx            As Long
-    
-    On Error GoTo QH
-    '--- check for hexdump delimiter
-    If sText Like "*[!0-9A-Fa-f]*" Then
-        ReDim baRetVal(0 To Len(sText) \ 3) As Byte
-        For lIdx = 1 To Len(sText) Step 3
-            baRetVal(lIdx \ 3) = "&H" & Mid$(sText, lIdx, 2)
-        Next
-    ElseIf LenB(sText) <> 0 Then
-        ReDim baRetVal(0 To Len(sText) \ 2 - 1) As Byte
-        For lIdx = 1 To Len(sText) Step 2
-            baRetVal(lIdx \ 2) = "&H" & Mid$(sText, lIdx, 2)
-        Next
-    Else
-        baRetVal = vbNullString
-    End If
-    FromHex = baRetVal
-QH:
-End Function
 
 Private Function pvThunkAllocate(sText As String, Optional ByVal ThunkPtr As Long) As Long
     Static Map(0 To &H3FF) As Long
@@ -1003,7 +988,7 @@ Private Function pvThunkAllocate(sText As String, Optional ByVal ThunkPtr As Lon
     Next
 End Function
 
-Private Sub pvPatchProto(ByVal Pfn As Long)
+Private Sub pvPatchTrampoline(ByVal Pfn As Long)
     Dim bInIDE          As Boolean
  
     Debug.Assert pvSetTrue(bInIDE)
@@ -1022,6 +1007,23 @@ Private Sub pvPatchProto(ByVal Pfn As Long)
     Call CopyMemory(ByVal Pfn, -802975883527609.7192@, 8)
 End Sub
 
+Private Sub pvPatchMethodTrampoline(ByVal Pfn As Long, ByVal lMethodIdx As Long)
+    Dim bInIDE          As Boolean
+
+    Debug.Assert pvSetTrue(bInIDE)
+    If bInIDE Then
+        '--- note: IDE is not large-address aware
+        Call CopyMemory(Pfn, ByVal Pfn + &H16, 4)
+    Else
+        Call VirtualProtect(Pfn, 12, PAGE_EXECUTE_READWRITE, 0)
+    End If
+    ' 0: 8B 44 24 04          mov         eax,dword ptr [esp+4]
+    ' 4: 8B 00                mov         eax,dword ptr [eax]
+    ' 6: FF A0 00 00 00 00    jmp         dword ptr [eax+lMethodIdx*4]
+    Call CopyMemory(ByVal Pfn, -684575231150992.4725@, 8)
+    Call CopyMemory(ByVal (Pfn Xor &H80000000) + 8 Xor &H80000000, lMethodIdx * 4, 4)
+End Sub
+
 Private Function pvSetTrue(bValue As Boolean) As Boolean
     bValue = True
     pvSetTrue = True
@@ -1037,7 +1039,9 @@ End Function
         Static baSha384State() As Byte
         
         If pvArraySize(baSha384State) = 0 Then
-            baSha384State = FromHex(STR_LIBSODIUM_SHA384_STATE)
+            ReDim baSha384State(0 To (Len(STR_LIBSODIUM_SHA384_STATE) \ 4) * 3 - 1) As Byte
+            pvThunkAllocate STR_LIBSODIUM_SHA384_STATE, VarPtr(baSha384State(0))
+            ReDim Preserve baSha384State(0 To 63) As Byte
         End If
         Debug.Assert pvArraySize(baCtx) >= crypto_hash_sha512_statebytes()
         Call crypto_hash_sha512_init(baCtx(0))
@@ -1121,4 +1125,8 @@ Private Function pvCryptoCallAesGcmDecrypt( _
             pHeaderPtr As Byte, ByVal lHeaderSize As Long, pNoncePtr As Byte, pKeyPtr As Byte, ByVal lKeySize As Long) As Long
     ' void cf_aesgcm_decrypt(uint8_t *m, const uint8_t *c, const size_t clen, const uint8_t *mac, const uint8_t *ad, const size_t adlen,
     '                        const uint8_t *npub, const uint8_t *k, const size_t klen)
+End Function
+
+Private Function pvCryptoCallCollectionItem(ByVal oCol As Collection, Index As Variant, Optional RetVal As Variant) As Long
+    ' RetVal = oCol.Item(Index)
 End Function
