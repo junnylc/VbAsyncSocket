@@ -124,12 +124,13 @@ Private Const ERR_FATAL_ALERT           As String = "Fatal alert"
 Private Const ERR_UNEXPECTED_RECORD_TYPE As String = "Unexpected record type (%1)"
 Private Const ERR_UNEXPECTED_MSG_TYPE   As String = "Unexpected message type for %1 (%2)"
 Private Const ERR_UNEXPECTED_PROTOCOL   As String = "Unexpected protocol for %1 (%2)"
-Private Const ERR_SERVER_HANDSHAKE_FAILED As String = "Server Handshake verification failed"
+Private Const ERR_SERVER_HANDSHAKE_FAILED As String = "Handshake verification failed"
 Private Const ERR_INVALID_STATE_HANDSHAKE As String = "Invalid state for handshake content (%1)"
 Private Const ERR_INVALID_SIZE_KEY_SHARE As String = "Invalid data size for key share"
 Private Const ERR_INVALID_REMOTE_KEY    As String = "Invalid remote key size"
 Private Const ERR_INVALID_SIZE_REMOTE_KEY As String = "Invalid data size for remote key"
 Private Const ERR_INVALID_SIZE_VERSIONS As String = "Invalid data size for supported versions"
+Private Const ERR_INVALID_SIGNATURE     As String = "Invalid certificate signature"
 Private Const ERR_COOKIE_NOT_ALLOWED    As String = "Cookie not allowed outside HelloRetryRequest"
 Private Const ERR_NO_HANDSHAKE_MESSAGES As String = "Missing handshake messages"
 Private Const ERR_NO_PREV_REMOTE_SECRET As String = "Missing previous remote secret"
@@ -209,6 +210,8 @@ Public Type UcsTlsContext
     LocalPublic()       As Byte
     LocalEncrPrivate()  As Byte
     LocalCertificates   As Collection
+    LocalCertKey()      As Byte
+    LocalSignatureType  As Long
     RemoteSessionID()   As Byte
     RemoteRandom()      As Byte
     RemotePublic()      As Byte
@@ -481,12 +484,17 @@ QH:
 End Function
 
 Private Function pvSetupKeyExchangeRsaCertificate(uCtx As UcsTlsContext, baCert() As Byte, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
+    Dim uRsaCtx         As UcsRsaContextType
+    
     On Error GoTo EH
     With uCtx
         .ExchangeAlgo = ucsTlsAlgoKeyCertificate
         .LocalPrivate = pvCryptoRandomArray(48)
         pvWriteLong .LocalPrivate, 0, TLS_LOCAL_LEGACY_VERSION, Size:=2
-        .LocalEncrPrivate = CryptoRsaEncrypt(baCert, .LocalPrivate)
+        If CryptoRsaInitContext(uRsaCtx, EmptyByteArray, baCert, EmptyByteArray) Then
+            .LocalEncrPrivate = CryptoRsaEncrypt(uRsaCtx.hPubKey, .LocalPrivate)
+            Call CryptoRsaTerminateContext(uRsaCtx)
+        End If
     End With
     '--- success
     pvSetupKeyExchangeRsaCertificate = True
@@ -613,10 +621,10 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                     lPos = pvWriteLong(baOutput, lPos, TLS_EXTENSION_TYPE_SIGNATURE_ALGORITHMS, Size:=2)
                     lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
                         lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
+                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA1, Size:=2)
+                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA256, Size:=2)
                             lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, Size:=2)
                             lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA256, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA1, Size:=2)
                         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                     lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                     If (.LocalFeatures And ucsTlsSupportTls13) <> 0 Then
@@ -753,7 +761,7 @@ Private Function pvBuildClientHandshakeFinished(uCtx As UcsTlsContext, baOutput(
         lPos = pvWriteLong(baOutput, lPos, TLS_RECORD_VERSION, Size:=2)
         lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
             lMessagePos = lPos
-            '--- Handshake Finish
+            '--- Client Handshake Finished
             lPos = pvWriteLong(baOutput, lPos, TLS_HANDSHAKE_TYPE_FINISHED)
             lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=3)
                 baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
@@ -761,6 +769,7 @@ Private Function pvBuildClientHandshakeFinished(uCtx As UcsTlsContext, baOutput(
                 baVerifyData = pvHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
                 lPos = pvWriteArray(baOutput, lPos, baVerifyData)
             lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
+            '--- Record Type
             lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_HANDSHAKE)
             lMessageSize = lPos - lMessagePos
             lPos = pvWriteReserved(baOutput, lPos, .TagSize)
@@ -1099,6 +1108,9 @@ Private Function pvParseHandshakeClientContent(uCtx As UcsTlsContext, baInput() 
     Dim baCert()        As Byte
     Dim lCertSize       As Long
     Dim lCertEnd        As Long
+    Dim uRsaCtx         As UcsRsaContextType
+    Dim lSignPos        As Long
+    Dim lSignSize       As Long
     
     With uCtx
         Do While lPos < lEnd
@@ -1169,12 +1181,26 @@ Private Function pvParseHandshakeClientContent(uCtx As UcsTlsContext, baInput() 
                             Loop
                         lPos = pvReadEndOfBlock(baInput, lPos, .BlocksStack)
                     Case TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY
-                        baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
-                        lVerifyPos = pvWriteString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
-                        lVerifyPos = pvWriteArray(baVerifyData, lVerifyPos, baHandshakeHash)
-                        '--- ToDo: verify .ServerCertificate signature
-                        '--- ShellExecute("openssl x509 -pubkey -noout -in server.crt > server.pub")
-                        lPos = lPos + lMessageSize
+                        lPos = pvReadLong(baInput, lPos, lSignatureType, Size:=2)
+                        Debug.Print "Using signature type &H" & Hex$(lSignatureType), Timer
+                        lPos = pvReadBeginOfBlock(baInput, lPos, .BlocksStack, Size:=2, BlockSize:=lCertSize)
+                            lPos = pvReadArray(baInput, lPos, baSignature, lCertSize)
+                        lPos = pvReadEndOfBlock(baInput, lPos, .BlocksStack)
+                        If Not SearchCollection(.RemoteCertificates, 1, RetVal:=baCert) Then
+                            sError = ERR_NO_SERVER_CERTIFICATE
+                            eAlertCode = uscTlsAlertHandshakeFailure
+                            GoTo QH
+                        End If
+                        If CryptoRsaInitContext(uRsaCtx, EmptyByteArray, baCert, EmptyByteArray, lSignatureType) Then
+                            baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
+                            lVerifyPos = pvWriteString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
+                            lVerifyPos = pvWriteArray(baVerifyData, lVerifyPos, baHandshakeHash)
+                            If Not CryptoRsaVerify(uRsaCtx, baVerifyData, baSignature) Then
+                                sError = ERR_INVALID_SIGNATURE
+                                eAlertCode = uscTlsAlertHandshakeFailure
+                                GoTo QH
+                            End If
+                        End If
                     Case TLS_HANDSHAKE_TYPE_FINISHED
                         lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
                         baHandshakeHash = pvCryptoHash(.DigestAlgo, .HandshakeMessages, 0)
@@ -1189,6 +1215,7 @@ Private Function pvParseHandshakeClientContent(uCtx As UcsTlsContext, baInput() 
                         .State = ucsTlsStatePostHandshake
                     Case TLS_HANDSHAKE_TYPE_SERVER_KEY_EXCHANGE
                         If .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS12 Then
+                            lSignPos = lPos
                             lPos = pvReadLong(baInput, lPos, lCurveType)
                             Debug.Assert lCurveType = 3 '--- 3 = named_curve
                             lPos = pvReadLong(baInput, lPos, lNamedCurve, Size:=2)
@@ -1198,13 +1225,28 @@ Private Function pvParseHandshakeClientContent(uCtx As UcsTlsContext, baInput() 
                             lPos = pvReadBeginOfBlock(baInput, lPos, .BlocksStack, BlockSize:=lSignatureSize)
                                 lPos = pvReadArray(baInput, lPos, .RemotePublic, lSignatureSize)
                             lPos = pvReadEndOfBlock(baInput, lPos, .BlocksStack)
+                            lSignSize = lPos - lSignPos
+                            '--- signature
                             lPos = pvReadLong(baInput, lPos, lSignatureType, Size:=2)
-                            '-- &H401 = RSA signature with SHA256 hash
                             Debug.Print "Using signature type &H" & Hex$(lSignatureType), Timer
                             lPos = pvReadBeginOfBlock(baInput, lPos, .BlocksStack, Size:=2, BlockSize:=lSignatureSize)
                                 lPos = pvReadArray(baInput, lPos, baSignature, lSignatureSize)
-                                '--- ToDo: verify .RemoteCertificates signature
                             lPos = pvReadEndOfBlock(baInput, lPos, .BlocksStack)
+                            If Not SearchCollection(.RemoteCertificates, 1, RetVal:=baCert) Then
+                                sError = ERR_NO_SERVER_CERTIFICATE
+                                eAlertCode = uscTlsAlertHandshakeFailure
+                                GoTo QH
+                            End If
+                            If CryptoRsaInitContext(uRsaCtx, EmptyByteArray, baCert, EmptyByteArray, lSignatureType) Then
+                                lVerifyPos = pvWriteArray(baVerifyData, 0, .LocalRandom)
+                                lVerifyPos = pvWriteArray(baVerifyData, lVerifyPos, .RemoteRandom)
+                                lVerifyPos = pvWriteBuffer(baVerifyData, lVerifyPos, VarPtr(baInput(lSignPos)), lSignSize)
+                                If Not CryptoRsaVerify(uRsaCtx, baVerifyData, baSignature) Then
+                                    sError = ERR_INVALID_SIGNATURE
+                                    eAlertCode = uscTlsAlertHandshakeFailure
+                                    GoTo QH
+                                End If
+                            End If
                             If Not pvDeriveLegacySecrets(uCtx, sError, eAlertCode) Then
                                 GoTo QH
                             End If
@@ -1317,13 +1359,15 @@ End Function
 Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() As Byte, ByVal lRecordProtocol As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
     Static baHelloRetryRandom() As Byte
     Dim lPos            As Long
-    Dim lBlockSize      As Long
+    Dim lSize           As Long
+    Dim lEnd            As Long
     Dim lLegacyVersion  As Long
     Dim lCipherSuite    As Long
     Dim lLegacyCompress As Long
     Dim lExtType        As Long
+    Dim lExtSize        As Long
     Dim lExchangeGroup  As Long
-    Dim lEnd            As Long
+    Dim lBlockSize      As Long
     Dim bHelloRetryRequest As Boolean
     
     If pvArraySize(baHelloRetryRandom) = 0 Then
@@ -1338,8 +1382,8 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
         lPos = pvReadLong(baMessage, lPos, lLegacyVersion, Size:=2)
         lPos = pvReadArray(baMessage, lPos, .RemoteRandom, .RandomSize)
         bHelloRetryRequest = (StrConv(.RemoteRandom, vbUnicode) = StrConv(baHelloRetryRandom, vbUnicode))
-        lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, BlockSize:=lBlockSize)
-            lPos = pvReadArray(baMessage, lPos, .RemoteSessionID, lBlockSize)
+        lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, BlockSize:=lSize)
+            lPos = pvReadArray(baMessage, lPos, .RemoteSessionID, lSize)
         lPos = pvReadEndOfBlock(baMessage, lPos, .BlocksStack)
         lPos = pvReadLong(baMessage, lPos, lCipherSuite, Size:=2)
         If Not pvSetupCipherSuite(uCtx, lCipherSuite, sError, eAlertCode) Then
@@ -1351,15 +1395,15 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
         End If
         lPos = pvReadLong(baMessage, lPos, lLegacyCompress)
         Debug.Assert lLegacyCompress = 0
-        lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lBlockSize)
-            lEnd = lPos + lBlockSize
+        lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lSize)
+            lEnd = lPos + lSize
             Do While lPos < lEnd
                 lPos = pvReadLong(baMessage, lPos, lExtType, Size:=2)
-                lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lBlockSize)
+                lPos = pvReadBeginOfBlock(baMessage, lPos, .BlocksStack, Size:=2, BlockSize:=lExtSize)
                     Select Case lExtType
                     Case TLS_EXTENSION_TYPE_KEY_SHARE
                         .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS13_FINAL
-                        If lBlockSize < 2 Then
+                        If lExtSize < 2 Then
                             sError = ERR_INVALID_SIZE_KEY_SHARE
                             eAlertCode = uscTlsAlertDecodeError
                             GoTo QH
@@ -1372,7 +1416,7 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
                             If Not pvSetupKeyExchangeEccGroup(uCtx, lExchangeGroup, sError, eAlertCode) Then
                                 GoTo QH
                             End If
-                            If lBlockSize <= 4 Then
+                            If lExtSize <= 4 Then
                                 sError = ERR_INVALID_SIZE_REMOTE_KEY
                                 eAlertCode = uscTlsAlertDecodeError
                                 GoTo QH
@@ -1387,7 +1431,7 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
                             lPos = pvReadEndOfBlock(baMessage, lPos, .BlocksStack)
                         End If
                     Case TLS_EXTENSION_TYPE_SUPPORTED_VERSIONS
-                        If lBlockSize <> 2 Then
+                        If lExtSize <> 2 Then
                             sError = ERR_INVALID_SIZE_VERSIONS
                             eAlertCode = uscTlsAlertDecodeError
                             GoTo QH
@@ -1399,9 +1443,9 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baMessage() 
                             eAlertCode = uscTlsAlertIllegalParameter
                             GoTo QH
                         End If
-                        lPos = pvReadArray(baMessage, lPos, .HelloRetryCookie, lBlockSize)
+                        lPos = pvReadArray(baMessage, lPos, .HelloRetryCookie, lExtSize)
                     Case Else
-                        lPos = lPos + lBlockSize
+                        lPos = lPos + lExtSize
                     End Select
                 lPos = pvReadEndOfBlock(baMessage, lPos, .BlocksStack)
             Loop
@@ -2045,4 +2089,3 @@ Private Function SplitOrReindex(Expression As String, Delimiter As String) As Va
         SplitOrReindex = vResult
     End If
 End Function
-
