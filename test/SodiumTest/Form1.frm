@@ -60,6 +60,7 @@ Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 Option Explicit
 DefObj A-Z
+Private Const MODULE_NAME As String = "Form1"
 
 '=========================================================================
 ' API
@@ -85,6 +86,11 @@ Private Declare Function GetAsyncKeyState Lib "user32" (ByVal vKey As Long) As I
 Private m_oSocket               As cAsyncSocket
 Private m_sServerName           As String
 Private m_uCtx                  As UcsTlsContext
+Private WithEvents m_oServerSocket As cAsyncSocket
+Attribute m_oServerSocket.VB_VarHelpID = -1
+Private m_cRequestHandlers      As Collection
+Private m_cCertificates         As Collection
+Private m_baCertKey()           As Byte
 
 Private Type UcsParsedUrl
     Protocol        As String
@@ -98,13 +104,42 @@ Private Type UcsParsedUrl
 End Type
 
 '=========================================================================
+' Error handling
+'=========================================================================
+
+Private Sub PrintError(sFunction As String)
+    #If ImplUseDebugLog Then
+        DebugLog MODULE_NAME, sFunction & "(" & Erl & ")", Err.Description & " &H" & Hex$(Err.Number), vbLogEventTypeError
+    #Else
+        Debug.Print "Critical error: " & Err.Description & " [" & MODULE_NAME & "." & sFunction & "]"
+    #End If
+End Sub
+
+'=========================================================================
 ' Events
 '=========================================================================
 
 Private Sub Form_Load()
+    Dim sAddr           As String
+    Dim lPort           As Long
+    Dim cKeys           As Collection
+    
     If txtResult.Font.Name = "Arial" Then
         txtResult.Font.Name = "Courier New"
     End If
+    Set m_oServerSocket = New cAsyncSocket
+    m_oServerSocket.Create SocketPort:=10443, SocketAddress:="localhost"
+    If m_oServerSocket.Listen() Then
+        Set m_cRequestHandlers = New Collection
+        m_oServerSocket.GetSockName sAddr, lPort
+        Debug.Print "Listening on " & sAddr & ":" & lPort
+    End If
+    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\privkey.pem"), vbUnicode), "PRIVATE KEY", cKeys
+    If Not SearchCollection(cKeys, 1, RetVal:=m_baCertKey) Then
+        Debug.Print "Certificate private key not found"
+    End If
+    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\cert.pem"), vbUnicode), "CERTIFICATE", m_cCertificates
+    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\fullchain.pem"), vbUnicode), "CERTIFICATE", m_cCertificates
 End Sub
 
 Private Sub Form_Resize()
@@ -340,3 +375,32 @@ Public Function IsKeyPressed(ByVal lVirtKey As KeyCodeConstants) As Boolean
     IsKeyPressed = ((GetAsyncKeyState(lVirtKey) And &H8000) = &H8000)
 End Function
 
+Private Sub Form_Unload(Cancel As Integer)
+    Set m_cRequestHandlers = Nothing
+End Sub
+
+Private Sub m_oServerSocket_OnAccept()
+    Const FUNC_NAME     As String = "m_oServerSocket_OnAccept"
+    Dim oSocket         As cAsyncSocket
+    Dim oHandler        As cRequestHandler
+    Dim sKey            As String
+    
+    On Error GoTo EH
+    If Not m_oServerSocket.Accept(oSocket) Then
+        GoTo QH
+    End If
+    Set oHandler = New cRequestHandler
+    sKey = "#" & ObjPtr(oHandler)
+    If Not oHandler.Init(oSocket, sKey, Me, m_cCertificates, m_baCertKey) Then
+        GoTo QH
+    End If
+    m_cRequestHandlers.Add oHandler, "#" & ObjPtr(oHandler)
+QH:
+    Exit Sub
+EH:
+    PrintError FUNC_NAME
+End Sub
+
+Friend Sub frRemoveHandler(sKey As String)
+    RemoveCollection m_cRequestHandlers, sKey
+End Sub
