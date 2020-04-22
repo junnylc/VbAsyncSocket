@@ -25,33 +25,32 @@ Private Const TLS_SIGNATURE_RSA_PKCS1_SHA256            As Long = &H401
 Private Const TLS_SIGNATURE_RSA_PSS_RSAE_SHA256         As Long = &H804
 Private Const TLS_SIGNATURE_RSA_PSS_RSAE_SHA384         As Long = &H805
 '--- for CryptAcquireContext
-Private Const PROV_RSA_FULL                 As Long = 1
-Private Const PROV_RSA_AES                  As Long = 24
-Private Const CRYPT_VERIFYCONTEXT           As Long = &HF0000000
+Private Const PROV_RSA_FULL                             As Long = 1
+Private Const PROV_RSA_AES                              As Long = 24
+Private Const CRYPT_VERIFYCONTEXT                       As Long = &HF0000000
 '--- for CryptDecodeObjectEx
-Private Const X509_ASN_ENCODING             As Long = 1
-Private Const PKCS_7_ASN_ENCODING           As Long = &H10000
-Private Const X509_PUBLIC_KEY_INFO          As Long = 8
-Private Const PKCS_RSA_PRIVATE_KEY          As Long = 43
-Private Const PKCS_PRIVATE_KEY_INFO         As Long = 44
-Private Const CRYPT_DECODE_ALLOC_FLAG       As Long = &H8000
+Private Const X509_ASN_ENCODING                         As Long = 1
+Private Const PKCS_7_ASN_ENCODING                       As Long = &H10000
+Private Const X509_PUBLIC_KEY_INFO                      As Long = 8
+Private Const PKCS_RSA_PRIVATE_KEY                      As Long = 43
+Private Const PKCS_PRIVATE_KEY_INFO                     As Long = 44
+Private Const CRYPT_DECODE_ALLOC_FLAG                   As Long = &H8000
 '--- for CryptCreateHash
-Private Const CALG_SHA1                     As Long = &H8004&
-Private Const CALG_SHA_256                  As Long = &H800C&
+Private Const CALG_SHA1                                 As Long = &H8004&
+Private Const CALG_SHA_256                              As Long = &H800C&
 '--- for CryptSignHash
-Private Const AT_KEYEXCHANGE                As Long = 1
-Private Const MAX_RSA_KEY                   As Long = 8192     '--- in bits
+Private Const AT_KEYEXCHANGE                            As Long = 1
+Private Const MAX_RSA_KEY                               As Long = 8192     '--- in bits
 '--- for CryptVerifySignature
-Private Const NTE_BAD_SIGNATURE             As Long = &H80090006
+Private Const NTE_BAD_SIGNATURE                         As Long = &H80090006
 '--- for BCryptSignHash
-Private Const BCRYPT_PAD_PSS                As Long = 8
+Private Const BCRYPT_PAD_PSS                            As Long = 8
 '--- for BCryptVerifySignature
-Private Const STATUS_INVALID_SIGNATURE      As Long = &HC000A000
-Private Const ERROR_INVALID_DATA            As Long = &HC000000D
+Private Const STATUS_INVALID_SIGNATURE                  As Long = &HC000A000
+Private Const ERROR_INVALID_DATA                        As Long = &HC000000D
 '--- for thunks
-Private Const MEM_COMMIT                    As Long = &H1000
-Private Const PAGE_EXECUTE_READWRITE        As Long = &H40
-
+Private Const MEM_COMMIT                                As Long = &H1000
+Private Const PAGE_EXECUTE_READWRITE                    As Long = &H40
 #If ImplUseBCrypt Then
     Private Const BCRYPT_SECP256R1_PARTSZ               As Long = 32
     Private Const BCRYPT_SECP256R1_PRIVATE_KEYSZ        As Long = BCRYPT_SECP256R1_PARTSZ * 3
@@ -117,11 +116,7 @@ Private Declare Function BCryptVerifySignature Lib "bcrypt" (ByVal hKey As Long,
 #End If
 #If ImplUseBCrypt Then
     '--- BCrypt
-'    Private Declare Function BCryptOpenAlgorithmProvider Lib "bcrypt" (ByRef hAlgorithm As Long, ByVal pszAlgId As Long, ByVal pszImplementation As Long, ByVal dwFlags As Long) As Long
-'    Private Declare Function BCryptCloseAlgorithmProvider Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal dwFlags As Long) As Long
-'    Private Declare Function BCryptImportKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, ByRef hKey As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
     Private Declare Function BCryptExportKey Lib "bcrypt" (ByVal hKey As Long, ByVal hExportKey As Long, ByVal pszBlobType As Long, ByVal pbOutput As Long, ByVal cbOutput As Long, ByRef cbResult As Long, ByVal dwFlags As Long) As Long
-'    Private Declare Function BCryptDestroyKey Lib "bcrypt" (ByVal hKey As Long) As Long
     Private Declare Function BCryptSecretAgreement Lib "bcrypt" (ByVal hPrivKey As Long, ByVal hPubKey As Long, ByRef phSecret As Long, ByVal dwFlags As Long) As Long
     Private Declare Function BCryptDestroySecret Lib "bcrypt" (ByVal hSecret As Long) As Long
     Private Declare Function BCryptDeriveKey Lib "bcrypt" (ByVal hSharedSecret As Long, ByVal pwszKDF As Long, ByVal pParameterList As Long, ByVal pbDerivedKey As Long, ByVal cbDerivedKey As Long, ByRef pcbResult As Long, ByVal dwFlags As Long) As Long
