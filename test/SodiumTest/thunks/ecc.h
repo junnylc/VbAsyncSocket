@@ -71,7 +71,7 @@ Outputs:
 
 Returns 1 if the signature generated successfully, 0 if an error occurred.
 */
-int ecdsa_sign(const uint8_t p_privateKey[ECC_BYTES], const uint8_t p_hash[ECC_BYTES], uint8_t p_signature[ECC_BYTES*2]);
+int ecdsa_sign(const uint8_t p_privateKey[ECC_BYTES], const uint8_t p_hash[ECC_BYTES], uint64_t k[NUM_ECC_DIGITS], uint8_t p_signature[ECC_BYTES*2]);
 
 /* ecdsa_verify() function.
 Verify an ECDSA signature.

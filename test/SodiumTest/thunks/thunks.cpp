@@ -39,7 +39,6 @@ LPWSTR __stdcall GetCurrentDateTime()
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 #ifdef IMPL_ECC_THUNK
-    #define ECC_NO_SIGN
     #include "ecc.h"
 #endif
 
@@ -83,7 +82,7 @@ typedef struct {
 #pragma code_seg(push, r1, ".mythunk")
 
 int beginOfThunk(int i) { 
-    int a[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }; return a[i]; 
+    int a[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }; return a[i]; 
 }
 
 __declspec(naked) thunk_context_t *getContext() {
@@ -296,10 +295,8 @@ void __cdecl main()
     ((int *)hThunk)[i++] = ((uint8_t *)ecc_make_key - (uint8_t *)beginOfThunk);
     ((int *)hThunk)[i++] = ((uint8_t *)ecdh_shared_secret - (uint8_t *)beginOfThunk);
     ((int *)hThunk)[i++] = ((uint8_t *)ecdh_uncompress_key - (uint8_t *)beginOfThunk);
-#ifndef ECC_NO_SIGN
     ((int *)hThunk)[i++] = ((uint8_t *)ecdsa_sign - (uint8_t *)beginOfThunk);
     ((int *)hThunk)[i++] = ((uint8_t *)ecdsa_verify - (uint8_t *)beginOfThunk);
-#endif
     ((int *)hThunk)[i++] = ((uint8_t *)cf_curve25519_mul - (uint8_t *)beginOfThunk);
     ((int *)hThunk)[i++] = ((uint8_t *)cf_curve25519_mul_base - (uint8_t *)beginOfThunk);
 #endif

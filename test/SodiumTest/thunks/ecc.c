@@ -1112,8 +1112,6 @@ int ecdh_uncompress_key(const uint8_t p_publicKey[ECC_BYTES + 1], uint8_t p_unco
     return 1;
 }
 
-#ifndef ECC_NO_SIGN
-
 /* -------- ECDSA code -------- */
 
 /* Computes p_result = (p_left * p_right) % p_mod. */
@@ -1186,39 +1184,32 @@ static uint umax(uint a, uint b)
     return (a > b ? a : b);
 }
 
-int ecdsa_sign(const uint8_t p_privateKey[ECC_BYTES], const uint8_t p_hash[ECC_BYTES], uint8_t p_signature[ECC_BYTES*2])
+int ecdsa_sign(const uint8_t p_privateKey[ECC_BYTES], const uint8_t p_hash[ECC_BYTES], uint64_t k[NUM_ECC_DIGITS], uint8_t p_signature[ECC_BYTES*2])
 {
-    uint64_t k[NUM_ECC_DIGITS];
     uint64_t l_tmp[NUM_ECC_DIGITS];
     uint64_t l_s[NUM_ECC_DIGITS];
     EccPoint p;
     unsigned l_tries = 0;
     
-    do
+    if(vli_isZero(k))
+        return 0;
+    
+    if(vli_cmp(curve_n, k) != 1)
     {
-        if(!getRandomNumber(k) || (l_tries++ >= MAX_TRIES))
-        {
-            return 0;
-        }
-        if(vli_isZero(k))
-        {
-            continue;
-        }
+        vli_sub(k, k, curve_n);
+    }
     
-        if(vli_cmp(curve_n, k) != 1)
-        {
-            vli_sub(k, k, curve_n);
-        }
+    /* tmp = k * G */
+    EccPoint_mult(&p, &curve_G, k, NULL);
     
-        /* tmp = k * G */
-        EccPoint_mult(&p, &curve_G, k, NULL);
-    
-        /* r = x1 (mod n) */
-        if(vli_cmp(curve_n, p.x) != 1)
-        {
-            vli_sub(p.x, p.x, curve_n);
-        }
-    } while(vli_isZero(p.x));
+    /* r = x1 (mod n) */
+    if(vli_cmp(curve_n, p.x) != 1)
+    {
+        vli_sub(p.x, p.x, curve_n);
+    }
+
+    if (vli_isZero(p.x))
+        return 0;
 
     ecc_native2bytes(p_signature, p.x);
     
@@ -1316,5 +1307,3 @@ int ecdsa_verify(const uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_hash[EC
     /* Accept only if v == r. */
     return (vli_cmp(rx, l_r) == 0);
 }
-
-#endif 
