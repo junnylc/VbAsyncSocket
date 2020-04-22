@@ -514,6 +514,9 @@ Public Function Accept(ConnectedSocket As cAsyncSocket, Optional SocketAddress A
         m_lLastError = Err.LastDllError
         GoTo QH
     End If
+    If ConnectedSocket Is Nothing Then
+        Set ConnectedSocket = New cAsyncSocket
+    End If
     If Not ConnectedSocket.Attach(hTemp) Then
         m_lLastError = ConnectedSocket.LastError
         GoTo QH
