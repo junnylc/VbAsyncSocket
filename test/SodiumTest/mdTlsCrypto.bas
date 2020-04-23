@@ -43,6 +43,7 @@ Private Const AT_KEYEXCHANGE                            As Long = 1
 Private Const MAX_RSA_KEY                               As Long = 8192     '--- in bits
 '--- for CryptVerifySignature
 Private Const NTE_BAD_SIGNATURE                         As Long = &H80090006
+Private Const NTE_PROV_TYPE_NOT_DEF                     As Long = &H80090017
 '--- for BCryptSignHash
 Private Const BCRYPT_PAD_PSS                            As Long = 8
 '--- for BCryptVerifySignature
@@ -71,6 +72,8 @@ Private Declare Function VirtualProtect Lib "kernel32" (ByVal lpAddress As Long,
 Private Declare Function GetModuleHandle Lib "kernel32" Alias "GetModuleHandleA" (ByVal lpModuleName As String) As Long
 Private Declare Function LoadLibrary Lib "kernel32" Alias "LoadLibraryA" (ByVal lpLibFileName As String) As Long
 Private Declare Function LocalFree Lib "kernel32" (ByVal hMem As Long) As Long
+Private Declare Function GetVersionEx Lib "kernel32" Alias "GetVersionExA" (lpVersionInformation As Any) As Long
+Private Declare Function lstrlen Lib "kernel32" Alias "lstrlenA" (ByVal lpString As Long) As Long
 Private Declare Function CryptAcquireContext Lib "advapi32" Alias "CryptAcquireContextW" (phProv As Long, ByVal pszContainer As Long, ByVal pszProvider As Long, ByVal dwProvType As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptReleaseContext Lib "advapi32" (ByVal hProv As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptGenRandom Lib "advapi32" (ByVal hProv As Long, ByVal dwLen As Long, ByVal pbBuffer As Long) As Long
@@ -84,7 +87,6 @@ Private Declare Function CryptVerifySignature Lib "advapi32" Alias "CryptVerifyS
 Private Declare Function CryptEncrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long, dwBufLen As Long) As Long
 Private Declare Function CryptImportPublicKeyInfo Lib "crypt32" (ByVal hCryptProv As Long, ByVal dwCertEncodingType As Long, pInfo As Any, phKey As Long) As Long
 Private Declare Function CryptDecodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal lpszStructType As Long, pbEncoded As Any, ByVal cbEncoded As Long, ByVal dwFlags As Long, ByVal pDecodePara As Long, pvStructInfo As Any, pcbStructInfo As Long) As Long
-Private Declare Function CryptEncodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal lpszStructType As Long, pvStructInfo As Any, ByVal dwFlags As Long, ByVal pEncodePara As Long, pvEncoded As Any, pcbEncoded As Long) As Long
 Private Declare Function CertCreateCertificateContext Lib "crypt32" (ByVal dwCertEncodingType As Long, pbCertEncoded As Any, ByVal cbCertEncoded As Long) As Long
 Private Declare Function CertFreeCertificateContext Lib "crypt32" (ByVal pCertContext As Long) As Long
 Private Declare Function CryptImportPublicKeyInfoEx2 Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal pInfo As Long, ByVal dwFlags As Long, ByVal pvAuxInfo As Long, phKey As Long) As Long
@@ -132,6 +134,15 @@ End Type
 Private Type BCRYPT_PSS_PADDING_INFO
     pszAlgId            As Long
     cbSalt              As Long
+End Type
+
+Private Type CERT_PUBLIC_KEY_INFO
+    AlgObjIdPtr         As Long
+    AlgParamSize        As Long
+    AlgParamPtr         As Long
+    PubKeySize          As Long
+    PubKeyPtr           As Long
+    PubKeyUnusedBits    As Long
 End Type
 
 '=========================================================================
@@ -247,6 +258,35 @@ Public Type UcsRsaContextType
     hPubKey             As Long
     HashAlgId           As Long
 End Type
+
+Public Enum UcsOsVersionEnum
+    ucsOsvNt4 = 400
+    ucsOsvWin98 = 410
+    ucsOsvWin2000 = 500
+    ucsOsvXp = 501
+    ucsOsvVista = 600
+    ucsOsvWin7 = 601
+    ucsOsvWin8 = 602
+    [ucsOsvWin8.1] = 603
+    ucsOsvWin10 = 1000
+End Enum
+
+'=========================================================================
+' Properties
+'=========================================================================
+
+Public Property Get OsVersion() As UcsOsVersionEnum
+    Static lVersion     As Long
+    Dim aVer(0 To 37)   As Long
+    
+    If lVersion = 0 Then
+        aVer(0) = 4 * UBound(aVer)              '--- [0] = dwOSVersionInfoSize
+        If GetVersionEx(aVer(0)) <> 0 Then
+            lVersion = aVer(1) * 100 + aVer(2)  '--- [1] = dwMajorVersion, [2] = dwMinorVersion
+        End If
+    End If
+    OsVersion = lVersion
+End Property
 
 '=========================================================================
 ' Functions
@@ -795,7 +835,10 @@ Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As B
     End If
     If CryptAcquireContext(hProv, 0, 0, IIf(lHashAlgId = CALG_SHA_256, PROV_RSA_AES, PROV_RSA_FULL), CRYPT_VERIFYCONTEXT) = 0 Then
         hResult = Err.LastDllError
-        sApiSource = "CryptAcquireContext"
+        '-- no PROV_RSA_AES on Win2000 and below
+        If hResult <> NTE_PROV_TYPE_NOT_DEF Then
+            sApiSource = "CryptAcquireContext"
+        End If
         GoTo QH
     End If
     If pvArraySize(baPrivKey) > 0 Then
@@ -833,7 +876,7 @@ Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As B
     ElseIf pvArraySize(baPubKey) > 0 Then
         If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_PUBLIC_KEY_INFO, baPubKey(0), UBound(baPubKey) + 1, CRYPT_DECODE_ALLOC_FLAG, 0, lKeyPtr, 0) = 0 Then
             hResult = Err.LastDllError
-            sApiSource = "CryptDecodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
+            sApiSource = "CryptDecodeObjectEx(X509_PUBLIC_KEY_INFO)"
             GoTo QH
         End If
         If CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal lKeyPtr, hPubKey) = 0 Then
@@ -888,7 +931,7 @@ Public Sub CryptoRsaTerminateContext(uCtx As UcsRsaContextType)
     End If
 End Sub
 
-Public Function CryptoRsaSign(uCtx As UcsRsaContextType, baPlainText() As Byte) As Byte()
+Public Function CryptoRsaSign(uCtx As UcsRsaContextType, baMessage() As Byte) As Byte()
     Const MAX_SIG_SIZE  As Long = MAX_RSA_KEY / 8
     Dim baRetVal()      As Byte
     Dim hHash           As Long
@@ -901,9 +944,9 @@ Public Function CryptoRsaSign(uCtx As UcsRsaContextType, baPlainText() As Byte) 
         sApiSource = "CryptCreateHash"
         GoTo QH
     End If
-    lSize = pvArraySize(baPlainText)
+    lSize = pvArraySize(baMessage)
     If lSize > 0 Then
-        If CryptHashData(hHash, baPlainText(0), lSize, 0) = 0 Then
+        If CryptHashData(hHash, baMessage(0), lSize, 0) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptHashData"
             GoTo QH
@@ -930,7 +973,7 @@ QH:
     End If
 End Function
 
-Public Function CryptoRsaVerify(uCtx As UcsRsaContextType, baPlainText() As Byte, baSignature() As Byte) As Boolean
+Public Function CryptoRsaVerify(uCtx As UcsRsaContextType, baMessage() As Byte, baSignature() As Byte) As Boolean
     Dim hHash           As Long
     Dim lSize           As Long
     Dim hResult         As Long
@@ -942,9 +985,9 @@ Public Function CryptoRsaVerify(uCtx As UcsRsaContextType, baPlainText() As Byte
         sApiSource = "CryptCreateHash"
         GoTo QH
     End If
-    lSize = pvArraySize(baPlainText)
+    lSize = pvArraySize(baMessage)
     If lSize > 0 Then
-        If CryptHashData(hHash, baPlainText(0), lSize, 0) = 0 Then
+        If CryptHashData(hHash, baMessage(0), lSize, 0) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptHashData"
             GoTo QH
@@ -971,20 +1014,13 @@ QH:
     End If
 End Function
 
-Public Function CryptoRsaExtractPublicKey(baCert() As Byte) As Byte()
+Public Function CryptoExtractPublicKey(baCert() As Byte, baPubKey() As Byte, Optional sObjId As String) As Boolean
     Dim pContext        As Long
-    Dim hProv           As Long
-    Dim baRetVal()      As Byte
-    Dim lSize           As Long
     Dim lPtr            As Long
     Dim hResult         As Long
     Dim sApiSource      As String
+    Dim uInfo           As CERT_PUBLIC_KEY_INFO
 
-    If CryptAcquireContext(hProv, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) = 0 Then
-        hResult = Err.LastDllError
-        sApiSource = "CryptAcquireContext"
-        GoTo QH
-    End If
     pContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
     If pContext = 0 Then
         hResult = Err.LastDllError
@@ -993,26 +1029,14 @@ Public Function CryptoRsaExtractPublicKey(baCert() As Byte) As Byte()
     End If
     Call CopyMemory(lPtr, ByVal UnsignedAdd(pContext, 12), 4)       '--- dereference pContext->pCertInfo
     lPtr = UnsignedAdd(lPtr, 56)                                    '--- &pContext->pCertInfo->SubjectPublicKeyInfo
-    '--- get required size first
-    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_PUBLIC_KEY_INFO, ByVal lPtr, 0, 0, ByVal 0, lSize) = 0 Then
-        hResult = Err.LastDllError
-        sApiSource = "CryptEncodeObjectEx"
-        GoTo QH
-    End If
-    ReDim baRetVal(0 To lSize - 1) As Byte
-    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_PUBLIC_KEY_INFO, ByVal lPtr, 0, 0, baRetVal(0), lSize) = 0 Then
-        hResult = Err.LastDllError
-        sApiSource = "CryptEncodeObjectEx"
-        GoTo QH
-    End If
-    If UBound(baRetVal) <> lSize - 1 Then
-        ReDim Preserve baRetVal(0 To lSize - 1) As Byte
-    End If
-    CryptoRsaExtractPublicKey = baRetVal
+    Call CopyMemory(uInfo, ByVal lPtr, Len(uInfo))
+    sObjId = String$(lstrlen(uInfo.AlgObjIdPtr), 0)
+    Call CopyMemory(ByVal sObjId, ByVal uInfo.AlgObjIdPtr, Len(sObjId))
+    ReDim baPubKey(0 To uInfo.PubKeySize - 1) As Byte
+    Call CopyMemory(baPubKey(0), ByVal uInfo.PubKeyPtr, uInfo.PubKeySize)
+    '--- success
+    CryptoExtractPublicKey = True
 QH:
-    If hProv <> 0 Then
-        Call CryptReleaseContext(hProv, 0)
-    End If
     If pContext <> 0 Then
         Call CertFreeCertificateContext(pContext)
     End If
@@ -1060,6 +1084,9 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
     Dim hResult         As Long
     Dim sApiSource      As String
     
+    If OsVersion < ucsOsvVista Then
+        GoTo QH
+    End If
     If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG, 0, lPkiPtr, 0) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptDecodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
@@ -1114,19 +1141,28 @@ QH:
     End If
 End Function
 
-Public Function CryptoRsaPssVerify(baPubKey() As Byte, baMessage() As Byte, baSignature() As Byte, ByVal lSignatureType As Long) As Boolean
-    Dim lKeyPtr         As Long
+Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSignature() As Byte, ByVal lSignatureType As Long) As Boolean
+    Dim pContext        As Long
+    Dim lPtr            As Long
     Dim hKey            As Long
     Dim uPadInfo        As BCRYPT_PSS_PADDING_INFO
     Dim hResult         As Long
     Dim sApiSource      As String
     
-    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_PUBLIC_KEY_INFO, baPubKey(0), UBound(baPubKey) + 1, CRYPT_DECODE_ALLOC_FLAG, 0, lKeyPtr, 0) = 0 Then
-        hResult = Err.LastDllError
-        sApiSource = "CryptDecodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
+    If OsVersion < ucsOsvVista Then
+        '--- ignore
+        CryptoRsaPssVerify = True
         GoTo QH
     End If
-    If CryptImportPublicKeyInfoEx2(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, lKeyPtr, 0, 0, hKey) = 0 Then
+    pContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
+    If pContext = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CertCreateCertificateContext"
+        GoTo QH
+    End If
+    Call CopyMemory(lPtr, ByVal UnsignedAdd(pContext, 12), 4)       '--- dereference pContext->pCertInfo
+    lPtr = UnsignedAdd(lPtr, 56)
+    If CryptImportPublicKeyInfoEx2(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, lPtr, 0, 0, hKey) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptImportPublicKeyInfoEx2"
         GoTo QH
@@ -1150,8 +1186,8 @@ QH:
     If hKey <> 0 Then
         Call BCryptDestroyKey(hKey)
     End If
-    If lKeyPtr <> 0 Then
-        Call LocalFree(lKeyPtr)
+    If pContext <> 0 Then
+        Call CertFreeCertificateContext(pContext)
     End If
     If LenB(sApiSource) <> 0 Then
         Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
