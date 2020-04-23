@@ -85,6 +85,7 @@ Private Declare Function CryptDestroyHash Lib "advapi32" (ByVal hHash As Long) A
 Private Declare Function CryptSignHash Lib "advapi32" Alias "CryptSignHashA" (ByVal hHash As Long, ByVal dwKeySpec As Long, ByVal szDescription As Long, ByVal dwFlags As Long, pbSignature As Any, pdwSigLen As Long) As Long
 Private Declare Function CryptVerifySignature Lib "advapi32" Alias "CryptVerifySignatureA" (ByVal hHash As Long, pbSignature As Any, ByVal dwSigLen As Long, ByVal hPubKey As Long, ByVal szDescription As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptEncrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long, dwBufLen As Long) As Long
+Private Declare Function CryptDecrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long) As Long
 Private Declare Function CryptImportPublicKeyInfo Lib "crypt32" (ByVal hCryptProv As Long, ByVal dwCertEncodingType As Long, pInfo As Any, phKey As Long) As Long
 Private Declare Function CryptDecodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal lpszStructType As Long, pbEncoded As Any, ByVal cbEncoded As Long, ByVal dwFlags As Long, ByVal pDecodePara As Long, pvStructInfo As Any, pcbStructInfo As Long) As Long
 Private Declare Function CertCreateCertificateContext Lib "crypt32" (ByVal dwCertEncodingType As Long, pbCertEncoded As Any, ByVal cbCertEncoded As Long) As Long
@@ -424,8 +425,11 @@ Public Function CryptoEccSecp256r1MakeKey(baPrivate() As Byte, baPublic() As Byt
                 Exit For
             End If
         Next
-        '--- success (or failure)
-        CryptoEccSecp256r1MakeKey = (lIdx <= MAX_RETRIES)
+        If lIdx <= MAX_RETRIES Then
+            baPublic = CryptoEccSecp256r1UncompressKey(baPublic)
+            '--- success
+            CryptoEccSecp256r1MakeKey = True
+        End If
     #End If
 End Function
 
@@ -1054,7 +1058,7 @@ Public Function CryptoRsaEncrypt(ByVal hKey As Long, baPlainText() As Byte) As B
     Dim sApiSource      As String
     
     lSize = pvArraySize(baPlainText)
-    lAlignedSize = lSize + MAX_RSA_BYTES - 1 And -MAX_RSA_BYTES
+    lAlignedSize = (lSize + MAX_RSA_BYTES - 1 And -MAX_RSA_BYTES) + MAX_RSA_BYTES
     ReDim baRetVal(0 To lAlignedSize - 1) As Byte
     Call CopyMemory(baRetVal(0), baPlainText(0), lSize)
     If CryptEncrypt(hKey, 0, 1, 0, baRetVal(0), lSize, lAlignedSize) = 0 Then
@@ -1065,6 +1069,30 @@ Public Function CryptoRsaEncrypt(ByVal hKey As Long, baPlainText() As Byte) As B
     ReDim Preserve baRetVal(0 To lSize - 1) As Byte
     pvArrayReverse baRetVal
     CryptoRsaEncrypt = baRetVal
+QH:
+    If LenB(sApiSource) <> 0 Then
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+    End If
+End Function
+
+Public Function CryptoRsaDecrypt(ByVal hPrivKey As Long, baCipherText() As Byte) As Byte()
+    Dim baRetVal()      As Byte
+    Dim lSize           As Long
+    Dim hResult         As Long
+    Dim sApiSource      As String
+    
+    baRetVal = baCipherText
+    pvArrayReverse baRetVal
+    lSize = pvArraySize(baRetVal)
+    If CryptDecrypt(hPrivKey, 0, 1, 0, baRetVal(0), lSize) = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CryptDecrypt"
+        GoTo QH
+    End If
+    If UBound(baRetVal) <> lSize - 1 Then
+        ReDim Preserve baRetVal(0 To lSize - 1) As Byte
+    End If
+    CryptoRsaDecrypt = baRetVal
 QH:
     If LenB(sApiSource) <> 0 Then
         Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
