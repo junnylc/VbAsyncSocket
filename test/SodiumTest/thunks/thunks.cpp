@@ -101,7 +101,7 @@ typedef struct {
 #pragma code_seg(push, r1, ".mythunk")
 
 int beginOfThunk(int i) { 
-    int a[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }; return a[i]; 
+    int a[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }; return a[i]; 
 }
 
 __declspec(naked) thunk_context_t *getContext() {
@@ -364,6 +364,9 @@ void __cdecl main()
     ((int *)hThunk)[idx++] = ((uint8_t *)ecdsa_verify - (uint8_t *)beginOfThunk);
 #endif
 #ifdef IMPL_ECC384_THUNK
+    ((int *)hThunk)[idx++] = ((uint8_t *)ecc_make_key384 - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[idx++] = ((uint8_t *)ecdh_shared_secret384 - (uint8_t *)beginOfThunk);
+    ((int *)hThunk)[idx++] = ((uint8_t *)ecdh_uncompress_key384 - (uint8_t *)beginOfThunk);
     ((int *)hThunk)[idx++] = ((uint8_t *)ecdsa_sign384 - (uint8_t *)beginOfThunk);
     ((int *)hThunk)[idx++] = ((uint8_t *)ecdsa_verify384 - (uint8_t *)beginOfThunk);
 #endif

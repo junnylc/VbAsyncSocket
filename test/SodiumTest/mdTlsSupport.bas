@@ -63,7 +63,7 @@ Private Const TLS_CIPHER_SUITE_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 As Long
 Private Const TLS_CIPHER_SUITE_RSA_WITH_AES_128_GCM_SHA256 As Long = &H9C
 Private Const TLS_CIPHER_SUITE_RSA_WITH_AES_256_GCM_SHA384 As Long = &H9D
 Private Const TLS_GROUP_SECP256R1                       As Long = 23
-'Private Const TLS_GROUP_SECP384R1                       As Long = 24
+Private Const TLS_GROUP_SECP384R1                       As Long = 24
 'Private Const TLS_GROUP_SECP521R1                       As Long = 25
 Private Const TLS_GROUP_X25519                          As Long = 29
 'Private Const TLS_GROUP_X448                            As Long = 30
@@ -131,6 +131,7 @@ Private Const ERR_UNSUPPORTED_EX_GROUP  As String = "Unsupported exchange group 
 Private Const ERR_UNSUPPORTED_CIPHER_SUITE As String = "Unsupported cipher suite (%1)"
 Private Const ERR_UNSUPPORTED_SIGNATURE_TYPE As String = "Unsupported signature type (%1)"
 Private Const ERR_UNSUPPORTED_PUBLIC_KEY As String = "Unsupported public key OID (%1)"
+Private Const ERR_UNSUPPORTED_CURVE_SIZE As String = "Unsupported curve size (%1)"
 Private Const ERR_UNSUPPORTED_PROTOCOL  As String = "Invalid protocol version"
 Private Const ERR_ENCRYPTION_FAILED     As String = "Encryption failed"
 Private Const ERR_SIGNATURE_FAILED      As String = "Certificate signature failed"
@@ -177,15 +178,19 @@ Public Enum UcsTlsCryptoAlgorithmsEnum
     '--- key exchange
     ucsTlsAlgoKeyX25519 = 1
     ucsTlsAlgoKeySecp256r1 = 2
-    ucsTlsAlgoKeyCertificate = 3
+    ucsTlsAlgoKeySecp384r1 = 3
+    ucsTlsAlgoKeyCertificate = 4
     '--- authenticated encryption w/ additional data
     ucsTlsAlgoAeadChacha20Poly1305 = 11
     ucsTlsAlgoAeadAes128 = 12
     ucsTlsAlgoAeadAes256 = 13
-    '--- digest
+    '--- hash
     ucsTlsAlgoDigestSha256 = 21
     ucsTlsAlgoDigestSha384 = 22
     ucsTlsAlgoDigestSha512 = 23
+    '--- verify signature
+    ucsTlsAlgoSignaturePss = 31
+    ucsTlsAlgoSignaturePkcsSha2 = 32
 End Enum
 
 Public Enum UcsTlsAlertDescriptionsEnum
@@ -530,6 +535,13 @@ Private Function pvSetupKeyExchangeEccGroup(uCtx As UcsTlsContext, ByVal lExchan
                     eAlertCode = uscTlsAlertInternalError
                     GoTo QH
                 End If
+            Case TLS_GROUP_SECP384R1
+                .ExchangeAlgo = ucsTlsAlgoKeySecp384r1
+                If Not CryptoEccSecp384r1MakeKey(.LocalPrivate, .LocalPublic) Then
+                    sError = Replace(ERR_GEN_KEYPAIR_FAILED, "%1", "secp384r1")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
             Case Else
                 sError = Replace(ERR_UNSUPPORTED_EX_GROUP, "%1", "0x" & Hex$(.ExchangeGroup))
                 eAlertCode = uscTlsAlertInternalError
@@ -674,6 +686,11 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                                     lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_SECP256R1, Size:=2)
                                 End If
                             End If
+                            If CryptoIsSupported(ucsTlsAlgoKeySecp384r1) Then
+                                If .HelloRetryExchangeGroup = 0 Or .HelloRetryExchangeGroup = TLS_GROUP_SECP384R1 Then
+                                    lPos = pvWriteLong(baOutput, lPos, TLS_GROUP_SECP384R1, Size:=2)
+                                End If
+                            End If
                         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                     lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                     If (.LocalFeatures And ucsTlsSupportTls12) <> 0 Then
@@ -689,15 +706,19 @@ Private Function pvBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, B
                             lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, Size:=2)
                             lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_ECDSA_SECP384R1_SHA384, Size:=2)
                             lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_ECDSA_SECP521R1_SHA512, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_PSS_SHA256, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_PSS_SHA512, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA256, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA384, Size:=2)
-                            lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA512, Size:=2)
+                            If CryptoIsSupported(ucsTlsAlgoSignaturePss) Then
+                                lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, Size:=2)
+                                lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, Size:=2)
+                                lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, Size:=2)
+                                lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_PSS_SHA256, Size:=2)
+                                lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, Size:=2)
+                                lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PSS_PSS_SHA512, Size:=2)
+                            End If
+                            If CryptoIsSupported(ucsTlsAlgoSignaturePkcsSha2) Then
+                                lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA256, Size:=2)
+                                lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA384, Size:=2)
+                                lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA512, Size:=2)
+                            End If
                             lPos = pvWriteLong(baOutput, lPos, TLS_SIGNATURE_RSA_PKCS1_SHA1, Size:=2)
                         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
                     lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
@@ -2227,6 +2248,8 @@ Private Function pvCryptoSharedSecret(ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum,
         baRetVal = CryptoEccCurve25519SharedSecret(baPriv, baPub)
     Case ucsTlsAlgoKeySecp256r1
         baRetVal = CryptoEccSecp256r1SharedSecret(baPriv, baPub)
+    Case ucsTlsAlgoKeySecp384r1
+        baRetVal = CryptoEccSecp384r1SharedSecret(baPriv, baPub)
     Case ucsTlsAlgoKeyCertificate
         baRetVal = baPriv
     Case Else
@@ -2320,6 +2343,7 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
     Dim baVerifyHash()  As Byte
     Dim baPlainSig()    As Byte
     Dim sPubKeyObjId    As String
+    Dim lCurveSize      As Long
     Dim bSkip           As Boolean
     
     Select Case lSignatureType
@@ -2335,8 +2359,12 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
     Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, _
             TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
         baVerifyHash = pvCryptoHash(pvCryptoSignatureDigestAlgo(lSignatureType), baVerifyData, 0)
-        If Not CryptoRsaPssVerify(baCert, baVerifyHash, baSignature, lSignatureType) Then
-            GoTo InvalidSignature
+        If OsVersion < ucsOsvVista Then
+            bSkip = True
+        Else
+            If Not CryptoRsaPssVerify(baCert, baVerifyHash, baSignature, lSignatureType) Then
+                GoTo InvalidSignature
+            End If
         End If
     Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, TLS_SIGNATURE_ECDSA_SECP384R1_SHA384, TLS_SIGNATURE_ECDSA_SECP521R1_SHA512
         If Not CryptoExtractPublicKey(baCert, baPubKey, sPubKeyObjId) Or sPubKeyObjId <> STR_OID_ecPublicKey Then
@@ -2345,22 +2373,27 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
             GoTo QH
         End If
         baVerifyHash = pvCryptoHash(pvCryptoSignatureDigestAlgo(lSignatureType), baVerifyData, 0)
-        baPlainSig = pvCryptoFromDerSignature(baSignature, UBound(baVerifyHash) + 1)
+        lCurveSize = UBound(baPubKey) \ 2
+        baPlainSig = pvCryptoFromDerSignature(baSignature, lCurveSize)
         If pvArraySize(baPlainSig) = 0 Then
             GoTo InvalidSignature
         End If
-        If lSignatureType = TLS_SIGNATURE_ECDSA_SECP256R1_SHA256 Then
+        Select Case lCurveSize
+        Case TLS_SECP256R1_KEY_SIZE
             If Not CryptoEccSecp256r1Verify(baPubKey, baVerifyHash, baPlainSig) Then
-'                GoTo InvalidSignature
-                bSkip = True
+                GoTo InvalidSignature
             End If
-        ElseIf lSignatureType = TLS_SIGNATURE_ECDSA_SECP384R1_SHA384 Then
+        Case TLS_SECP384R1_KEY_SIZE
             If Not CryptoEccSecp384r1Verify(baPubKey, baVerifyHash, baPlainSig) Then
-'                GoTo InvalidSignature
-                bSkip = True
+                GoTo InvalidSignature
             End If
-        Else
-            bSkip = True
+        Case Else
+            sError = Replace(ERR_UNSUPPORTED_CURVE_SIZE, "%1", lCurveSize)
+            eAlertCode = uscTlsAlertHandshakeFailure
+            GoTo QH
+        End Select
+        If lCurveSize = pvArraySize(baVerifyHash) Then
+            lCurveSize = 0
         End If
     Case Else
         sError = Replace(ERR_UNSUPPORTED_SIGNATURE_TYPE, "%1", "0x" & Hex$(lSignatureType))
@@ -2370,7 +2403,7 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
     '--- success
     pvCryptoVerifySignature = True
 QH:
-    Debug.Print IIf(pvCryptoVerifySignature, IIf(bSkip, "Skipping ", "Valid "), "Invalid ") & pvCryptoSignatureTypeName(lSignatureType) & " signature", Timer
+    Debug.Print IIf(pvCryptoVerifySignature, IIf(bSkip, "Skipping ", "Valid "), "Invalid ") & pvCryptoSignatureTypeName(lSignatureType) & " signature" & IIf(lCurveSize > 0, " (but with " & lCurveSize & " bytes curve)", vbNullString), Timer
     If uRsaCtx.hProv <> 0 Then
         Call CryptoRsaTerminateContext(uRsaCtx)
     End If
@@ -2382,9 +2415,10 @@ InvalidSignature:
 End Function
 
 Private Function pvCryptoSignatureDigestAlgo(ByVal lSignatureType As Long) As UcsTlsCryptoAlgorithmsEnum
-    Select Case lSignatureType And &HFF         '-- 1 = RSA, 2 = DSA, 3 = ECDSA
-    Case 1, 2, 3
-        Select Case lSignatureType \ &H100      '-- 1 = MD-5, 2 = SHA-1, 3 = SHA-224
+    Select Case lSignatureType And &HFF
+    Case 1, 2, 3 '--- 1 - RSA, 2 - DSA, 3 - ECDSA
+        Select Case lSignatureType \ &H100
+        '--- Skipping: 1 - MD-5, 2 - SHA-1, 3 - SHA-224
         Case 4
             pvCryptoSignatureDigestAlgo = ucsTlsAlgoDigestSha256
         Case 5
@@ -2392,7 +2426,8 @@ Private Function pvCryptoSignatureDigestAlgo(ByVal lSignatureType As Long) As Uc
         Case 6
             pvCryptoSignatureDigestAlgo = ucsTlsAlgoDigestSha512
         End Select
-    Case Else '--- TLS 1.3 scheme
+    Case Else
+        '--- 8 - Intrinsic for TLS 1.3
         Select Case lSignatureType
         Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA256
             pvCryptoSignatureDigestAlgo = ucsTlsAlgoDigestSha256

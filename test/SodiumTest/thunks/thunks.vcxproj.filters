@@ -57,5 +57,8 @@
     <ClCompile Include="win32_crt.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ecc384.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
