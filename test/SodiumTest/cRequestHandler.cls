@@ -46,7 +46,7 @@ End Property
 ' Methods
 '=========================================================================
 
-Public Function Init(oSocket As cAsyncSocket, sKey As String, oParent As Form1, cCertificates As Collection, baCertKey() As Byte) As Boolean
+Public Function Init(oSocket As cAsyncSocket, sKey As String, oParent As Form1, cCertificates As Collection, baPrivateKey() As Byte) As Boolean
     Dim sAddr           As String
     Dim lPort           As Long
     
@@ -54,7 +54,7 @@ Public Function Init(oSocket As cAsyncSocket, sKey As String, oParent As Form1, 
     m_sKey = sKey
     m_lParentWeakRef = ObjPtr(oParent)
     oSocket.GetPeerName sAddr, lPort
-    If Not mdTlsSupport.TlsInitServer(m_uCtx, RemoteHostName:=sAddr & ":" & lPort, Certificates:=cCertificates, CertKey:=baCertKey) Then
+    If Not mdTlsSupport.TlsInitServer(m_uCtx, RemoteHostName:=sAddr & ":" & lPort, Certificates:=cCertificates, PrivateKey:=baPrivateKey) Then
         GoTo QH
     End If
     '--- success
@@ -69,7 +69,7 @@ Private Function HandleRequest(sText As String) As String
     vSplit = Split(sText, vbCrLf)
     vSplit = Split(vSplit(0), " ")
     Debug.Print "HandleRequestm Path=" & vSplit(1)
-    sRetVal = "<html><body>" & Date & "</body></html>"
+    sRetVal = "<html><body>" & Now & "</body></html>"
     HandleRequest = "HTTP/1.0 200 Ok" & vbCrLf & _
         "Content-Type: text/html; charset=UTF-8" & vbCrLf & _
         "Content-Length: " & Len(sRetVal) & vbCrLf & _

@@ -90,7 +90,7 @@ Private WithEvents m_oServerSocket As cAsyncSocket
 Attribute m_oServerSocket.VB_VarHelpID = -1
 Private m_cRequestHandlers      As Collection
 Private m_cCertificates         As Collection
-Private m_baCertKey()           As Byte
+Private m_baPrivateKey()        As Byte
 
 Private Type UcsParsedUrl
     Protocol        As String
@@ -127,6 +127,13 @@ Private Sub Form_Load()
     If txtResult.Font.Name = "Arial" Then
         txtResult.Font.Name = "Courier New"
     End If
+    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\privkey.pem"), vbUnicode), "PRIVATE KEY", cKeys
+    If Not SearchCollection(cKeys, 1, RetVal:=m_baPrivateKey) Then
+        MsgBox "Error starting TLS server on localhost:10443" & vbCrLf & vbCrLf & "No private key found in " & App.Path & "\privkey.pem", vbExclamation
+        GoTo QH
+    End If
+    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\cert.pem"), vbUnicode), "CERTIFICATE", m_cCertificates
+    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\fullchain.pem"), vbUnicode), "CERTIFICATE", m_cCertificates
     Set m_oServerSocket = New cAsyncSocket
     m_oServerSocket.Create SocketPort:=10443, SocketAddress:="localhost"
     If m_oServerSocket.Listen() Then
@@ -134,12 +141,7 @@ Private Sub Form_Load()
         m_oServerSocket.GetSockName sAddr, lPort
         Debug.Print "Listening on " & sAddr & ":" & lPort
     End If
-    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\privkey.pem"), vbUnicode), "PRIVATE KEY", cKeys
-    If Not SearchCollection(cKeys, 1, RetVal:=m_baCertKey) Then
-        Debug.Print "Certificate private key not found"
-    End If
-    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\cert.pem"), vbUnicode), "CERTIFICATE", m_cCertificates
-    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\fullchain.pem"), vbUnicode), "CERTIFICATE", m_cCertificates
+QH:
 End Sub
 
 Private Sub Form_Resize()
@@ -189,6 +191,7 @@ End Sub
 '=========================================================================
 
 Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sError As String) As String
+    Const INDENT        As Long = 4
     Dim baRecv()        As Byte
     Dim sRequest        As String
     Dim baSend()        As Byte
@@ -216,7 +219,8 @@ Private Function HttpsRequest(uCtx As UcsTlsContext, uRemote As UcsParsedUrl, sE
                 GoTo QH
             End If
             If pvArraySize(baRecv) <> 0 Then
-                pvAppendLogText txtResult, String$(2, ">") & " Recv " & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
+                pvAppendLogText txtResult, String$(INDENT - 1, ">") & " Recv " & pvArraySize(baRecv) & _
+                    RTrim$(Replace(vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv)), vbCrLf, vbCrLf & Space$(INDENT)))
             End If
 InLoop:
             lSize = 0
@@ -225,7 +229,8 @@ InLoop:
                 GoTo QH
             End If
             If lSize > 0 Then
-                pvAppendLogText txtResult, String$(2, "<") & " Send " & lSize & vbCrLf & DesignDumpMemory(VarPtr(baSend(0)), lSize)
+                pvAppendLogText txtResult, String$(INDENT - 1, "<") & " Send " & lSize & _
+                    RTrim$(Replace(vbCrLf & DesignDumpMemory(VarPtr(baSend(0)), lSize), vbCrLf, vbCrLf & Space$(INDENT)))
                 If Not m_oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
                     sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
                     GoTo QH
@@ -247,7 +252,8 @@ InLoop:
         GoTo QH
     End If
     If lSize > 0 Then
-        pvAppendLogText txtResult, String$(2, "<") & " Send " & lSize & vbCrLf & DesignDumpMemory(VarPtr(baSend(0)), lSize)
+        pvAppendLogText txtResult, String$(INDENT - 1, "<") & " Send " & lSize & _
+            RTrim$(Replace(vbCrLf & DesignDumpMemory(VarPtr(baSend(0)), lSize), vbCrLf, vbCrLf & Space$(INDENT)))
         If Not m_oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
             sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
             GoTo QH
@@ -261,7 +267,8 @@ InLoop:
             GoTo QH
         End If
         If pvArraySize(baRecv) <> 0 Then
-            pvAppendLogText txtResult, String$(2, ">") & " Recv " & pvArraySize(baRecv) & vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv))
+            pvAppendLogText txtResult, String$(INDENT - 1, ">") & " Recv " & pvArraySize(baRecv) & _
+                RTrim$(Replace(vbCrLf & DesignDumpMemory(VarPtr(baRecv(0)), pvArraySize(baRecv)), vbCrLf, vbCrLf & Space$(INDENT)))
             dblTimer = Timer
         ElseIf lSize > 0 And Timer > dblTimer + 0.2 Then
             Exit Do
@@ -293,7 +300,8 @@ InLoop:
             GoTo QH
         End If
         If lSize > 0 Then
-            pvAppendLogText txtResult, String$(2, "<") & " Send " & lSize & vbCrLf & DesignDumpMemory(VarPtr(baSend(0)), lSize)
+            pvAppendLogText txtResult, String$(INDENT - 1, "<") & " Send " & lSize & _
+                RTrim$(Replace(vbCrLf & DesignDumpMemory(VarPtr(baSend(0)), lSize), vbCrLf, vbCrLf & Space$(INDENT)))
             If Not m_oSocket.SyncSend(VarPtr(baSend(0)), lSize) Then
                 sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
                 GoTo QH
@@ -391,7 +399,7 @@ Private Sub m_oServerSocket_OnAccept()
     End If
     Set oHandler = New cRequestHandler
     sKey = "#" & ObjPtr(oHandler)
-    If Not oHandler.Init(oSocket, sKey, Me, m_cCertificates, m_baCertKey) Then
+    If Not oHandler.Init(oSocket, sKey, Me, m_cCertificates, m_baPrivateKey) Then
         GoTo QH
     End If
     m_cRequestHandlers.Add oHandler, "#" & ObjPtr(oHandler)
