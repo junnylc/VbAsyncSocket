@@ -14,7 +14,6 @@ Option Explicit
 DefObj A-Z
 
 #Const ImplUseLibSodium = (ASYNCSOCKET_USE_LIBSODIUM <> 0)
-#Const ImplUseBCrypt = False
 
 '=========================================================================
 ' API
@@ -58,17 +57,6 @@ Private Const ERROR_INVALID_DATA                        As Long = &HC000000D
 '--- for thunks
 Private Const MEM_COMMIT                                As Long = &H1000
 Private Const PAGE_EXECUTE_READWRITE                    As Long = &H40
-#If ImplUseBCrypt Then
-    Private Const BCRYPT_SECP256R1_PARTSZ               As Long = 32
-    Private Const BCRYPT_SECP256R1_PRIVATE_KEYSZ        As Long = BCRYPT_SECP256R1_PARTSZ * 3
-    Private Const BCRYPT_SECP256R1_COMPRESSED_PUBLIC_KEYSZ As Long = 1 + BCRYPT_SECP256R1_PARTSZ
-    Private Const BCRYPT_SECP256R1_UNCOMPRESSED_PUBLIC_KEYSZ As Long = 1 + BCRYPT_SECP256R1_PARTSZ * 2
-    Private Const BCRYPT_SECP256R1_TAG_COMPRESSED_POS   As Long = 2
-    Private Const BCRYPT_SECP256R1_TAG_COMPRESSED_NEG   As Long = 3
-    Private Const BCRYPT_SECP256R1_TAG_UNCOMPRESSED     As Long = 4
-    Private Const BCRYPT_ECDH_PUBLIC_P256_MAGIC         As Long = &H314B4345
-    Private Const BCRYPT_ECDH_PRIVATE_P256_MAGIC        As Long = &H324B4345
-#End If
 
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Sub FillMemory Lib "kernel32" Alias "RtlFillMemory" (Destination As Any, ByVal Length As Long, ByVal Fill As Byte)
@@ -122,15 +110,6 @@ Private Declare Function BCryptVerifySignature Lib "bcrypt" (ByVal hKey As Long,
     Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
     Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
     Private Declare Function crypto_hash_sha512_statebytes Lib "libsodium" () As Long
-#End If
-#If ImplUseBCrypt Then
-    '--- BCrypt
-    Private Declare Function BCryptExportKey Lib "bcrypt" (ByVal hKey As Long, ByVal hExportKey As Long, ByVal pszBlobType As Long, ByVal pbOutput As Long, ByVal cbOutput As Long, ByRef cbResult As Long, ByVal dwFlags As Long) As Long
-    Private Declare Function BCryptSecretAgreement Lib "bcrypt" (ByVal hPrivKey As Long, ByVal hPubKey As Long, ByRef phSecret As Long, ByVal dwFlags As Long) As Long
-    Private Declare Function BCryptDestroySecret Lib "bcrypt" (ByVal hSecret As Long) As Long
-    Private Declare Function BCryptDeriveKey Lib "bcrypt" (ByVal hSharedSecret As Long, ByVal pwszKDF As Long, ByVal pParameterList As Long, ByVal pbDerivedKey As Long, ByVal cbDerivedKey As Long, ByRef pcbResult As Long, ByVal dwFlags As Long) As Long
-    Private Declare Function BCryptGenerateKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByRef hKey As Long, ByVal dwLength As Long, ByVal dwFlags As Long) As Long
-    Private Declare Function BCryptFinalizeKeyPair Lib "bcrypt" (ByVal hKey As Long, ByVal dwFlags As Long) As Long
 #End If
 
 Private Type CRYPT_DER_BLOB
@@ -278,9 +257,6 @@ Private Type UcsCryptoThunkData
     HashPad(0 To LNG_SHA384_BLOCKSZ - 1 + 1000) As Byte
     HashFinal(0 To LNG_SHA384_HASHSZ - 1 + 1000) As Byte
     hRandomProv         As Long
-#If ImplUseBCrypt Then
-    hEcdhP256Prov       As Long
-#End If
 End Type
 
 Public Type UcsRsaContextType
@@ -348,15 +324,6 @@ Public Function CryptoInit() As Boolean
                 End If
             End If
         #End If
-        #If ImplUseBCrypt Then
-            If .hEcdhP256Prov = 0 Then
-                hResult = BCryptOpenAlgorithmProvider(.hEcdhP256Prov, StrPtr("ECDH_P256"), StrPtr("Microsoft Primitive Provider"), 0)
-                If hResult < 0 Then
-                    sApiSource = "BCryptOpenAlgorithmProvider"
-                    GoTo QH
-                End If
-            End If
-        #End If
         If m_uData.Thunk = 0 Then
             .Ecc256KeySize = 32
             .Ecc384KeySize = 48
@@ -407,12 +374,6 @@ Public Sub CryptoTerminate()
             If .hRandomProv <> 0 Then
                 Call CryptReleaseContext(.hRandomProv, 0)
                 .hRandomProv = 0
-            End If
-        #End If
-        #If ImplUseBCrypt Then
-            If .hEcdhP256Prov <> 0 Then
-                Call BCryptCloseAlgorithmProvider(.hEcdhP256Prov, 0)
-                .hEcdhP256Prov = 0
             End If
         #End If
     End With
@@ -472,40 +433,30 @@ Public Function CryptoEccSecp256r1MakeKey(baPrivate() As Byte, baPublic() As Byt
     Const MAX_RETRIES   As Long = 16
     Dim lIdx            As Long
     
-    #If ImplUseBCrypt Then
-        CryptoEccSecp256r1MakeKey = pvBCryptEcdhP256KeyPair(baPrivate, baPublic)
-    #Else
-        ReDim baPrivate(0 To m_uData.Ecc256KeySize - 1) As Byte
-        ReDim baPublic(0 To m_uData.Ecc256KeySize) As Byte
-        For lIdx = 1 To MAX_RETRIES
-            CryptoRandomBytes VarPtr(baPrivate(0)), m_uData.Ecc256KeySize
-            If pvCryptoCallSecp256r1MakeKey(m_uData.Pfn(ucsPfnSecp256r1MakeKey), baPublic(0), baPrivate(0)) = 1 Then
-                Exit For
-            End If
-        Next
-        If lIdx <= MAX_RETRIES Then
-            baPublic = CryptoEccSecp256r1UncompressKey(baPublic)
-            '--- success
-            CryptoEccSecp256r1MakeKey = True
+    ReDim baPrivate(0 To m_uData.Ecc256KeySize - 1) As Byte
+    ReDim baPublic(0 To m_uData.Ecc256KeySize) As Byte
+    For lIdx = 1 To MAX_RETRIES
+        CryptoRandomBytes VarPtr(baPrivate(0)), m_uData.Ecc256KeySize
+        If pvCryptoCallSecp256r1MakeKey(m_uData.Pfn(ucsPfnSecp256r1MakeKey), baPublic(0), baPrivate(0)) = 1 Then
+            Exit For
         End If
-    #End If
+    Next
+    If lIdx <= MAX_RETRIES Then
+        baPublic = CryptoEccSecp256r1UncompressKey(baPublic)
+        '--- success
+        CryptoEccSecp256r1MakeKey = True
+    End If
 End Function
 
 Public Function CryptoEccSecp256r1SharedSecret(baPrivate() As Byte, baPublic() As Byte) As Byte()
     Dim baRetVal()      As Byte
     
-    #If ImplUseBCrypt Then
-        Debug.Assert pvArraySize(baPrivate) = BCRYPT_SECP256R1_PRIVATE_KEYSZ
-        Debug.Assert pvArraySize(baPublic) = BCRYPT_SECP256R1_COMPRESSED_PUBLIC_KEYSZ Or pvArraySize(baPublic) = BCRYPT_SECP256R1_UNCOMPRESSED_PUBLIC_KEYSZ
-        baRetVal = pvBCryptEcdhP256AgreedSecret(baPrivate, baPublic)
-    #Else
-        Debug.Assert UBound(baPrivate) >= m_uData.Ecc256KeySize - 1
-        Debug.Assert UBound(baPublic) >= m_uData.Ecc256KeySize
-        ReDim baRetVal(0 To m_uData.Ecc256KeySize - 1) As Byte
-        If pvCryptoCallSecp256r1SharedSecret(m_uData.Pfn(ucsPfnSecp256r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
-            GoTo QH
-        End If
-    #End If
+    Debug.Assert UBound(baPrivate) >= m_uData.Ecc256KeySize - 1
+    Debug.Assert UBound(baPublic) >= m_uData.Ecc256KeySize
+    ReDim baRetVal(0 To m_uData.Ecc256KeySize - 1) As Byte
+    If pvCryptoCallSecp256r1SharedSecret(m_uData.Pfn(ucsPfnSecp256r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
+        GoTo QH
+    End If
     CryptoEccSecp256r1SharedSecret = baRetVal
 QH:
 End Function
@@ -1272,8 +1223,6 @@ Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSign
     Dim sApiSource      As String
     
     If OsVersion < ucsOsvVista Then
-        '--- ignore
-        CryptoRsaPssVerify = True
         GoTo QH
     End If
     pContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
@@ -1520,170 +1469,6 @@ End Function
         Call crypto_hash_sha512_init(baCtx(0))
         Call CopyMemory(baCtx(0), baSha384State(0), UBound(baSha384State) + 1)
     End Sub
-#End If
-
-'= BCrypt helpers ========================================================
-
-#If ImplUseBCrypt Then
-Private Function pvBCryptEcdhP256KeyPair(baPriv() As Byte, baPub() As Byte) As Boolean
-    Dim hProv           As Long
-    Dim hResult         As Long
-    Dim sApiSource      As String
-    Dim hKeyPair        As Long
-    Dim baBlob()        As Byte
-    Dim cbResult        As Long
-    
-    hProv = m_uData.hEcdhP256Prov
-    hResult = BCryptGenerateKeyPair(hProv, hKeyPair, 256, 0)
-    If hResult < 0 Then
-        sApiSource = "BCryptGenerateKeyPair"
-        GoTo QH
-    End If
-    hResult = BCryptFinalizeKeyPair(hKeyPair, 0)
-    If hResult < 0 Then
-        sApiSource = "BCryptFinalizeKeyPair"
-        GoTo QH
-    End If
-    ReDim baBlob(0 To 1023) As Byte
-    hResult = BCryptExportKey(hKeyPair, 0, StrPtr("ECCPRIVATEBLOB"), VarPtr(baBlob(0)), UBound(baBlob) + 1, cbResult, 0)
-    If hResult < 0 Then
-        sApiSource = "BCryptExportKey(ECCPRIVATEBLOB)"
-        GoTo QH
-    End If
-    baPriv = pvBCryptFromKeyBlob(baBlob, cbResult)
-    hResult = BCryptExportKey(hKeyPair, 0, StrPtr("ECCPUBLICBLOB"), VarPtr(baBlob(0)), UBound(baBlob) + 1, cbResult, 0)
-    If hResult < 0 Then
-        sApiSource = "BCryptExportKey(ECCPUBLICBLOB)"
-        GoTo QH
-    End If
-    baPub = pvBCryptFromKeyBlob(baBlob, cbResult)
-    '--- success
-    pvBCryptEcdhP256KeyPair = True
-QH:
-    If hKeyPair <> 0 Then
-        Call BCryptDestroyKey(hKeyPair)
-    End If
-    If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
-    End If
-End Function
-
-Private Function pvBCryptEcdhP256AgreedSecret(baPriv() As Byte, baPub() As Byte) As Byte()
-    Dim baRetVal()      As Byte
-    Dim hProv           As Long
-    Dim hPrivKey        As Long
-    Dim hPubKey         As Long
-    Dim hAgreedSecret   As Long
-    Dim cbAgreedSecret  As Long
-    Dim hResult         As Long
-    Dim sApiSource      As String
-    Dim baBlob()        As Byte
-    
-    hProv = m_uData.hEcdhP256Prov
-    baBlob = pvBCryptToKeyBlob(baPriv)
-    hResult = BCryptImportKeyPair(hProv, 0, StrPtr("ECCPRIVATEBLOB"), hPrivKey, VarPtr(baBlob(0)), UBound(baBlob) + 1, 0)
-    If hResult < 0 Then
-        sApiSource = "BCryptImportKeyPair(ECCPRIVATEBLOB)"
-        GoTo QH
-    End If
-    baBlob = pvBCryptToKeyBlob(baPub)
-    hResult = BCryptImportKeyPair(hProv, 0, StrPtr("ECCPUBLICBLOB"), hPubKey, VarPtr(baBlob(0)), UBound(baBlob) + 1, 0)
-    If hResult < 0 Then
-        sApiSource = "BCryptImportKeyPair(ECCPUBLICBLOB)"
-        GoTo QH
-    End If
-    hResult = BCryptSecretAgreement(hPrivKey, hPubKey, hAgreedSecret, 0)
-    If hResult < 0 Then
-        sApiSource = "BCryptSecretAgreement"
-        GoTo QH
-    End If
-    ReDim baRetVal(0 To 1023) As Byte
-    hResult = BCryptDeriveKey(hAgreedSecret, StrPtr("TRUNCATE"), 0, VarPtr(baRetVal(0)), UBound(baRetVal) + 1, cbAgreedSecret, 0)
-    If hResult < 0 Then
-        sApiSource = "BCryptDeriveKey"
-        GoTo QH
-    End If
-    ReDim Preserve baRetVal(0 To cbAgreedSecret - 1) As Byte
-    pvArrayReverse baRetVal
-    pvBCryptEcdhP256AgreedSecret = baRetVal
-QH:
-    If hAgreedSecret <> 0 Then
-        Call BCryptDestroySecret(hAgreedSecret)
-    End If
-    If hPrivKey <> 0 Then
-        Call BCryptDestroyKey(hPrivKey)
-    End If
-    If hPubKey <> 0 Then
-        Call BCryptDestroyKey(hPubKey)
-    End If
-    If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
-    End If
-End Function
-
-Private Function pvBCryptToKeyBlob(baKey() As Byte, Optional ByVal lSize As Long = -1) As Byte()
-    Dim baRetVal()      As Byte
-    Dim lMagic          As Long
-    Dim baUncompr()     As Byte
-    Dim lKeyPtr         As Long
-    
-    If lSize < 0 Then
-        lSize = pvArraySize(baKey)
-    End If
-    If lSize = BCRYPT_SECP256R1_COMPRESSED_PUBLIC_KEYSZ Then
-        Debug.Assert baKey(0) = BCRYPT_SECP256R1_TAG_COMPRESSED_POS Or baKey(0) = BCRYPT_SECP256R1_TAG_COMPRESSED_NEG
-        lMagic = BCRYPT_ECDH_PUBLIC_P256_MAGIC
-        lSize = BCRYPT_SECP256R1_UNCOMPRESSED_PUBLIC_KEYSZ
-        ReDim baUncompr(0 To lSize - 1) As Byte
-        Call pvCryptoCallSecp256r1UncompressKey(m_uData.Pfn(ucsPfnSecp256r1UncompressKey), baKey(0), baUncompr(0))
-        lKeyPtr = VarPtr(baUncompr(1))
-        lSize = lSize - 1
-    ElseIf lSize = BCRYPT_SECP256R1_UNCOMPRESSED_PUBLIC_KEYSZ Then
-        Debug.Assert baKey(0) = BCRYPT_SECP256R1_TAG_UNCOMPRESSED
-        lMagic = BCRYPT_ECDH_PUBLIC_P256_MAGIC
-        lKeyPtr = VarPtr(baKey(1))
-        lSize = lSize - 1
-    ElseIf lSize = BCRYPT_SECP256R1_PRIVATE_KEYSZ Then
-        lMagic = BCRYPT_ECDH_PRIVATE_P256_MAGIC
-        lKeyPtr = VarPtr(baKey(0))
-    Else
-        Err.Raise vbObjectError, "pvBCryptToKeyBlob", "Unrecognized key size"
-    End If
-    ReDim baRetVal(0 To 8 + lSize - 1) As Byte
-    Call CopyMemory(baRetVal(0), lMagic, 4)
-    Call CopyMemory(baRetVal(4), BCRYPT_SECP256R1_PARTSZ, 4)
-    Call CopyMemory(baRetVal(8), ByVal lKeyPtr, lSize)
-    pvBCryptToKeyBlob = baRetVal
-End Function
-
-Private Function pvBCryptFromKeyBlob(baBlob() As Byte, Optional ByVal lSize As Long = -1) As Byte()
-    Dim baRetVal()      As Byte
-    Dim lMagic          As Long
-    Dim lPartSize       As Long
-    
-    If lSize < 0 Then
-        lSize = pvArraySize(baBlob)
-    End If
-    Call CopyMemory(lMagic, baBlob(0), 4)
-    Select Case lMagic
-    Case BCRYPT_ECDH_PUBLIC_P256_MAGIC
-        Call CopyMemory(lPartSize, baBlob(4), 4)
-        Debug.Assert lPartSize = 32
-        ReDim baRetVal(0 To BCRYPT_SECP256R1_UNCOMPRESSED_PUBLIC_KEYSZ - 1) As Byte
-        Debug.Assert lSize >= 8 + 2 * lPartSize
-        baRetVal(0) = BCRYPT_SECP256R1_TAG_UNCOMPRESSED
-        Call CopyMemory(baRetVal(1), baBlob(8), 2 * lPartSize)
-    Case BCRYPT_ECDH_PRIVATE_P256_MAGIC
-        Call CopyMemory(lPartSize, baBlob(4), 4)
-        Debug.Assert lPartSize = 32
-        ReDim baRetVal(0 To BCRYPT_SECP256R1_PRIVATE_KEYSZ - 1) As Byte
-        Debug.Assert lSize >= 8 + 3 * lPartSize
-        Call CopyMemory(baRetVal(0), baBlob(8), 3 * lPartSize)
-    Case Else
-        Err.Raise vbObjectError, "pvBCryptFromKeyBlob", "Unknown BCrypt magic"
-    End Select
-    pvBCryptFromKeyBlob = baRetVal
-End Function
 #End If
 
 '= trampolines ===========================================================
