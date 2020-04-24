@@ -40,7 +40,7 @@ Begin VB.Form Form1
       Height          =   348
       Left            =   1260
       TabIndex        =   0
-      Text            =   "www.mikestoolbox.org"
+      Text            =   "cert-test.sandbox.google.com"
       Top             =   168
       Width           =   7068
    End
