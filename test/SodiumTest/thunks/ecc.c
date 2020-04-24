@@ -1042,6 +1042,10 @@ static void ecc_point_decompress(EccPoint *p_point, const uint8_t p_compressed[E
 {
     uint64_t _3[NUM_ECC_DIGITS] = {3}; /* -a = 3 */
     ecc_bytes2native(p_point->x, p_compressed+1);
+    if (p_compressed[0] == 0x04) {
+        ecc_bytes2native(p_point->y, p_compressed+1+ECC_BYTES);
+        return;
+    }
     
     vli_modSquare_fast(p_point->y, p_point->x); /* y = x^2 */
     vli_modSub(p_point->y, p_point->y, _3, curve_p); /* y = x^2 - 3 */
@@ -1179,7 +1183,7 @@ static void vli_modMult(uint64_t *p_result, uint64_t *p_left, uint64_t *p_right,
     vli_set(p_result, l_product);
 }
 
-static uint umax(uint a, uint b)
+static inline uint umax(uint a, uint b)
 {
     return (a > b ? a : b);
 }
