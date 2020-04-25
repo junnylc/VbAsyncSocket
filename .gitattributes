@@ -4,3 +4,4 @@
 *.dll binary
 *.cmp binary
 *.cobj binary
+*.pfx binary

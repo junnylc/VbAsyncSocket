@@ -63,9 +63,11 @@ QH:
 End Function
 
 Private Function HandleRequest(sText As String) As String
+    Const FUNC_NAME     As String = "HandleRequest"
     Dim vSplit          As Variant
     Dim sRetVal         As String
     
+    On Error GoTo EH
     vSplit = Split(sText, vbCrLf)
     vSplit = Split(vSplit(0), " ")
     Debug.Print "HandleRequestm Path=" & vSplit(1)
@@ -75,6 +77,9 @@ Private Function HandleRequest(sText As String) As String
         "Content-Length: " & Len(sRetVal) & vbCrLf & _
         "Connection: Close" & vbCrLf & vbCrLf & _
         sRetVal
+    Exit Function
+EH:
+    PrintError FUNC_NAME
 End Function
 
 Private Sub m_oSocket_OnClose()

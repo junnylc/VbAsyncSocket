@@ -120,20 +120,21 @@ End Sub
 '=========================================================================
 
 Private Sub Form_Load()
+'    Const PEM_FILES     As String = "eccert.pem|ecprivkey.pem|fullchain2.pem"
+    Const PFX_FILE      As String = "eccert.pfx"
+    Const PFX_PASSWORD  As String = ""
     Dim sAddr           As String
     Dim lPort           As Long
-    Dim cKeys           As Collection
     
     If txtResult.Font.Name = "Arial" Then
         txtResult.Font.Name = "Courier New"
     End If
-    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\privkey.pem"), vbUnicode), "PRIVATE KEY", cKeys
-    If Not SearchCollection(cKeys, 1, RetVal:=m_baPrivateKey) Then
-        MsgBox "Error starting TLS server on localhost:10443" & vbCrLf & vbCrLf & "No private key found in " & App.Path & "\privkey.pem", vbExclamation
+    ChDir App.Path
+'    If Not PkiPemImportCertificates(Split(PEM_FILES, "|"), m_cCertificates, m_baPrivateKey) Then
+    If Not PkiPfxImportCertificates(PFX_FILE, PFX_PASSWORD, m_cCertificates, m_baPrivateKey) Then
+        MsgBox "Error starting TLS server on localhost:10443" & vbCrLf & vbCrLf & "No private key found in " & PFX_FILE, vbExclamation
         GoTo QH
     End If
-    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\cert.pem"), vbUnicode), "CERTIFICATE", m_cCertificates
-    CryptoPemTextPortions StrConv(ReadBinaryFile(App.Path & "\fullchain.pem"), vbUnicode), "CERTIFICATE", m_cCertificates
     Set m_oServerSocket = New cAsyncSocket
     m_oServerSocket.Create SocketPort:=10443, SocketAddress:="localhost"
     If m_oServerSocket.Listen() Then

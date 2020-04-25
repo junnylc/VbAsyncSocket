@@ -57,23 +57,6 @@ Public Function DesignDumpMemory(ByVal lPtr As Long, ByVal lSize As Long) As Str
     DesignDumpMemory = Join(aResult, vbCrLf)
 End Function
 
-Public Function ReadBinaryFile(sFile As String) As Byte()
-    Dim baBuffer()      As Byte
-    Dim nFile           As Integer
-    
-    baBuffer = vbNullString
-    If GetFileAttributes(sFile) <> -1 Then
-        nFile = FreeFile
-        Open sFile For Binary Access Read Shared As nFile
-        If LOF(nFile) > 0 Then
-            ReDim baBuffer(0 To LOF(nFile) - 1) As Byte
-            Get nFile, , baBuffer
-        End If
-        Close nFile
-    End If
-    ReadBinaryFile = baBuffer
-End Function
-
 Public Sub WriteBinaryFile(sFile As String, baBuffer() As Byte)
     Dim nFile           As Integer
     

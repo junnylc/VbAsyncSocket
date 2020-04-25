@@ -25,7 +25,6 @@ Private Const TLS_SIGNATURE_RSA_PSS_RSAE_SHA512         As Long = &H806
 Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA256          As Long = &H809
 Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA384          As Long = &H80A
 Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA512          As Long = &H80B
-
 '--- for CryptAcquireContext
 Private Const PROV_RSA_FULL                             As Long = 1
 Private Const PROV_RSA_AES                              As Long = 24
@@ -36,6 +35,8 @@ Private Const PKCS_7_ASN_ENCODING                       As Long = &H10000
 Private Const X509_PUBLIC_KEY_INFO                      As Long = 8
 Private Const PKCS_RSA_PRIVATE_KEY                      As Long = 43
 Private Const PKCS_PRIVATE_KEY_INFO                     As Long = 44
+Private Const X509_ECC_PRIVATE_KEY                      As Long = 82
+Private Const CNG_RSA_PRIVATE_KEY_BLOB                  As Long = 83
 Private Const CRYPT_DECODE_ALLOC_FLAG                   As Long = &H8000
 '--- for CryptCreateHash
 Private Const CALG_MD5                                  As Long = &H8003&
@@ -54,6 +55,39 @@ Private Const BCRYPT_PAD_PSS                            As Long = 8
 '--- for BCryptVerifySignature
 Private Const STATUS_INVALID_SIGNATURE                  As Long = &HC000A000
 Private Const ERROR_INVALID_DATA                        As Long = &HC000000D
+'--- for CertGetCertificateContextProperty
+Private Const CERT_KEY_PROV_INFO_PROP_ID                As Long = 2
+'--- for PFXImportCertStore
+Private Const CRYPT_EXPORTABLE                          As Long = &H1
+'--- for CryptExportKey
+Private Const PRIVATEKEYBLOB                            As Long = 7
+'--- for CryptAcquireCertificatePrivateKey
+Private Const CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG       As Long = &H10000
+'Private Const CRYPT_ACQUIRE_PREFER_NCRYPT_KEY_FLAG      As Long = &H20000
+'--- for NCryptImportKey
+Private Const NCRYPT_OVERWRITE_KEY_FLAG                 As Long = &H80
+Private Const NCRYPT_DO_NOT_FINALIZE_FLAG               As Long = &H400
+'--- for NCryptSetProperty
+Private Const NCRYPT_PERSIST_FLAG                       As Long = &H80000000
+'--- OIDs
+Private Const szOID_RSA_RSA                             As String = "1.2.840.113549.1.1.1"
+Private Const szOID_ECC_CURVE_P256                      As String = "1.2.840.10045.3.1.7"
+Private Const szOID_ECC_CURVE_P384                      As String = "1.3.132.0.34"
+Private Const szOID_ECC_CURVE_P521                      As String = "1.3.132.0.35"
+Private Const szOID_PKCS_12_pbeWithSHA1And3KeyTripleDES As String = "1.2.840.113549.1.12.1.3"
+'--- BLOBs magic
+Private Const BCRYPT_RSAPRIVATE_MAGIC                   As Long = &H32415352
+Private Const BCRYPT_ECDH_PRIVATE_P256_MAGIC            As Long = &H324B4345
+Private Const BCRYPT_ECDH_PRIVATE_P384_MAGIC            As Long = &H344B4345
+Private Const BCRYPT_ECDH_PRIVATE_P521_MAGIC            As Long = &H364B4345
+'--- buffer types
+Private Const NCRYPTBUFFER_PKCS_ALG_OID                 As Long = 41
+Private Const NCRYPTBUFFER_PKCS_ALG_PARAM               As Long = 42
+Private Const NCRYPTBUFFER_PKCS_KEY_NAME                As Long = 45
+Private Const NCRYPTBUFFER_PKCS_SECRET                  As Long = 46
+'--- export policy flags
+Private Const NCRYPT_ALLOW_EXPORT_FLAG                  As Long = &H1
+Private Const NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG        As Long = &H2
 '--- for thunks
 Private Const MEM_COMMIT                                As Long = &H1000
 Private Const PAGE_EXECUTE_READWRITE                    As Long = &H40
@@ -68,6 +102,8 @@ Private Declare Function LoadLibrary Lib "kernel32" Alias "LoadLibraryA" (ByVal 
 Private Declare Function LocalFree Lib "kernel32" (ByVal hMem As Long) As Long
 Private Declare Function GetVersionEx Lib "kernel32" Alias "GetVersionExA" (lpVersionInformation As Any) As Long
 Private Declare Function lstrlen Lib "kernel32" Alias "lstrlenA" (ByVal lpString As Long) As Long
+Private Declare Function GetFileAttributes Lib "kernel32" Alias "GetFileAttributesA" (ByVal lpFileName As String) As Long
+'--- Crypt
 Private Declare Function CryptAcquireContext Lib "advapi32" Alias "CryptAcquireContextW" (phProv As Long, ByVal pszContainer As Long, ByVal pszProvider As Long, ByVal dwProvType As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptReleaseContext Lib "advapi32" (ByVal hProv As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptGenRandom Lib "advapi32" (ByVal hProv As Long, ByVal dwLen As Long, ByVal pbBuffer As Long) As Long
@@ -85,6 +121,21 @@ Private Declare Function CryptDecodeObjectEx Lib "crypt32" (ByVal dwCertEncoding
 Private Declare Function CertCreateCertificateContext Lib "crypt32" (ByVal dwCertEncodingType As Long, pbCertEncoded As Any, ByVal cbCertEncoded As Long) As Long
 Private Declare Function CertFreeCertificateContext Lib "crypt32" (ByVal pCertContext As Long) As Long
 Private Declare Function CryptImportPublicKeyInfoEx2 Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal pInfo As Long, ByVal dwFlags As Long, ByVal pvAuxInfo As Long, phKey As Long) As Long
+Private Declare Function PFXImportCertStore Lib "crypt32" (pPFX As Any, ByVal szPassword As Long, ByVal dwFlags As Long) As Long
+Private Declare Function CertEnumCertificatesInStore Lib "crypt32" (ByVal hCertStore As Long, ByVal pPrevCertContext As Long) As Long
+Private Declare Function CertGetCertificateContextProperty Lib "crypt32" (ByVal pCertContext As Long, ByVal dwPropId As Long, pvData As Any, pcbData As Long) As Long
+Private Declare Function CryptGetUserKey Lib "advapi32" (ByVal hProv As Long, ByVal dwKeySpec As Long, phUserKey As Long) As Long
+Private Declare Function CryptExportKey Lib "advapi32" (ByVal hKey As Long, ByVal hExpKey As Long, ByVal dwBlobType As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long) As Long
+Private Declare Function CryptEncodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal lpszStructType As Long, pvStructInfo As Any, ByVal dwFlags As Long, ByVal pEncodePara As Long, pvEncoded As Any, pcbEncoded As Long) As Long
+Private Declare Function CryptAcquireCertificatePrivateKey Lib "crypt32" (ByVal pCert As Long, ByVal dwFlags As Long, ByVal pvParameters As Long, phCryptProvOrNCryptKey As Long, pdwKeySpec As Long, pfCallerFreeProvOrNCryptKey As Long) As Long
+'--- NCrypt
+Private Declare Function NCryptImportKey Lib "ncrypt" (ByVal hProvider As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, pParameterList As Any, phKey As Long, pbData As Any, ByVal cbData As Long, ByVal dwFlags As Long) As Long
+Private Declare Function NCryptExportKey Lib "ncrypt" (ByVal hKey As Long, ByVal hExportKey As Long, ByVal pszBlobType As Long, pParameterList As Any, pbOutput As Any, ByVal cbOutput As Long, pcbResult As Any, ByVal dwFlags As Long) As Long
+Private Declare Function NCryptFreeObject Lib "ncrypt" (ByVal hKey As Long) As Long
+Private Declare Function NCryptGetProperty Lib "ncrypt" (ByVal hObject As Long, ByVal pszProperty As Long, pbOutput As Any, ByVal cbOutput As Long, pcbResult As Long, ByVal dwFlags As Long) As Long
+Private Declare Function NCryptSetProperty Lib "ncrypt" (ByVal hObject As Long, ByVal pszProperty As Long, pbInput As Any, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
+Private Declare Function NCryptFinalizeKey Lib "ncrypt" (ByVal hKey As Long, ByVal dwFlags As Long) As Long
+'--- BCrypt
 Private Declare Function BCryptOpenAlgorithmProvider Lib "bcrypt" (ByRef hAlgorithm As Long, ByVal pszAlgId As Long, ByVal pszImplementation As Long, ByVal dwFlags As Long) As Long
 Private Declare Function BCryptCloseAlgorithmProvider Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal dwFlags As Long) As Long
 Private Declare Function BCryptImportKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, ByRef hKey As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
@@ -112,7 +163,7 @@ Private Declare Function BCryptVerifySignature Lib "bcrypt" (ByVal hKey As Long,
     Private Declare Function crypto_hash_sha512_statebytes Lib "libsodium" () As Long
 #End If
 
-Private Type CRYPT_DER_BLOB
+Private Type CRYPT_BLOB_DATA
     cbData              As Long
     pbData              As Long
 End Type
@@ -122,13 +173,66 @@ Private Type BCRYPT_PSS_PADDING_INFO
     cbSalt              As Long
 End Type
 
+Private Type CRYPT_ALGORITHM_IDENTIFIER
+    pszObjId            As Long
+    Parameters          As CRYPT_BLOB_DATA
+End Type
+
 Private Type CERT_PUBLIC_KEY_INFO
-    AlgObjIdPtr         As Long
-    AlgParamSize        As Long
-    AlgParamPtr         As Long
-    PubKeySize          As Long
-    PubKeyPtr           As Long
-    PubKeyUnusedBits    As Long
+    Algorithm           As CRYPT_ALGORITHM_IDENTIFIER
+    PublicKey           As CRYPT_BLOB_DATA
+    PublicKeyUnusedBits As Long
+End Type
+
+Private Type CRYPT_ECC_PRIVATE_KEY_INFO
+    dwVersion           As Long
+    PrivateKey          As CRYPT_BLOB_DATA
+    szCurveOid          As Long
+    PublicKey           As CRYPT_BLOB_DATA
+End Type
+
+Private Type CRYPT_KEY_PROV_INFO
+    pwszContainerName   As Long
+    pwszProvName        As Long
+    dwProvType          As Long
+    dwFlags             As Long
+    cProvParam          As Long
+    rgProvParam         As Long
+    dwKeySpec           As Long
+End Type
+
+Private Type CERT_CONTEXT
+    dwCertEncodingType  As Long
+    pbCertEncoded       As Long
+    cbCertEncoded       As Long
+    pCertInfo           As Long
+    hCertStore          As Long
+End Type
+
+Private Type CRYPT_PRIVATE_KEY_INFO
+    Version             As Long
+    Algorithm           As CRYPT_ALGORITHM_IDENTIFIER
+    PrivateKey          As CRYPT_BLOB_DATA
+    pAttributes         As Long
+End Type
+
+Private Type NCryptBuffer
+    cbBuffer            As Long
+    BufferType          As Long
+    pvBuffer            As Long
+End Type
+
+Private Type NCryptBufferDesc
+    ulVersion           As Long
+    cBuffers            As Long
+    pBuffers            As Long
+    Buffers()           As NCryptBuffer
+End Type
+
+Private Type CRYPT_PKCS12_PBE_PARAMS
+    iIterations         As Long
+    cbSalt              As Long
+    SaltBuffer(0 To 31) As Byte
 End Type
 
 '=========================================================================
@@ -345,20 +449,20 @@ Public Function CryptoInit() As Boolean
                 .Pfn(lIdx) = UnsignedAdd(.Thunk, lOffset)
             Next
             '--- init pfns trampolines
-            Call pvPatchTrampoline(AddressOf pvCryptoCallSecpMakeKey)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallSecpSharedSecret)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallSecpUncompressKey)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallSecpSign)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallSecpVerify)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallCurve25519Multiply)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallCurve25519MulBase)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallSha2Init)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallSha2Update)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallSha2Final)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallChacha20Poly1305Encrypt)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallChacha20Poly1305Decrypt)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallAesGcmEncrypt)
-            Call pvPatchTrampoline(AddressOf pvCryptoCallAesGcmDecrypt)
+            Call pvPatchTrampoline(AddressOf pvCallSecpMakeKey)
+            Call pvPatchTrampoline(AddressOf pvCallSecpSharedSecret)
+            Call pvPatchTrampoline(AddressOf pvCallSecpUncompressKey)
+            Call pvPatchTrampoline(AddressOf pvCallSecpSign)
+            Call pvPatchTrampoline(AddressOf pvCallSecpVerify)
+            Call pvPatchTrampoline(AddressOf pvCallCurve25519Multiply)
+            Call pvPatchTrampoline(AddressOf pvCallCurve25519MulBase)
+            Call pvPatchTrampoline(AddressOf pvCallSha2Init)
+            Call pvPatchTrampoline(AddressOf pvCallSha2Update)
+            Call pvPatchTrampoline(AddressOf pvCallSha2Final)
+            Call pvPatchTrampoline(AddressOf pvCallChacha20Poly1305Encrypt)
+            Call pvPatchTrampoline(AddressOf pvCallChacha20Poly1305Decrypt)
+            Call pvPatchTrampoline(AddressOf pvCallAesGcmEncrypt)
+            Call pvPatchTrampoline(AddressOf pvCallAesGcmDecrypt)
             '--- init thunk's first 4 bytes -> global data in C/C++
             Call CopyMemory(ByVal .Thunk, VarPtr(.Glob(0)), 4)
         End If
@@ -416,7 +520,7 @@ Public Function CryptoEccCurve25519MakeKey(baPrivate() As Byte, baPublic() As By
     #If ImplUseLibSodium Then
         Call crypto_scalarmult_curve25519_base(baPublic(0), baPrivate(0))
     #Else
-        pvCryptoCallCurve25519MulBase m_uData.Pfn(ucsPfnCurve25519ScalarMultBase), baPublic(0), baPrivate(0)
+        pvCallCurve25519MulBase m_uData.Pfn(ucsPfnCurve25519ScalarMultBase), baPublic(0), baPrivate(0)
     #End If
     '--- success
     CryptoEccCurve25519MakeKey = True
@@ -431,7 +535,7 @@ Public Function CryptoEccCurve25519SharedSecret(baPrivate() As Byte, baPublic() 
     #If ImplUseLibSodium Then
         Call crypto_scalarmult_curve25519(baRetVal(0), baPrivate(0), baPublic(0))
     #Else
-        pvCryptoCallCurve25519Multiply m_uData.Pfn(ucsPfnCurve25519ScalarMultiply), baRetVal(0), baPrivate(0), baPublic(0)
+        pvCallCurve25519Multiply m_uData.Pfn(ucsPfnCurve25519ScalarMultiply), baRetVal(0), baPrivate(0), baPublic(0)
     #End If
     CryptoEccCurve25519SharedSecret = baRetVal
 End Function
@@ -444,7 +548,7 @@ Public Function CryptoEccSecp256r1MakeKey(baPrivate() As Byte, baPublic() As Byt
     ReDim baPublic(0 To m_uData.Ecc256KeySize) As Byte
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baPrivate(0)), m_uData.Ecc256KeySize
-        If pvCryptoCallSecpMakeKey(m_uData.Pfn(ucsPfnSecp256r1MakeKey), baPublic(0), baPrivate(0)) = 1 Then
+        If pvCallSecpMakeKey(m_uData.Pfn(ucsPfnSecp256r1MakeKey), baPublic(0), baPrivate(0)) = 1 Then
             Exit For
         End If
     Next
@@ -461,7 +565,7 @@ Public Function CryptoEccSecp256r1SharedSecret(baPrivate() As Byte, baPublic() A
     Debug.Assert UBound(baPrivate) >= m_uData.Ecc256KeySize - 1
     Debug.Assert UBound(baPublic) >= m_uData.Ecc256KeySize
     ReDim baRetVal(0 To m_uData.Ecc256KeySize - 1) As Byte
-    If pvCryptoCallSecpSharedSecret(m_uData.Pfn(ucsPfnSecp256r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
+    If pvCallSecpSharedSecret(m_uData.Pfn(ucsPfnSecp256r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
         GoTo QH
     End If
     CryptoEccSecp256r1SharedSecret = baRetVal
@@ -472,24 +576,26 @@ Public Function CryptoEccSecp256r1UncompressKey(baPublic() As Byte) As Byte()
     Dim baRetVal()      As Byte
     
     ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize) As Byte
-    If pvCryptoCallSecpUncompressKey(m_uData.Pfn(ucsPfnSecp256r1UncompressKey), baPublic(0), baRetVal(0)) = 0 Then
+    If pvCallSecpUncompressKey(m_uData.Pfn(ucsPfnSecp256r1UncompressKey), baPublic(0), baRetVal(0)) = 0 Then
         GoTo QH
     End If
     CryptoEccSecp256r1UncompressKey = baRetVal
 QH:
 End Function
 
-Public Function CryptoEccSecp256r1Sign(baPrivate() As Byte, baHash() As Byte) As Byte()
+Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As Byte()
     Const MAX_RETRIES   As Long = 16
+    Dim baPrivate()     As Byte
     Dim baRandom()      As Byte
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
+    baPrivate = CryptoFromEccPrivateKey(baPrivKey)
     ReDim baRandom(0 To m_uData.Ecc256KeySize - 1) As Byte
     ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize - 1) As Byte
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc256KeySize
-        If pvCryptoCallSecpSign(m_uData.Pfn(ucsPfnSecp256r1Sign), baPrivate(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
+        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp256r1Sign), baPrivate(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
             Exit For
         End If
     Next
@@ -500,18 +606,18 @@ Public Function CryptoEccSecp256r1Sign(baPrivate() As Byte, baHash() As Byte) As
 End Function
 
 Public Function CryptoEccSecp256r1Verify(baPublic() As Byte, baHash() As Byte, baSignature() As Byte) As Boolean
-    CryptoEccSecp256r1Verify = (pvCryptoCallSecpVerify(m_uData.Pfn(ucsPfnSecp256r1Verify), baPublic(0), baHash(0), baSignature(0)) <> 0)
+    CryptoEccSecp256r1Verify = (pvCallSecpVerify(m_uData.Pfn(ucsPfnSecp256r1Verify), baPublic(0), baHash(0), baSignature(0)) <> 0)
 End Function
 
 Public Function CryptoEccSecp384r1MakeKey(baPrivate() As Byte, baPublic() As Byte) As Boolean
     Const MAX_RETRIES   As Long = 16
     Dim lIdx            As Long
-    
+        
     ReDim baPrivate(0 To m_uData.Ecc384KeySize - 1) As Byte
     ReDim baPublic(0 To m_uData.Ecc384KeySize) As Byte
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baPrivate(0)), m_uData.Ecc384KeySize
-        If pvCryptoCallSecpMakeKey(m_uData.Pfn(ucsPfnSecp384r1MakeKey), baPublic(0), baPrivate(0)) = 1 Then
+        If pvCallSecpMakeKey(m_uData.Pfn(ucsPfnSecp384r1MakeKey), baPublic(0), baPrivate(0)) = 1 Then
             Exit For
         End If
     Next
@@ -528,7 +634,7 @@ Public Function CryptoEccSecp384r1SharedSecret(baPrivate() As Byte, baPublic() A
     Debug.Assert UBound(baPrivate) >= m_uData.Ecc384KeySize - 1
     Debug.Assert UBound(baPublic) >= m_uData.Ecc384KeySize
     ReDim baRetVal(0 To m_uData.Ecc384KeySize - 1) As Byte
-    If pvCryptoCallSecpSharedSecret(m_uData.Pfn(ucsPfnSecp384r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
+    If pvCallSecpSharedSecret(m_uData.Pfn(ucsPfnSecp384r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
         GoTo QH
     End If
     CryptoEccSecp384r1SharedSecret = baRetVal
@@ -539,24 +645,26 @@ Public Function CryptoEccSecp384r1UncompressKey(baPublic() As Byte) As Byte()
     Dim baRetVal()      As Byte
     
     ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize) As Byte
-    If pvCryptoCallSecpUncompressKey(m_uData.Pfn(ucsPfnSecp384r1UncompressKey), baPublic(0), baRetVal(0)) = 0 Then
+    If pvCallSecpUncompressKey(m_uData.Pfn(ucsPfnSecp384r1UncompressKey), baPublic(0), baRetVal(0)) = 0 Then
         GoTo QH
     End If
     CryptoEccSecp384r1UncompressKey = baRetVal
 QH:
 End Function
 
-Public Function CryptoEccSecp384r1Sign(baPrivate() As Byte, baHash() As Byte) As Byte()
+Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As Byte()
     Const MAX_RETRIES   As Long = 16
+    Dim baPrivate()     As Byte
     Dim baRandom()      As Byte
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
+    baPrivate = CryptoFromEccPrivateKey(baPrivKey)
     ReDim baRandom(0 To m_uData.Ecc384KeySize - 1) As Byte
     ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize - 1) As Byte
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc384KeySize
-        If pvCryptoCallSecpSign(m_uData.Pfn(ucsPfnSecp384r1Sign), baPrivate(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
+        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp384r1Sign), baPrivate(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
             Exit For
         End If
     Next
@@ -567,7 +675,7 @@ Public Function CryptoEccSecp384r1Sign(baPrivate() As Byte, baHash() As Byte) As
 End Function
 
 Public Function CryptoEccSecp384r1Verify(baPublic() As Byte, baHash() As Byte, baSignature() As Byte) As Boolean
-    CryptoEccSecp384r1Verify = (pvCryptoCallSecpVerify(m_uData.Pfn(ucsPfnSecp384r1Verify), baPublic(0), baHash(0), baSignature(0)) <> 0)
+    CryptoEccSecp384r1Verify = (pvCallSecpVerify(m_uData.Pfn(ucsPfnSecp384r1Verify), baPublic(0), baHash(0), baSignature(0)) <> 0)
 End Function
 
 Public Function CryptoHashSha256(baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
@@ -589,9 +697,9 @@ Public Function CryptoHashSha256(baInput() As Byte, ByVal lPos As Long, Optional
     #Else
         With m_uData
             lCtxPtr = VarPtr(.HashCtx(0))
-            pvCryptoCallSha2Init .Pfn(ucsPfnSha256Init), lCtxPtr
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, lPtr, Size
-            pvCryptoCallSha2Final .Pfn(ucsPfnSha256Final), lCtxPtr, baRetVal(0)
+            pvCallSha2Init .Pfn(ucsPfnSha256Init), lCtxPtr
+            pvCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, lPtr, Size
+            pvCallSha2Final .Pfn(ucsPfnSha256Final), lCtxPtr, baRetVal(0)
         End With
     #End If
     CryptoHashSha256 = baRetVal
@@ -619,9 +727,9 @@ Public Function CryptoHashSha384(baInput() As Byte, ByVal lPos As Long, Optional
             Call crypto_hash_sha512_final(ByVal lCtxPtr, .HashFinal(0))
             Call CopyMemory(baRetVal(0), .HashFinal(0), LNG_SHA384_HASHSZ)
         #Else
-            pvCryptoCallSha2Init .Pfn(ucsPfnSha384Init), lCtxPtr
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, lPtr, Size
-            pvCryptoCallSha2Final .Pfn(ucsPfnSha384Final), lCtxPtr, baRetVal(0)
+            pvCallSha2Init .Pfn(ucsPfnSha384Init), lCtxPtr
+            pvCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, lPtr, Size
+            pvCallSha2Final .Pfn(ucsPfnSha384Final), lCtxPtr, baRetVal(0)
         #End If
     End With
     CryptoHashSha384 = baRetVal
@@ -649,9 +757,9 @@ Public Function CryptoHashSha512(baInput() As Byte, ByVal lPos As Long, Optional
             Call crypto_hash_sha512_final(ByVal lCtxPtr, .HashFinal(0))
             Call CopyMemory(baRetVal(0), .HashFinal(0), LNG_SHA512_HASHSZ)
         #Else
-            pvCryptoCallSha2Init .Pfn(ucsPfnSha512Init), lCtxPtr
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha512Update), lCtxPtr, lPtr, Size
-            pvCryptoCallSha2Final .Pfn(ucsPfnSha512Final), lCtxPtr, baRetVal(0)
+            pvCallSha2Init .Pfn(ucsPfnSha512Init), lCtxPtr
+            pvCallSha2Update .Pfn(ucsPfnSha512Update), lCtxPtr, lPtr, Size
+            pvCallSha2Final .Pfn(ucsPfnSha512Final), lCtxPtr, baRetVal(0)
         #End If
     End With
     CryptoHashSha512 = baRetVal
@@ -695,23 +803,23 @@ Public Function CryptoHmacSha256(baKey() As Byte, baInput() As Byte, ByVal lPos 
             Call crypto_hash_sha256_final(ByVal lCtxPtr, baRetVal(0))
         #Else
             '-- inner hash
-            pvCryptoCallSha2Init .Pfn(ucsPfnSha256Init), lCtxPtr
+            pvCallSha2Init .Pfn(ucsPfnSha256Init), lCtxPtr
             Call FillMemory(.HashPad(0), LNG_SHA256_BLOCKSZ, LNG_HMAC_INNER_PAD)
             For lIdx = 0 To UBound(baKey)
                 .HashPad(lIdx) = baKey(lIdx) Xor LNG_HMAC_INNER_PAD
             Next
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, VarPtr(.HashPad(0)), LNG_SHA256_BLOCKSZ
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, lPtr, Size
-            pvCryptoCallSha2Final .Pfn(ucsPfnSha256Final), lCtxPtr, .HashFinal(0)
+            pvCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, VarPtr(.HashPad(0)), LNG_SHA256_BLOCKSZ
+            pvCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, lPtr, Size
+            pvCallSha2Final .Pfn(ucsPfnSha256Final), lCtxPtr, .HashFinal(0)
             '-- outer hash
-            pvCryptoCallSha2Init .Pfn(ucsPfnSha256Init), lCtxPtr
+            pvCallSha2Init .Pfn(ucsPfnSha256Init), lCtxPtr
             Call FillMemory(.HashPad(0), LNG_SHA256_BLOCKSZ, LNG_HMAC_OUTER_PAD)
             For lIdx = 0 To UBound(baKey)
                 .HashPad(lIdx) = baKey(lIdx) Xor LNG_HMAC_OUTER_PAD
             Next
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, VarPtr(.HashPad(0)), LNG_SHA256_BLOCKSZ
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, VarPtr(.HashFinal(0)), LNG_SHA256_HASHSZ
-            pvCryptoCallSha2Final .Pfn(ucsPfnSha256Final), lCtxPtr, baRetVal(0)
+            pvCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, VarPtr(.HashPad(0)), LNG_SHA256_BLOCKSZ
+            pvCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, VarPtr(.HashFinal(0)), LNG_SHA256_HASHSZ
+            pvCallSha2Final .Pfn(ucsPfnSha256Final), lCtxPtr, baRetVal(0)
         #End If
     End With
     CryptoHmacSha256 = baRetVal
@@ -756,23 +864,23 @@ Public Function CryptoHmacSha384(baKey() As Byte, baInput() As Byte, ByVal lPos 
             Call CopyMemory(baRetVal(0), .HashFinal(0), LNG_SHA384_HASHSZ)
         #Else
             '-- inner hash
-            pvCryptoCallSha2Init .Pfn(ucsPfnSha384Init), lCtxPtr
+            pvCallSha2Init .Pfn(ucsPfnSha384Init), lCtxPtr
             Call FillMemory(.HashPad(0), LNG_SHA384_BLOCKSZ, LNG_HMAC_INNER_PAD)
             For lIdx = 0 To UBound(baKey)
                 .HashPad(lIdx) = baKey(lIdx) Xor LNG_HMAC_INNER_PAD
             Next
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, VarPtr(.HashPad(0)), LNG_SHA384_BLOCKSZ
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, lPtr, Size
-            pvCryptoCallSha2Final .Pfn(ucsPfnSha384Final), lCtxPtr, .HashFinal(0)
+            pvCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, VarPtr(.HashPad(0)), LNG_SHA384_BLOCKSZ
+            pvCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, lPtr, Size
+            pvCallSha2Final .Pfn(ucsPfnSha384Final), lCtxPtr, .HashFinal(0)
             '-- outer hash
-            pvCryptoCallSha2Init .Pfn(ucsPfnSha384Init), lCtxPtr
+            pvCallSha2Init .Pfn(ucsPfnSha384Init), lCtxPtr
             Call FillMemory(.HashPad(0), LNG_SHA384_BLOCKSZ, LNG_HMAC_OUTER_PAD)
             For lIdx = 0 To UBound(baKey)
                 .HashPad(lIdx) = baKey(lIdx) Xor LNG_HMAC_OUTER_PAD
             Next
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, VarPtr(.HashPad(0)), LNG_SHA384_BLOCKSZ
-            pvCryptoCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, VarPtr(.HashFinal(0)), LNG_SHA384_HASHSZ
-            pvCryptoCallSha2Final .Pfn(ucsPfnSha384Final), lCtxPtr, baRetVal(0)
+            pvCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, VarPtr(.HashPad(0)), LNG_SHA384_BLOCKSZ
+            pvCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, VarPtr(.HashFinal(0)), LNG_SHA384_HASHSZ
+            pvCallSha2Final .Pfn(ucsPfnSha384Final), lCtxPtr, baRetVal(0)
         #End If
     End With
     CryptoHmacSha384 = baRetVal
@@ -794,7 +902,7 @@ Public Function CryptoAeadChacha20Poly1305Encrypt( _
         #If ImplUseLibSodium Then
             Call crypto_aead_chacha20poly1305_ietf_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baNonce(0), baKey(0))
         #Else
-            Call pvCryptoCallChacha20Poly1305Encrypt(m_uData.Pfn(ucsPfnChacha20Poly1305Encrypt), _
+            Call pvCallChacha20Poly1305Encrypt(m_uData.Pfn(ucsPfnChacha20Poly1305Encrypt), _
                     baKey(0), baNonce(0), _
                     lAdPtr, lAdSize, _
                     baBuffer(lPos), lSize, _
@@ -818,7 +926,7 @@ Public Function CryptoAeadChacha20Poly1305Decrypt( _
             CryptoAeadChacha20Poly1305Decrypt = True
         End If
     #Else
-        If pvCryptoCallChacha20Poly1305Decrypt(m_uData.Pfn(ucsPfnChacha20Poly1305Decrypt), _
+        If pvCallChacha20Poly1305Decrypt(m_uData.Pfn(ucsPfnChacha20Poly1305Decrypt), _
                 baKey(0), baNonce(0), _
                 baAad(lAadPos), lAdSize, _
                 baBuffer(lPos), lSize - LNG_CHACHA20POLY1305_TAGSZ, _
@@ -849,7 +957,7 @@ Public Function CryptoAeadAesGcmEncrypt( _
         #If ImplUseLibSodium Then
             Call crypto_aead_aes256gcm_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baNonce(0), baKey(0))
         #Else
-            Call pvCryptoCallAesGcmEncrypt(m_uData.Pfn(ucsPfnAesGcmEncrypt), _
+            Call pvCallAesGcmEncrypt(m_uData.Pfn(ucsPfnAesGcmEncrypt), _
                     baBuffer(lPos), baBuffer(lPos + lSize), _
                     baBuffer(lPos), lSize, _
                     lAdPtr, lAdSize, _
@@ -877,7 +985,7 @@ Public Function CryptoAeadAesGcmDecrypt( _
             CryptoAeadAesGcmDecrypt = True
         End If
     #Else
-        If pvCryptoCallAesGcmDecrypt(m_uData.Pfn(ucsPfnAesGcmDecrypt), _
+        If pvCallAesGcmDecrypt(m_uData.Pfn(ucsPfnAesGcmDecrypt), _
                 baBuffer(lPos), _
                 baBuffer(lPos), lSize - LNG_AESGCM_TAGSZ, _
                 baBuffer(lPos + lSize - LNG_AESGCM_TAGSZ), _
@@ -905,7 +1013,7 @@ Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As B
     Dim lPkiPtr         As Long
     Dim lKeyPtr         As Long
     Dim lKeySize        As Long
-    Dim uKeyBlob        As CRYPT_DER_BLOB
+    Dim uKeyBlob        As CRYPT_BLOB_DATA
     Dim hPrivKey        As Long
     Dim pContext        As Long
     Dim lPtr            As Long
@@ -1126,10 +1234,10 @@ Public Function CryptoExtractPublicKey(baCert() As Byte, baPubKey() As Byte, Opt
     Call CopyMemory(lPtr, ByVal UnsignedAdd(pContext, 12), 4)       '--- dereference pContext->pCertInfo
     lPtr = UnsignedAdd(lPtr, 56)                                    '--- &pContext->pCertInfo->SubjectPublicKeyInfo
     Call CopyMemory(uInfo, ByVal lPtr, Len(uInfo))
-    sObjId = String$(lstrlen(uInfo.AlgObjIdPtr), 0)
-    Call CopyMemory(ByVal sObjId, ByVal uInfo.AlgObjIdPtr, Len(sObjId))
-    ReDim baPubKey(0 To uInfo.PubKeySize - 1) As Byte
-    Call CopyMemory(baPubKey(0), ByVal uInfo.PubKeyPtr, uInfo.PubKeySize)
+    sObjId = String$(lstrlen(uInfo.Algorithm.pszObjId), 0)
+    Call CopyMemory(ByVal sObjId, ByVal uInfo.Algorithm.pszObjId, Len(sObjId))
+    ReDim baPubKey(0 To uInfo.PublicKey.cbData - 1) As Byte
+    Call CopyMemory(baPubKey(0), ByVal uInfo.PublicKey.pbData, uInfo.PublicKey.cbData)
     '--- success
     CryptoExtractPublicKey = True
 QH:
@@ -1196,7 +1304,7 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
     Dim lPkiPtr         As Long
     Dim lKeyPtr         As Long
     Dim lKeySize        As Long
-    Dim uKeyBlob        As CRYPT_DER_BLOB
+    Dim uKeyBlob        As CRYPT_BLOB_DATA
     Dim hAlgRSA         As Long
     Dim hKey            As Long
     Dim uPadInfo        As BCRYPT_PSS_PADDING_INFO
@@ -1344,49 +1452,6 @@ Public Function SearchCollection(ByVal oCol As Collection, Index As Variant, Opt
 QH:
 End Function
 
-'--- PEM = privacy-enhanced mail
-Public Function CryptoPemTextPortions(sContents As String, sBoundary As String, Optional RetVal As Collection) As Collection
-    Dim vSplit          As Variant
-    Dim lIdx            As Long
-    Dim lJdx            As Long
-    Dim bInside         As Boolean
-    Dim lStart          As Long
-    Dim lSize           As Long
-    Dim sPortion        As String
-    
-    If RetVal Is Nothing Then
-        Set RetVal = New Collection
-    End If
-    vSplit = Split(Replace(sContents, vbCr, vbNullString), vbLf)
-    For lIdx = 0 To UBound(vSplit)
-        If Not bInside Then
-            If InStr(vSplit(lIdx), "-----BEGIN " & sBoundary & "-----") > 0 Then
-                lStart = lIdx + 1
-                lSize = 0
-                bInside = True
-            End If
-        Else
-            If InStr(vSplit(lIdx), "-----END " & sBoundary & "-----") > 0 Then
-                sPortion = String$(lSize, 0)
-                lSize = 1
-                For lJdx = lStart To lIdx - 1
-                    If InStr(vSplit(lJdx), ":") = 0 Then
-                        Mid$(sPortion, lSize, Len(vSplit(lJdx))) = vSplit(lJdx)
-                        lSize = lSize + Len(vSplit(lJdx))
-                    End If
-                Next
-                If Not SearchCollection(RetVal, sPortion) Then
-                    RetVal.Add FromBase64Array(sPortion), sPortion
-                End If
-                bInside = False
-            ElseIf InStr(vSplit(lIdx), ":") = 0 Then
-                lSize = lSize + Len(vSplit(lIdx))
-            End If
-        End If
-    Next
-    Set CryptoPemTextPortions = RetVal
-End Function
-
 Public Function FromBase64Array(sText As String) As Byte()
     Dim baRetVal()      As Byte
     Dim lSize           As Long
@@ -1403,6 +1468,31 @@ Public Function FromBase64Array(sText As String) As Byte()
 End Function
 
 '= private ===============================================================
+
+Private Function CryptoFromEccPrivateKey(baPrivKey() As Byte) As Byte()
+    Dim baRetVal()      As Byte
+    Dim lPkiPtr         As Long
+    Dim uEccKeyInfo     As CRYPT_ECC_PRIVATE_KEY_INFO
+    Dim hResult         As Long
+    Dim sApiSource      As String
+
+    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG, 0, lPkiPtr, 0) = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CryptDecodeObjectEx(X509_ECC_PRIVATE_KEY)"
+        GoTo QH
+    End If
+    Call CopyMemory(uEccKeyInfo, ByVal lPkiPtr, Len(uEccKeyInfo))
+    ReDim baRetVal(0 To uEccKeyInfo.PrivateKey.cbData - 1) As Byte
+    Call CopyMemory(baRetVal(0), ByVal uEccKeyInfo.PrivateKey.pbData, uEccKeyInfo.PrivateKey.cbData)
+    CryptoFromEccPrivateKey = baRetVal
+QH:
+    If lPkiPtr <> 0 Then
+        Call LocalFree(lPkiPtr)
+    End If
+    If LenB(sApiSource) <> 0 Then
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+    End If
+End Function
 
 Private Function pvArraySize(baArray() As Byte) As Long
     Dim lPtr            As Long
@@ -1507,6 +1597,23 @@ Private Function UnsignedAdd(ByVal lUnsignedPtr As Long, ByVal lSignedOffset As 
     UnsignedAdd = ((lUnsignedPtr Xor &H80000000) + lSignedOffset) Xor &H80000000
 End Function
 
+Public Function ReadBinaryFile(sFile As String) As Byte()
+    Dim baBuffer()      As Byte
+    Dim nFile           As Integer
+    
+    baBuffer = vbNullString
+    If GetFileAttributes(sFile) <> -1 Then
+        nFile = FreeFile
+        Open sFile For Binary Access Read Shared As nFile
+        If LOF(nFile) > 0 Then
+            ReDim baBuffer(0 To LOF(nFile) - 1) As Byte
+            Get nFile, , baBuffer
+        End If
+        Close nFile
+    End If
+    ReadBinaryFile = baBuffer
+End Function
+
 #If ImplUseLibSodium Then
     Private Sub crypto_hash_sha384_init(baCtx() As Byte)
         Static baSha384State() As Byte
@@ -1524,58 +1631,58 @@ End Function
 
 '= trampolines ===========================================================
 
-Private Function pvCryptoCallCurve25519Multiply(ByVal Pfn As Long, pSecretPtr As Byte, pPubKeyPtr As Byte, pPrivKeyPtr As Byte) As Long
+Private Function pvCallCurve25519Multiply(ByVal Pfn As Long, pSecretPtr As Byte, pPubKeyPtr As Byte, pPrivKeyPtr As Byte) As Long
     ' void cf_curve25519_mul(uint8_t out[32], const uint8_t priv[32], const uint8_t pub[32])
 End Function
 
-Private Function pvCryptoCallCurve25519MulBase(ByVal Pfn As Long, pPubKeyPtr As Byte, pPrivKeyPtr As Byte) As Long
+Private Function pvCallCurve25519MulBase(ByVal Pfn As Long, pPubKeyPtr As Byte, pPrivKeyPtr As Byte) As Long
     ' void cf_curve25519_mul_base(uint8_t out[32], const uint8_t priv[32])
 End Function
 
-Private Function pvCryptoCallSecpMakeKey(ByVal Pfn As Long, pPubKeyPtr As Byte, pPrivKeyPtr As Byte) As Long
+Private Function pvCallSecpMakeKey(ByVal Pfn As Long, pPubKeyPtr As Byte, pPrivKeyPtr As Byte) As Long
     ' int ecc_make_key(uint8_t p_publicKey[ECC_BYTES+1], uint8_t p_privateKey[ECC_BYTES]);
     ' int ecc_make_key384(uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_privateKey[ECC_BYTES_384])
 End Function
 
-Private Function pvCryptoCallSecpSharedSecret(ByVal Pfn As Long, pPubKeyPtr As Byte, pPrivKeyPtr As Byte, pSecretPtr As Byte) As Long
+Private Function pvCallSecpSharedSecret(ByVal Pfn As Long, pPubKeyPtr As Byte, pPrivKeyPtr As Byte, pSecretPtr As Byte) As Long
     ' int ecdh_shared_secret(const uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_privateKey[ECC_BYTES], uint8_t p_secret[ECC_BYTES]);
     ' int ecdh_shared_secret384(const uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_privateKey[ECC_BYTES_384], uint8_t p_secret[ECC_BYTES_384])
 End Function
 
-Private Function pvCryptoCallSecpUncompressKey(ByVal Pfn As Long, pPubKeyPtr As Byte, pUncompressedKeyPtr As Byte) As Long
+Private Function pvCallSecpUncompressKey(ByVal Pfn As Long, pPubKeyPtr As Byte, pUncompressedKeyPtr As Byte) As Long
     ' int ecdh_uncompress_key(const uint8_t p_publicKey[ECC_BYTES + 1], uint8_t p_uncompressedKey[2 * ECC_BYTES + 1])
     ' int ecdh_uncompress_key384(const uint8_t p_publicKey[ECC_BYTES_384 + 1], uint8_t p_uncompressedKey[2 * ECC_BYTES_384 + 1])
 End Function
 
-Private Function pvCryptoCallSecpSign(ByVal Pfn As Long, pPrivKeyPtr As Byte, pHashPtr As Byte, pRandomPtr As Byte, pSignaturePtr As Byte) As Long
+Private Function pvCallSecpSign(ByVal Pfn As Long, pPrivKeyPtr As Byte, pHashPtr As Byte, pRandomPtr As Byte, pSignaturePtr As Byte) As Long
     ' int ecdsa_sign(const uint8_t p_privateKey[ECC_BYTES], const uint8_t p_hash[ECC_BYTES], uint64_t k[NUM_ECC_DIGITS], uint8_t p_signature[ECC_BYTES*2])
     ' int ecdsa_sign384(const uint8_t p_privateKey[ECC_BYTES_384], const uint8_t p_hash[ECC_BYTES_384], uint64_t k[NUM_ECC_DIGITS_384], uint8_t p_signature[ECC_BYTES_384*2])
 End Function
 
-Private Function pvCryptoCallSecpVerify(ByVal Pfn As Long, pPubKeyPtr As Byte, pHashPtr As Byte, pSignaturePtr As Byte) As Long
+Private Function pvCallSecpVerify(ByVal Pfn As Long, pPubKeyPtr As Byte, pHashPtr As Byte, pSignaturePtr As Byte) As Long
     ' int ecdsa_verify(const uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_hash[ECC_BYTES], const uint8_t p_signature[ECC_BYTES*2])
     ' int ecdsa_verify384(const uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_hash[ECC_BYTES_384], const uint8_t p_signature[ECC_BYTES_384*2])
 End Function
 
-Private Function pvCryptoCallSha2Init(ByVal Pfn As Long, ByVal lCtxPtr As Long) As Long
+Private Function pvCallSha2Init(ByVal Pfn As Long, ByVal lCtxPtr As Long) As Long
     ' void cf_sha256_init(cf_sha256_context *ctx)
     ' void cf_sha384_init(cf_sha384_context *ctx)
     ' void cf_sha512_init(cf_sha512_context *ctx)
 End Function
 
-Private Function pvCryptoCallSha2Update(ByVal Pfn As Long, ByVal lCtxPtr As Long, ByVal lDataPtr As Long, ByVal lSize As Long) As Long
+Private Function pvCallSha2Update(ByVal Pfn As Long, ByVal lCtxPtr As Long, ByVal lDataPtr As Long, ByVal lSize As Long) As Long
     ' void cf_sha256_update(cf_sha256_context *ctx, const void *data, size_t nbytes)
     ' void cf_sha384_update(cf_sha384_context *ctx, const void *data, size_t nbytes)
     ' void cf_sha512_update(cf_sha512_context *ctx, const void *data, size_t nbytes)
 End Function
 
-Private Function pvCryptoCallSha2Final(ByVal Pfn As Long, ByVal lCtxPtr As Long, pHashPtr As Byte) As Long
+Private Function pvCallSha2Final(ByVal Pfn As Long, ByVal lCtxPtr As Long, pHashPtr As Byte) As Long
     ' void cf_sha256_digest_final(cf_sha256_context *ctx, uint8_t hash[LNG_SHA256_HASHSZ])
     ' void cf_sha384_digest_final(cf_sha384_context *ctx, uint8_t hash[LNG_SHA384_HASHSZ])
     ' void cf_sha512_digest_final(cf_sha512_context *ctx, uint8_t hash[LNG_SHA384_HASHSZ])
 End Function
 
-Private Function pvCryptoCallChacha20Poly1305Encrypt( _
+Private Function pvCallChacha20Poly1305Encrypt( _
             ByVal Pfn As Long, pKeyPtr As Byte, pNoncePtr As Byte, _
             ByVal lHeaderPtr As Long, ByVal lHeaderSize As Long, _
             pPlaintTextPtr As Byte, ByVal lPlaintTextSize As Long, _
@@ -1584,7 +1691,7 @@ Private Function pvCryptoCallChacha20Poly1305Encrypt( _
     '                                  const uint8_t *plaintext, size_t nbytes, uint8_t *ciphertext, uint8_t tag[16])
 End Function
 
-Private Function pvCryptoCallChacha20Poly1305Decrypt( _
+Private Function pvCallChacha20Poly1305Decrypt( _
             ByVal Pfn As Long, pKeyPtr As Byte, pNoncePtr As Byte, _
             pHeaderPtr As Byte, ByVal lHeaderSize As Long, _
             pCipherTextPtr As Byte, ByVal lCipherTextSize As Long, _
@@ -1593,14 +1700,14 @@ Private Function pvCryptoCallChacha20Poly1305Decrypt( _
     '                                 const uint8_t *ciphertext, size_t nbytes, const uint8_t tag[16], uint8_t *plaintext)
 End Function
 
-Private Function pvCryptoCallAesGcmEncrypt( _
+Private Function pvCallAesGcmEncrypt( _
             ByVal Pfn As Long, pCipherTextPtr As Byte, pTagPtr As Byte, pPlaintTextPtr As Byte, ByVal lPlaintTextSize As Long, _
             ByVal lHeaderPtr As Long, ByVal lHeaderSize As Long, pNoncePtr As Byte, pKeyPtr As Byte, ByVal lKeySize As Long) As Long
     ' void cf_aesgcm_encrypt(uint8_t *c, uint8_t *mac, const uint8_t *m, const size_t mlen, const uint8_t *ad, const size_t adlen,
     '                        const uint8_t *npub, const uint8_t *k, size_t klen)
 End Function
 
-Private Function pvCryptoCallAesGcmDecrypt( _
+Private Function pvCallAesGcmDecrypt( _
             ByVal Pfn As Long, pPlaintTextPtr As Byte, pCipherTextPtr As Byte, ByVal lCipherTextSize As Long, pTagPtr As Byte, _
             pHeaderPtr As Byte, ByVal lHeaderSize As Long, pNoncePtr As Byte, pKeyPtr As Byte, ByVal lKeySize As Long) As Long
     ' void cf_aesgcm_decrypt(uint8_t *m, const uint8_t *c, const size_t clen, const uint8_t *mac, const uint8_t *ad, const size_t adlen,
@@ -1619,4 +1726,431 @@ Private Function pvCallCollectionRemove(ByVal oCol As Collection, Index As Varia
     
     pvPatchMethodTrampoline AddressOf mdTlsCrypto.pvCallCollectionRemove, IDX_COLLECTION_REMOVE
     pvCallCollectionRemove = pvCallCollectionRemove(oCol, Index)
+End Function
+
+'=========================================================================
+' PKI
+'=========================================================================
+
+Public Function PkiPemImportCertificates(ByVal vPemFiles As Variant, cCerts As Collection, baPrivKey() As Byte) As Boolean
+    Dim vElem           As Variant
+    Dim sPemText        As String
+    Dim cKeys           As Collection
+    
+    If VarType(vPemFiles) = vbString Then
+        vPemFiles = Array(vPemFiles)
+    End If
+    For Each vElem In vPemFiles
+        sPemText = StrConv(CStr(ReadBinaryFile(CStr(vElem))), vbUnicode)
+        PkiPemGetTextPortions sPemText, "PRIVATE KEY", cKeys
+        PkiPemGetTextPortions sPemText, "EC PRIVATE KEY", cKeys
+        PkiPemGetTextPortions sPemText, "CERTIFICATE", cCerts
+    Next
+    If SearchCollection(cKeys, 1, RetVal:=baPrivKey) Then
+        '--- success
+        PkiPemImportCertificates = True
+    End If
+End Function
+
+Private Function PkiPemGetTextPortions(sContents As String, sBoundary As String, Optional RetVal As Collection) As Collection
+    Dim vSplit          As Variant
+    Dim lIdx            As Long
+    Dim lJdx            As Long
+    Dim bInside         As Boolean
+    Dim lStart          As Long
+    Dim lSize           As Long
+    Dim sPortion        As String
+    
+    If RetVal Is Nothing Then
+        Set RetVal = New Collection
+    End If
+    vSplit = Split(Replace(sContents, vbCr, vbNullString), vbLf)
+    For lIdx = 0 To UBound(vSplit)
+        If Not bInside Then
+            If InStr(vSplit(lIdx), "-----BEGIN " & sBoundary & "-----") > 0 Then
+                lStart = lIdx + 1
+                lSize = 0
+                bInside = True
+            End If
+        Else
+            If InStr(vSplit(lIdx), "-----END " & sBoundary & "-----") > 0 Then
+                sPortion = String$(lSize, 0)
+                lSize = 1
+                For lJdx = lStart To lIdx - 1
+                    If InStr(vSplit(lJdx), ":") = 0 Then
+                        Mid$(sPortion, lSize, Len(vSplit(lJdx))) = vSplit(lJdx)
+                        lSize = lSize + Len(vSplit(lJdx))
+                    End If
+                Next
+                If Not SearchCollection(RetVal, sPortion) Then
+                    RetVal.Add FromBase64Array(sPortion), sPortion
+                End If
+                bInside = False
+            ElseIf InStr(vSplit(lIdx), ":") = 0 Then
+                lSize = lSize + Len(vSplit(lIdx))
+            End If
+        End If
+    Next
+    Set PkiPemGetTextPortions = RetVal
+End Function
+
+Public Function PkiPfxImportCertificates(sPfxFile As String, sPassword As String, cCerts As Collection, baPrivKey() As Byte) As Boolean
+    Dim baPfx()         As Byte
+    Dim uBlob           As CRYPT_BLOB_DATA
+    Dim hPfxStore       As Long
+    Dim pCertContext    As Long
+    Dim uCertContext    As CERT_CONTEXT
+    Dim baBuffer()      As Byte
+    Dim hResult         As Long
+    Dim sApiSource      As String
+    
+    baPfx = ReadBinaryFile(sPfxFile)
+    If UBound(baPfx) < 0 Then
+        GoTo QH
+    End If
+    uBlob.cbData = UBound(baPfx) + 1
+    uBlob.pbData = VarPtr(baPfx(0))
+    hPfxStore = PFXImportCertStore(uBlob, StrPtr(sPassword), CRYPT_EXPORTABLE)
+    If hPfxStore = 0 Then
+        hPfxStore = PFXImportCertStore(baPfx(0), 0, CRYPT_EXPORTABLE)
+    End If
+    If hPfxStore = 0 Then
+        sApiSource = "PFXImportCertStore"
+        hResult = Err.LastDllError
+        GoTo QH
+    End If
+    Do
+        pCertContext = CertEnumCertificatesInStore(hPfxStore, pCertContext)
+        If pCertContext = 0 Then
+            Exit Do
+        End If
+        Call CopyMemory(uCertContext, ByVal pCertContext, Len(uCertContext))
+        If uCertContext.cbCertEncoded > 0 Then
+            ReDim baBuffer(0 To uCertContext.cbCertEncoded - 1) As Byte
+            Call CopyMemory(baBuffer(0), ByVal uCertContext.pbCertEncoded, uCertContext.cbCertEncoded)
+            If cCerts Is Nothing Then
+                Set cCerts = New Collection
+            End If
+            cCerts.Add baBuffer
+        End If
+        If PkiExportPrivateKey(pCertContext, baPrivKey) Then
+            If cCerts.Count > 1 Then
+                '--- move certificate w/ private ket to the beginning of the collection
+                baBuffer = cCerts.Item(cCerts.Count)
+                cCerts.Remove cCerts.Count
+                cCerts.Add baBuffer, Before:=1
+            End If
+            '--- success
+            PkiPfxImportCertificates = True
+        End If
+    Loop
+QH:
+    If LenB(sApiSource) <> 0 Then
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+    End If
+End Function
+
+'= private ===============================================================
+
+Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As Byte) As Boolean
+    Dim lSize           As Long
+    Dim baBuffer()      As Byte
+    Dim uKeyInfo        As CRYPT_KEY_PROV_INFO
+    Dim hProv           As Long
+    Dim lKeySpec        As Long
+    Dim lFree           As Long
+    Dim hCngKey         As Long
+    Dim hNewKey         As Long
+    Dim hKey            As Long
+    Dim lMagic          As Long
+    Dim hResult         As Long
+    Dim sApiSource      As String
+    
+    '--- can use CRYPT_ACQUIRE_PREFER_NCRYPT_KEY_FLAG for all CNG handling
+    If CryptAcquireCertificatePrivateKey(pCertContext, CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG, 0, hProv, lKeySpec, lFree) = 0 Then
+        GoTo QH
+    End If
+    If lKeySpec < 0 Then
+        hCngKey = hProv: hProv = 0
+        hNewKey = PkiCloneKeyWithExportPolicy(hCngKey, NCRYPT_ALLOW_EXPORT_FLAG Or NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG)
+        hResult = NCryptExportKey(hNewKey, 0, StrPtr("PRIVATEBLOB"), ByVal 0, ByVal 0, 0, lSize, 0)
+        If hResult < 0 Then
+            sApiSource = "NCryptExportKey(PRIVATEBLOB)"
+            GoTo QH
+        End If
+        ReDim baBuffer(0 To lSize - 1) As Byte
+        hResult = NCryptExportKey(hNewKey, 0, StrPtr("PRIVATEBLOB"), ByVal 0, baBuffer(0), UBound(baBuffer) + 1, lSize, 0)
+        If hResult < 0 Then
+            sApiSource = "NCryptExportKey(PRIVATEBLOB)#2"
+            GoTo QH
+        End If
+        Call CopyMemory(lMagic, baBuffer(0), 4)
+        Select Case lMagic
+        Case BCRYPT_RSAPRIVATE_MAGIC
+            hResult = NCryptExportKey(hNewKey, 0, StrPtr("RSAFULLPRIVATEBLOB"), ByVal 0, ByVal 0, 0, lSize, 0)
+            If hResult < 0 Then
+                sApiSource = "NCryptExportKey(RSAFULLPRIVATEBLOB)"
+                GoTo QH
+            End If
+            ReDim baBuffer(0 To lSize - 1) As Byte
+            hResult = NCryptExportKey(hNewKey, 0, StrPtr("RSAFULLPRIVATEBLOB"), ByVal 0, baBuffer(0), UBound(baBuffer) + 1, lSize, 0)
+            If hResult < 0 Then
+                sApiSource = "NCryptExportKey(RSAFULLPRIVATEBLOB)#2"
+                GoTo QH
+            End If
+            baPrivKey = PkiExportRsaPrivateKey(baBuffer, CNG_RSA_PRIVATE_KEY_BLOB)
+        Case BCRYPT_ECDH_PRIVATE_P256_MAGIC, BCRYPT_ECDH_PRIVATE_P384_MAGIC, BCRYPT_ECDH_PRIVATE_P521_MAGIC
+            Call CopyMemory(lSize, baBuffer(4), 4)
+            Debug.Assert 8 + 3 * lSize <= UBound(baBuffer) + 1
+            Call CopyMemory(baBuffer(0), baBuffer(8 + 2 * lSize), lSize)
+            ReDim Preserve baBuffer(0 To lSize - 1) As Byte
+            baPrivKey = PkiExportEccPrivateKey(baBuffer, lMagic)
+        Case Else
+            Debug.Print "Unknown CNG private key magic (0x" & Hex$(lMagic) & ")"
+        End Select
+    Else
+        If CertGetCertificateContextProperty(pCertContext, CERT_KEY_PROV_INFO_PROP_ID, ByVal 0, lSize) = 0 Then
+            hResult = Err.LastDllError
+            sApiSource = "CertGetCertificateContextProperty(CERT_KEY_PROV_INFO_PROP_ID)"
+            GoTo QH
+        End If
+        ReDim baBuffer(0 To lSize - 1) As Byte
+        If CertGetCertificateContextProperty(pCertContext, CERT_KEY_PROV_INFO_PROP_ID, baBuffer(0), lSize) = 0 Then
+            hResult = Err.LastDllError
+            sApiSource = "CertGetCertificateContextProperty(CERT_KEY_PROV_INFO_PROP_ID)#2"
+            GoTo QH
+        End If
+        Call CopyMemory(uKeyInfo, baBuffer(0), Len(uKeyInfo))
+        If CryptAcquireContext(hProv, uKeyInfo.pwszContainerName, uKeyInfo.pwszProvName, uKeyInfo.dwProvType, uKeyInfo.dwFlags) = 0 Then
+            hResult = Err.LastDllError
+            sApiSource = "CryptAcquireContext"
+            GoTo QH
+        End If
+        If CryptGetUserKey(hProv, uKeyInfo.dwKeySpec, hKey) = 0 Then
+            hResult = Err.LastDllError
+            sApiSource = "CryptGetUserKey"
+            GoTo QH
+        End If
+        If CryptExportKey(hKey, 0, PRIVATEKEYBLOB, 0, ByVal 0, lSize) = 0 Then
+            hResult = Err.LastDllError
+            sApiSource = "CryptExportKey(PRIVATEKEYBLOB)"
+            GoTo QH
+        End If
+        ReDim baBuffer(0 To lSize - 1) As Byte
+        If CryptExportKey(hKey, 0, PRIVATEKEYBLOB, 0, baBuffer(0), lSize) = 0 Then
+            hResult = Err.LastDllError
+            sApiSource = "CryptExportKey(PRIVATEKEYBLOB)#2"
+            GoTo QH
+        End If
+        Call CopyMemory(lMagic, baBuffer(8), 4)
+        Select Case lMagic
+        Case BCRYPT_RSAPRIVATE_MAGIC
+            baPrivKey = PkiExportRsaPrivateKey(baBuffer, PKCS_RSA_PRIVATE_KEY)
+        Case BCRYPT_ECDH_PRIVATE_P256_MAGIC, BCRYPT_ECDH_PRIVATE_P384_MAGIC, BCRYPT_ECDH_PRIVATE_P521_MAGIC
+            baPrivKey = PkiExportEccPrivateKey(baBuffer, lMagic)
+        Case Else
+            Debug.Print "Unknown CAPI private key magic (0x" & Hex$(lMagic) & ")"
+        End Select
+    End If
+    '--- success
+    PkiExportPrivateKey = True
+QH:
+    If hKey <> 0 Then
+        Call CryptDestroyKey(hKey)
+        hKey = 0
+    End If
+    If hProv <> 0 And lFree <> 0 Then
+        Call CryptReleaseContext(hProv, 0)
+        hProv = 0
+    End If
+    If hCngKey <> 0 And lFree <> 0 Then
+        Call NCryptFreeObject(hCngKey)
+        hCngKey = 0
+    End If
+    If hNewKey <> 0 Then
+        Call NCryptFreeObject(hNewKey)
+        hNewKey = 0
+    End If
+    If LenB(sApiSource) <> 0 Then
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+    End If
+End Function
+
+Private Function PkiExportRsaPrivateKey(baPrivBlob() As Byte, ByVal lStructType As Long) As Byte()
+    Dim baRetVal()      As Byte
+    Dim baRsaPrivKey()  As Byte
+    Dim uPrivKey        As CRYPT_PRIVATE_KEY_INFO
+    Dim lSize           As Long
+    Dim sObjId          As String
+    Dim hResult         As Long
+    Dim sApiSource      As String
+    
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, lStructType, baPrivBlob(0), 0, 0, ByVal 0, lSize) = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CryptEncodeObjectEx"
+        GoTo QH
+    End If
+    ReDim baRsaPrivKey(0 To lSize - 1)
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, lStructType, baPrivBlob(0), 0, 0, baRsaPrivKey(0), lSize) = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CryptEncodeObjectEx#2"
+        GoTo QH
+    End If
+    sObjId = StrConv(szOID_RSA_RSA, vbFromUnicode)
+    With uPrivKey
+        .Algorithm.pszObjId = StrPtr(sObjId)
+        .PrivateKey.pbData = VarPtr(baRsaPrivKey(0))
+        .PrivateKey.cbData = UBound(baRsaPrivKey) + 1
+    End With
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, uPrivKey, 0, 0, ByVal 0, lSize) = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CryptEncodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
+        GoTo QH
+    End If
+    ReDim baRetVal(0 To lSize - 1)
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, uPrivKey, 0, 0, baRetVal(0), lSize) = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CryptEncodeObjectEx(PKCS_PRIVATE_KEY_INFO)#2"
+        GoTo QH
+    End If
+    PkiExportRsaPrivateKey = baRetVal
+QH:
+    If LenB(sApiSource) <> 0 Then
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+    End If
+End Function
+
+Private Function PkiExportEccPrivateKey(baPrivBlob() As Byte, ByVal lMagic As Long) As Byte()
+    Dim baRetVal()      As Byte
+    Dim sObjId          As String
+    Dim uEccPrivKey     As CRYPT_ECC_PRIVATE_KEY_INFO
+    Dim lSize           As Long
+    Dim hResult         As Long
+    Dim sApiSource      As String
+    
+    sObjId = StrConv(Switch(lMagic = BCRYPT_ECDH_PRIVATE_P521_MAGIC, szOID_ECC_CURVE_P521, _
+                            lMagic = BCRYPT_ECDH_PRIVATE_P384_MAGIC, szOID_ECC_CURVE_P384, _
+                            True, szOID_ECC_CURVE_P256), vbFromUnicode)
+    With uEccPrivKey
+        .dwVersion = 1
+        .PrivateKey.pbData = VarPtr(baPrivBlob(0))
+        .PrivateKey.cbData = UBound(baPrivBlob) + 1
+        .szCurveOid = StrPtr(sObjId)
+    End With
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, uEccPrivKey, 0, 0, ByVal 0, lSize) = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CryptEncodeObjectEx(X509_ECC_PRIVATE_KEY)"
+        GoTo QH
+    End If
+    ReDim baRetVal(0 To lSize - 1)
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, uEccPrivKey, 0, 0, baRetVal(0), lSize) = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CryptEncodeObjectEx(X509_ECC_PRIVATE_KEY)#2"
+        GoTo QH
+    End If
+    PkiExportEccPrivateKey = baRetVal
+QH:
+    If LenB(sApiSource) <> 0 Then
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+    End If
+End Function
+
+Private Function PkiCloneKeyWithExportPolicy(ByVal hKey As Long, ByVal lPolicy As Long) As Long
+    Const STR_PASSWORD  As String = "0000"
+    Dim baPkcs8()       As Byte
+    Dim uParams         As NCryptBufferDesc
+    Dim sSecret         As String
+    Dim sObjId          As String
+    Dim uPbeParams      As CRYPT_PKCS12_PBE_PARAMS
+    Dim lSize           As Long
+    Dim hProv           As Long
+    Dim sKeyName        As String
+    Dim hRetVal         As Long
+    Dim hResult         As Long
+    Dim sApiSource      As String
+    
+    '--- export PKCS#8 password protected blob
+    ReDim uParams.Buffers(0 To 2) As NCryptBuffer
+    uParams.cBuffers = UBound(uParams.Buffers) + 1
+    uParams.pBuffers = VarPtr(uParams.Buffers(0))
+    sSecret = STR_PASSWORD
+    With uParams.Buffers(0)
+        .BufferType = NCRYPTBUFFER_PKCS_SECRET
+        .pvBuffer = StrPtr(sSecret)
+        .cbBuffer = LenB(sSecret) + 2
+    End With
+    sObjId = StrConv(szOID_PKCS_12_pbeWithSHA1And3KeyTripleDES, vbFromUnicode)
+    With uParams.Buffers(1)
+        .BufferType = NCRYPTBUFFER_PKCS_ALG_OID
+        .pvBuffer = StrPtr(sObjId)
+        .cbBuffer = LenB(sObjId) + 1
+    End With
+    uPbeParams.cbSalt = 8
+    uPbeParams.iIterations = 2048
+    With uParams.Buffers(2)
+        .BufferType = NCRYPTBUFFER_PKCS_ALG_PARAM
+        .pvBuffer = VarPtr(uPbeParams)
+        .cbBuffer = 8 + uPbeParams.cbSalt
+    End With
+    hResult = NCryptExportKey(hKey, 0, StrPtr("PKCS8_PRIVATEKEY"), uParams, ByVal 0, 0, lSize, 0)
+    If hResult < 0 Then
+        sApiSource = "NCryptExportKey(PKCS8_PRIVATEKEY)"
+        GoTo QH
+    End If
+    ReDim baPkcs8(0 To lSize - 1) As Byte
+    hResult = NCryptExportKey(hKey, 0, StrPtr("PKCS8_PRIVATEKEY"), uParams, baPkcs8(0), UBound(baPkcs8) + 1, lSize, 0)
+    If hResult < 0 Then
+        sApiSource = "NCryptExportKey(PKCS8_PRIVATEKEY)#2"
+        GoTo QH
+    End If
+    '--- retrieve more key props
+    hResult = NCryptGetProperty(hKey, StrPtr("Provider Handle"), hProv, 4, lSize, 0)
+    If hResult < 0 Then
+        sApiSource = "NCryptGetProperty(Provider Handle)"
+        GoTo QH
+    End If
+    ReDim baBuffer(0 To 1023) As Byte
+    hResult = NCryptGetProperty(hKey, StrPtr("Name"), baBuffer(0), UBound(baBuffer) + 1, lSize, 0)
+    If hResult < 0 Then
+        sApiSource = "NCryptGetProperty(Name)"
+        GoTo QH
+    End If
+    '--- reduce size one more to strip final vbNullChar
+    ReDim Preserve baBuffer(0 To lSize - 2) As Byte
+    sKeyName = CStr(baBuffer)
+    '--- import PKCS#8 blob and set Export Policy before finalizing
+    ReDim uParams.Buffers(0 To 1) As NCryptBuffer
+    uParams.cBuffers = UBound(uParams.Buffers) + 1
+    uParams.pBuffers = VarPtr(uParams.Buffers(0))
+    sSecret = STR_PASSWORD
+    With uParams.Buffers(0)
+        .BufferType = NCRYPTBUFFER_PKCS_SECRET
+        .pvBuffer = StrPtr(sSecret)
+        .cbBuffer = LenB(sSecret) + 2
+    End With
+    With uParams.Buffers(1)
+        .BufferType = NCRYPTBUFFER_PKCS_KEY_NAME
+        .pvBuffer = StrPtr(sKeyName)
+        .cbBuffer = LenB(sKeyName) + 2
+    End With
+    hResult = NCryptImportKey(hProv, 0, StrPtr("PKCS8_PRIVATEKEY"), uParams, hRetVal, baPkcs8(0), UBound(baPkcs8) + 1, NCRYPT_OVERWRITE_KEY_FLAG Or NCRYPT_DO_NOT_FINALIZE_FLAG)
+    If hResult < 0 Then
+        sApiSource = "NCryptImportKey(PKCS8_PRIVATEKEY)"
+        GoTo QH
+    End If
+    hResult = NCryptSetProperty(hRetVal, StrPtr("Export Policy"), lPolicy, 4, NCRYPT_PERSIST_FLAG)
+    If hResult < 0 Then
+        sApiSource = "NCryptSetProperty(Export Policy)"
+        GoTo QH
+    End If
+    hResult = NCryptFinalizeKey(hRetVal, 0)
+    If hResult < 0 Then
+        sApiSource = "NCryptFinalizeKey"
+        GoTo QH
+    End If
+    PkiCloneKeyWithExportPolicy = hRetVal
+QH:
+    If LenB(sApiSource) <> 0 Then
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+    End If
 End Function
