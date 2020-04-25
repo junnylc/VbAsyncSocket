@@ -104,6 +104,9 @@ Private Const TLS_MAX_ENCRYPTED_RECORD_SIZE             As Long = (16384 + 256)
 Private Const TLS_RECORD_VERSION                        As Long = TLS_PROTOCOL_VERSION_TLS12 '--- always legacy version
 Private Const TLS_LOCAL_LEGACY_VERSION                  As Long = &H303
 Private Const TLS_HELLO_RANDOM_SIZE                     As Long = 32
+Private Const szOID_RSA_RSA                             As String = "1.2.840.113549.1.1.1"
+Private Const szOID_RSA_SSA_PSS                         As String = "1.2.840.113549.1.1.10"
+Private Const szOID_ECC_PUBLIC_KEY                      As String = "1.2.840.10045.2.1"
 
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As Long
@@ -116,9 +119,6 @@ Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal uc
 Private Const STR_VL_ALERTS             As String = "0|Close notify|10|Unexpected message|20|Bad record mac|40|Handshake failure|42|Bad certificate|44|Certificate revoked|45|Certificate expired|46|Certificate unknown|47|Illegal parameter|48|Unknown CA|50|Decode error|51|Decrypt error|70|Protocol version|80|Internal error|90|User canceled|109|Missing extension|112|Unrecognized name|116|Certificate required|120|No application protocol"
 Private Const STR_UNKNOWN               As String = "Unknown (%1)"
 Private Const STR_FORMAT_ALERT          As String = """%1"" alert"
-Private Const STR_OID_ecPublicKey       As String = "1.2.840.10045.2.1"
-Private Const STR_OID_rsaEncryption     As String = "1.2.840.113549.1.1.1"
-Private Const STR_OID_rsaPSS            As String = "1.2.840.113549.1.1.10"
 '--- numeric
 Private Const LNG_AAD_SIZE              As Long = 5     '--- size of additional authenticated data for TLS 1.3
 Private Const LNG_LEGACY_AAD_SIZE       As Long = 13    '--- for TLS 1.2
@@ -1845,15 +1845,15 @@ Private Function pvParseHandshakeClientHello(uCtx As UcsTlsContext, baInput() As
                                 Select Case lSignatureType
                                 Case TLS_SIGNATURE_RSA_PKCS1_SHA1, TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512, _
                                         TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512
-                                    If sPubKeyObjId = STR_OID_rsaEncryption Then
+                                    If sPubKeyObjId = szOID_RSA_RSA Then
                                         .LocalSignatureType = lSignatureType
                                     End If
                                 Case TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
-                                    If sPubKeyObjId = STR_OID_rsaPSS Then
+                                    If sPubKeyObjId = szOID_RSA_SSA_PSS Then
                                         .LocalSignatureType = lSignatureType
                                     End If
                                 Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, TLS_SIGNATURE_ECDSA_SECP384R1_SHA384, TLS_SIGNATURE_ECDSA_SECP521R1_SHA512
-                                    If sPubKeyObjId = STR_OID_ecPublicKey Then
+                                    If sPubKeyObjId = szOID_ECC_PUBLIC_KEY Then
                                         .LocalSignatureType = lSignatureType
                                     End If
                                 End Select
@@ -2374,7 +2374,7 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
             End If
         End If
     Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, TLS_SIGNATURE_ECDSA_SECP384R1_SHA384, TLS_SIGNATURE_ECDSA_SECP521R1_SHA512
-        If Not CryptoExtractPublicKey(baCert, baPubKey, sPubKeyObjId) Or sPubKeyObjId <> STR_OID_ecPublicKey Then
+        If Not CryptoExtractPublicKey(baCert, baPubKey, sPubKeyObjId) Or sPubKeyObjId <> szOID_ECC_PUBLIC_KEY Then
             sError = Replace(ERR_UNSUPPORTED_PUBLIC_KEY, "%1", sPubKeyObjId)
             eAlertCode = uscTlsAlertHandshakeFailure
             GoTo QH
@@ -2410,7 +2410,7 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
     '--- success
     pvCryptoVerifySignature = True
 QH:
-    Debug.Print IIf(pvCryptoVerifySignature, IIf(bSkip, "Skipping ", "Valid "), "Invalid ") & pvCryptoSignatureTypeName(lSignatureType) & " signature" & IIf(lCurveSize > 0, " (but with " & lCurveSize & " bytes curve)", vbNullString), Timer
+    Debug.Print IIf(pvCryptoVerifySignature, IIf(bSkip, "Skipping ", "Valid "), "Invalid ") & pvCryptoSignatureTypeName(lSignatureType) & " signature" & IIf(lCurveSize > 0 And pvCryptoVerifySignature, " (but with " & lCurveSize & " bytes curve)", vbNullString), Timer
     If uRsaCtx.hProv <> 0 Then
         Call CryptoRsaTerminateContext(uRsaCtx)
     End If
@@ -2521,6 +2521,7 @@ Private Function pvCryptoToDerSignature(baPlainSig() As Byte, ByVal lPartSize As
             lPos = pvWriteBuffer(baRetVal, lPos, VarPtr(baPlainSig(lPartSize + lStart)), lPartSize - lStart)
         lPos = pvWriteEndOfBlock(baRetVal, lPos, cStack)
     lPos = pvWriteEndOfBlock(baRetVal, lPos, cStack)
+    pvCryptoToDerSignature = baRetVal
 End Function
 
 '= buffer management =====================================================
