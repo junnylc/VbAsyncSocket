@@ -408,7 +408,7 @@ Public Function TlsSend(uCtx As UcsTlsContext, baPlainText() As Byte, ByVal lSiz
         pvSetLastError uCtx, vbNullString
         '--- swap-in
         pvArraySwap .SendBuffer, .SendPos, baOutput, lPos
-        .SendPos = pvBuildApplicationData(uCtx, .SendBuffer, .SendPos, baPlainText, lSize, .LastError, .LastAlertCode)
+        .SendPos = pvBuildApplicationData(uCtx, .SendBuffer, .SendPos, baPlainText, lSize, TLS_CONTENT_TYPE_APPDATA, .LastError, .LastAlertCode)
         If LenB(.LastError) <> 0 Then
             pvSetLastError uCtx, .LastError, .LastAlertCode
             GoTo QH
@@ -942,6 +942,7 @@ Private Function pvBuildServerHandshakeFinished(uCtx As UcsTlsContext, baOutput(
     Dim lIdx            As Long
     Dim baTemp()        As Byte
     Dim baSignature()   As Byte
+    Dim uRsaCtx         As UcsRsaContextType
     
     With uCtx
         '--- Legacy Change Cipher Spec
@@ -993,6 +994,13 @@ Private Function pvBuildServerHandshakeFinished(uCtx As UcsTlsContext, baOutput(
                     baVerifyData = pvCryptoHash(pvCryptoSignatureDigestAlgo(.LocalSignatureType), baVerifyData, 0)
                     Debug.Print "Signing with " & pvCryptoSignatureTypeName(.LocalSignatureType) & " signature", Timer
                     Select Case .LocalSignatureType
+                    Case TLS_SIGNATURE_RSA_PKCS1_SHA1, TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512
+                        If Not CryptoRsaInitContext(uRsaCtx, .LocalPrivateKey, EmptyByteArray, EmptyByteArray, .LocalSignatureType) Then
+                            sError = "CryptoRsaInitContext failed"
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
+                        End If
+                        baSignature = CryptoRsaSign(uRsaCtx, baVerifyData)
                     Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, _
                             TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
                         baSignature = CryptoRsaPssSign(.LocalPrivateKey, baVerifyData, .LocalSignatureType)
@@ -1039,9 +1047,12 @@ Private Function pvBuildServerHandshakeFinished(uCtx As UcsTlsContext, baOutput(
     End With
     pvBuildServerHandshakeFinished = lPos
 QH:
+    If uRsaCtx.hProv <> 0 Then
+        Call CryptoRsaTerminateContext(uRsaCtx)
+    End If
 End Function
 
-Private Function pvBuildApplicationData(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, baData() As Byte, ByVal lSize As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
+Private Function pvBuildApplicationData(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, baData() As Byte, ByVal lSize As Long, ByVal lContentType As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
     Dim lRecordPos      As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
@@ -1065,7 +1076,7 @@ Private Function pvBuildApplicationData(uCtx As UcsTlsContext, baOutput() As Byt
                 lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baData(0)), lSize)
             End If
             If .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS13 Then
-                lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_APPDATA)
+                lPos = pvWriteLong(baOutput, lPos, lContentType)
             End If
             lMessageSize = lPos - lMessagePos
             lPos = pvWriteReserved(baOutput, lPos, .TagSize)
@@ -1104,11 +1115,10 @@ Private Function pvBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVal l
     With uCtx
         '--- for TLS 1.3 -> tunnel alert through application data encryption
         If .State = ucsTlsStatePostHandshake And .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS13 Then
-            ReDim baLocalIV(0 To 3) As Byte
-            baLocalIV(0) = eAlertDesc
-            baLocalIV(1) = lAlertLevel
-            baLocalIV(2) = TLS_CONTENT_TYPE_ALERT
-            pvBuildAlert = pvBuildApplicationData(uCtx, baOutput, lPos, baLocalIV, UBound(baLocalIV) + 1, sError, eAlertCode)
+            ReDim baLocalIV(0 To 1) As Byte
+            baLocalIV(0) = lAlertLevel
+            baLocalIV(1) = eAlertDesc
+            pvBuildAlert = pvBuildApplicationData(uCtx, baOutput, lPos, baLocalIV, UBound(baLocalIV) + 1, TLS_CONTENT_TYPE_ALERT, sError, eAlertCode)
             GoTo QH
         End If
         lRecordPos = lPos
@@ -1619,7 +1629,7 @@ Private Function pvParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, lPos
                         End If
                         If lRequestUpdate <> 0 Then
                             '--- ack by TLS_HANDSHAKE_TYPE_KEY_UPDATE w/ update_not_requested(0)
-                            If pvBuildApplicationData(uCtx, baMessage, 0, pvArrayByte(TLS_HANDSHAKE_TYPE_KEY_UPDATE, 0, 0, 1, 0), -1, sError, eAlertCode) = 0 Then
+                            If pvBuildApplicationData(uCtx, baMessage, 0, pvArrayByte(TLS_HANDSHAKE_TYPE_KEY_UPDATE, 0, 0, 1, 0), -1, TLS_CONTENT_TYPE_APPDATA, sError, eAlertCode) = 0 Then
                                 GoTo QH
                             End If
                             .SendPos = pvWriteArray(.SendBuffer, .SendPos, baMessage)
@@ -1843,13 +1853,17 @@ Private Function pvParseHandshakeClientHello(uCtx As UcsTlsContext, baInput() As
                             Do While lPos < lExtEnd
                                 lPos = pvReadLong(baInput, lPos, lSignatureType, Size:=2)
                                 Select Case lSignatureType
-                                Case TLS_SIGNATURE_RSA_PKCS1_SHA1, TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512, _
+                                Case TLS_SIGNATURE_RSA_PKCS1_SHA1
+                                    If sPubKeyObjId = szOID_RSA_RSA And Not CryptoIsSupported(ucsTlsAlgoSignaturePkcsSha2) Then
+                                        .LocalSignatureType = lSignatureType
+                                    End If
+                                Case TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512, _
                                         TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512
-                                    If sPubKeyObjId = szOID_RSA_RSA Then
+                                    If sPubKeyObjId = szOID_RSA_RSA And CryptoIsSupported(ucsTlsAlgoSignaturePkcsSha2) Then
                                         .LocalSignatureType = lSignatureType
                                     End If
                                 Case TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
-                                    If sPubKeyObjId = szOID_RSA_SSA_PSS Then
+                                    If sPubKeyObjId = szOID_RSA_SSA_PSS And CryptoIsSupported(ucsTlsAlgoSignaturePss) Then
                                         .LocalSignatureType = lSignatureType
                                     End If
                                 Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, TLS_SIGNATURE_ECDSA_SECP384R1_SHA384, TLS_SIGNATURE_ECDSA_SECP521R1_SHA512
