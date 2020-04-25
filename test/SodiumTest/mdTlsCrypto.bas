@@ -28,6 +28,8 @@ Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA512          As Long = &H80B
 '--- for CryptAcquireContext
 Private Const PROV_RSA_FULL                             As Long = 1
 Private Const PROV_RSA_AES                              As Long = 24
+Private Const CRYPT_NEWKEYSET                           As Long = &H8
+Private Const CRYPT_DELETEKEYSET                        As Long = &H10
 Private Const CRYPT_VERIFYCONTEXT                       As Long = &HF0000000
 '--- for CryptDecodeObjectEx
 Private Const X509_ASN_ENCODING                         As Long = 1
@@ -46,10 +48,14 @@ Private Const CALG_SHA_384                              As Long = &H800D&
 Private Const CALG_SHA_512                              As Long = &H800E&
 '--- for CryptSignHash
 Private Const AT_KEYEXCHANGE                            As Long = 1
+Private Const AT_SIGNATURE                              As Long = 2
+Private Const RSA1024BIT_KEY                            As Long = &H4000000
 Private Const MAX_RSA_KEY                               As Long = 8192     '--- in bits
 '--- for CryptVerifySignature
 Private Const NTE_BAD_SIGNATURE                         As Long = &H80090006
+Private Const NTE_BAD_ALGID                             As Long = &H80090008
 Private Const NTE_PROV_TYPE_NOT_DEF                     As Long = &H80090017
+Private Const ERROR_FILE_NOT_FOUND                      As Long = 2
 '--- for BCryptSignHash
 Private Const BCRYPT_PAD_PSS                            As Long = 8
 '--- for BCryptVerifySignature
@@ -69,6 +75,8 @@ Private Const NCRYPT_OVERWRITE_KEY_FLAG                 As Long = &H80
 Private Const NCRYPT_DO_NOT_FINALIZE_FLAG               As Long = &H400
 '--- for NCryptSetProperty
 Private Const NCRYPT_PERSIST_FLAG                       As Long = &H80000000
+'--- for CertStrToName
+Private Const CERT_OID_NAME_STR                         As Long = 2
 '--- OIDs
 Private Const szOID_RSA_RSA                             As String = "1.2.840.113549.1.1.1"
 Private Const szOID_ECC_CURVE_P256                      As String = "1.2.840.10045.3.1.7"
@@ -103,11 +111,13 @@ Private Declare Function LocalFree Lib "kernel32" (ByVal hMem As Long) As Long
 Private Declare Function GetVersionEx Lib "kernel32" Alias "GetVersionExA" (lpVersionInformation As Any) As Long
 Private Declare Function lstrlen Lib "kernel32" Alias "lstrlenA" (ByVal lpString As Long) As Long
 Private Declare Function GetFileAttributes Lib "kernel32" Alias "GetFileAttributesA" (ByVal lpFileName As String) As Long
+Private Declare Sub GetSystemTime Lib "kernel32" (lpSystemTime As SYSTEMTIME)
 '--- Crypt
 Private Declare Function CryptAcquireContext Lib "advapi32" Alias "CryptAcquireContextW" (phProv As Long, ByVal pszContainer As Long, ByVal pszProvider As Long, ByVal dwProvType As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptReleaseContext Lib "advapi32" (ByVal hProv As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptGenRandom Lib "advapi32" (ByVal hProv As Long, ByVal dwLen As Long, ByVal pbBuffer As Long) As Long
 Private Declare Function CryptImportKey Lib "advapi32" (ByVal hProv As Long, pbData As Any, ByVal dwDataLen As Long, ByVal hPubKey As Long, ByVal dwFlags As Long, phKey As Long) As Long
+Private Declare Function CryptGenKey Lib "advapi32" (ByVal hProv As Long, ByVal AlgId As Long, ByVal dwFlags As Long, phKey As Long) As Long
 Private Declare Function CryptDestroyKey Lib "advapi32" (ByVal hKey As Long) As Long
 Private Declare Function CryptCreateHash Lib "advapi32" (ByVal hProv As Long, ByVal AlgId As Long, ByVal hKey As Long, ByVal dwFlags As Long, phHash As Long) As Long
 Private Declare Function CryptHashData Lib "advapi32" (ByVal hHash As Long, pbData As Any, ByVal dwDataLen As Long, ByVal dwFlags As Long) As Long
@@ -128,6 +138,8 @@ Private Declare Function CryptGetUserKey Lib "advapi32" (ByVal hProv As Long, By
 Private Declare Function CryptExportKey Lib "advapi32" (ByVal hKey As Long, ByVal hExpKey As Long, ByVal dwBlobType As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long) As Long
 Private Declare Function CryptEncodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal lpszStructType As Long, pvStructInfo As Any, ByVal dwFlags As Long, ByVal pEncodePara As Long, pvEncoded As Any, pcbEncoded As Long) As Long
 Private Declare Function CryptAcquireCertificatePrivateKey Lib "crypt32" (ByVal pCert As Long, ByVal dwFlags As Long, ByVal pvParameters As Long, phCryptProvOrNCryptKey As Long, pdwKeySpec As Long, pfCallerFreeProvOrNCryptKey As Long) As Long
+Private Declare Function CertStrToName Lib "crypt32" Alias "CertStrToNameW" (ByVal dwCertEncodingType As Long, ByVal pszX500 As Long, ByVal dwStrType As Long, ByVal pvReserved As Long, pbEncoded As Any, pcbEncoded As Long, ByVal ppszError As Long) As Long
+Private Declare Function CertCreateSelfSignCertificate Lib "crypt32" (ByVal hCryptProvOrNCryptKey As Long, pSubjectIssuerBlob As Any, ByVal dwFlags As Long, pKeyProvInfo As Any, ByVal pSignatureAlgorithm As Long, pStartTime As Any, pEndTime As Any, ByVal pExtensions As Long) As Long
 '--- NCrypt
 Private Declare Function NCryptImportKey Lib "ncrypt" (ByVal hProvider As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, pParameterList As Any, phKey As Long, pbData As Any, ByVal cbData As Long, ByVal dwFlags As Long) As Long
 Private Declare Function NCryptExportKey Lib "ncrypt" (ByVal hKey As Long, ByVal hExportKey As Long, ByVal pszBlobType As Long, pParameterList As Any, pbOutput As Any, ByVal cbOutput As Long, pcbResult As Any, ByVal dwFlags As Long) As Long
@@ -233,6 +245,17 @@ Private Type CRYPT_PKCS12_PBE_PARAMS
     iIterations         As Long
     cbSalt              As Long
     SaltBuffer(0 To 31) As Byte
+End Type
+
+Private Type SYSTEMTIME
+    wYear               As Integer
+    wMonth              As Integer
+    wDayOfWeek          As Integer
+    wDay                As Integer
+    wHour               As Integer
+    wMinute             As Integer
+    wSecond             As Integer
+    wMilliseconds       As Integer
 End Type
 
 '=========================================================================
@@ -1473,12 +1496,24 @@ Private Function CryptoFromEccPrivateKey(baPrivKey() As Byte) As Byte()
     Dim baRetVal()      As Byte
     Dim lPkiPtr         As Long
     Dim uEccKeyInfo     As CRYPT_ECC_PRIVATE_KEY_INFO
+    Dim lSize           As Long
     Dim hResult         As Long
     Dim sApiSource      As String
 
     If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG, 0, lPkiPtr, 0) = 0 Then
         hResult = Err.LastDllError
-        sApiSource = "CryptDecodeObjectEx(X509_ECC_PRIVATE_KEY)"
+        If hResult = ERROR_FILE_NOT_FOUND Then '--- no X509_ECC_PRIVATE_KEY struct type on NT4
+            Call CopyMemory(lSize, baPrivKey(6), 1)
+            If 7 + lSize <= UBound(baPrivKey) Then
+                ReDim baRetVal(0 To lSize - 1) As Byte
+                Call CopyMemory(baRetVal(0), baPrivKey(7), lSize)
+                CryptoFromEccPrivateKey = baRetVal
+            Else
+                sApiSource = "CryptDecodeObjectEx(X509_ECC_PRIVATE_KEY)"
+            End If
+        Else
+            sApiSource = "CryptDecodeObjectEx(X509_ECC_PRIVATE_KEY)"
+        End If
         GoTo QH
     End If
     Call CopyMemory(uEccKeyInfo, ByVal lPkiPtr, Len(uEccKeyInfo))
@@ -1799,8 +1834,6 @@ Public Function PkiPfxImportCertificates(sPfxFile As String, sPassword As String
     Dim uBlob           As CRYPT_BLOB_DATA
     Dim hPfxStore       As Long
     Dim pCertContext    As Long
-    Dim uCertContext    As CERT_CONTEXT
-    Dim baBuffer()      As Byte
     Dim hResult         As Long
     Dim sApiSource      As String
     
@@ -1811,7 +1844,7 @@ Public Function PkiPfxImportCertificates(sPfxFile As String, sPassword As String
     uBlob.cbData = UBound(baPfx) + 1
     uBlob.pbData = VarPtr(baPfx(0))
     hPfxStore = PFXImportCertStore(uBlob, StrPtr(sPassword), CRYPT_EXPORTABLE)
-    If hPfxStore = 0 Then
+    If hPfxStore = 0 And Err.LastDllError <> NTE_BAD_ALGID Then
         hPfxStore = PFXImportCertStore(baPfx(0), 0, CRYPT_EXPORTABLE)
     End If
     If hPfxStore = 0 Then
@@ -1824,22 +1857,7 @@ Public Function PkiPfxImportCertificates(sPfxFile As String, sPassword As String
         If pCertContext = 0 Then
             Exit Do
         End If
-        Call CopyMemory(uCertContext, ByVal pCertContext, Len(uCertContext))
-        If uCertContext.cbCertEncoded > 0 Then
-            ReDim baBuffer(0 To uCertContext.cbCertEncoded - 1) As Byte
-            Call CopyMemory(baBuffer(0), ByVal uCertContext.pbCertEncoded, uCertContext.cbCertEncoded)
-            If cCerts Is Nothing Then
-                Set cCerts = New Collection
-            End If
-            cCerts.Add baBuffer
-        End If
-        If PkiExportPrivateKey(pCertContext, baPrivKey) Then
-            If cCerts.Count > 1 Then
-                '--- move certificate w/ private ket to the beginning of the collection
-                baBuffer = cCerts.Item(cCerts.Count)
-                cCerts.Remove cCerts.Count
-                cCerts.Add baBuffer, Before:=1
-            End If
+        If PkiImportCertificateContext(pCertContext, cCerts, baPrivKey) Then
             '--- success
             PkiPfxImportCertificates = True
         End If
@@ -1850,7 +1868,100 @@ QH:
     End If
 End Function
 
+Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As Byte, Optional Subject As String) As Boolean
+    Dim hProv           As Long
+    Dim sContainer      As String
+    Dim hKey            As Long
+    Dim sName           As String
+    Dim baName()        As Byte
+    Dim lSize           As Long
+    Dim uName           As CRYPT_BLOB_DATA
+    Dim uExpire         As SYSTEMTIME
+    Dim uInfo           As CRYPT_KEY_PROV_INFO
+    Dim pContext        As Long
+    Dim hResult         As Long
+    Dim sApiSource      As String
+    
+    If LenB(Subject) = 0 Then
+        Subject = Environ$("USERDNSDOMAIN")
+        Subject = LCase$(Environ$("COMPUTERNAME") & IIf(LenB(Subject) <> 0, "." & Subject, vbNullString))
+    End If
+    sContainer = "VbAsyncSocket-" & Subject
+    Call CryptAcquireContext(hProv, StrPtr(sContainer), 0, PROV_RSA_FULL, CRYPT_DELETEKEYSET)
+    If CryptAcquireContext(hProv, StrPtr(sContainer), 0, PROV_RSA_FULL, CRYPT_NEWKEYSET) = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CryptAcquireContext"
+        GoTo QH
+    End If
+    If CryptGenKey(hProv, AT_SIGNATURE, RSA1024BIT_KEY Or CRYPT_EXPORTABLE, hKey) = 0 Then
+        GoTo QH
+    End If
+    If Left$(Subject, 3) <> "CN=" Then
+        sName = "CN=""" & Subject & """"
+    Else
+        sName = Subject
+    End If
+    If CertStrToName(X509_ASN_ENCODING, StrPtr(sName), CERT_OID_NAME_STR, 0, ByVal 0, lSize, 0) = 0 Then
+        GoTo QH
+    End If
+    ReDim baName(0 To lSize - 1) As Byte
+    If CertStrToName(X509_ASN_ENCODING, StrPtr(sName), CERT_OID_NAME_STR, 0, baName(0), lSize, 0) = 0 Then
+        GoTo QH
+    End If
+    With uName
+        .cbData = lSize
+        .pbData = VarPtr(baName(0))
+    End With
+    Call GetSystemTime(uExpire)
+    uExpire.wYear = uExpire.wYear + 1
+    With uInfo
+        .pwszContainerName = StrPtr(sContainer)
+        .dwProvType = PROV_RSA_FULL
+        .dwKeySpec = AT_SIGNATURE
+    End With
+    pContext = CertCreateSelfSignCertificate(hProv, uName, 0, uInfo, 0, ByVal 0, uExpire, 0)
+    If PkiImportCertificateContext(pContext, cCerts, baPrivKey) Then
+        '--- success
+        PkiGenSelfSignedCertificate = True
+    End If
+QH:
+    If hKey <> 0 Then
+        Call CryptDestroyKey(hKey)
+    End If
+    If hProv <> 0 Then
+        Call CryptReleaseContext(hProv, 0)
+    End If
+    If LenB(sApiSource) <> 0 Then
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+    End If
+End Function
+
 '= private ===============================================================
+
+Private Function PkiImportCertificateContext(ByVal pCertContext As Long, cCerts As Collection, baPrivKey() As Byte) As Boolean
+    Dim uCertContext    As CERT_CONTEXT
+    Dim baBuffer()      As Byte
+    
+    Call CopyMemory(uCertContext, ByVal pCertContext, Len(uCertContext))
+    If uCertContext.cbCertEncoded > 0 Then
+        ReDim baBuffer(0 To uCertContext.cbCertEncoded - 1) As Byte
+        Call CopyMemory(baBuffer(0), ByVal uCertContext.pbCertEncoded, uCertContext.cbCertEncoded)
+        If cCerts Is Nothing Then
+            Set cCerts = New Collection
+        End If
+        cCerts.Add baBuffer
+    End If
+    If PkiExportPrivateKey(pCertContext, baPrivKey) Then
+        If cCerts.Count > 1 Then
+            '--- move certificate w/ private key to the beginning of the collection
+            baBuffer = cCerts.Item(cCerts.Count)
+            cCerts.Remove cCerts.Count
+            cCerts.Add baBuffer, Before:=1
+        End If
+        '--- success
+        PkiImportCertificateContext = True
+    End If
+End Function
 
 Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As Byte) As Boolean
     Dim lSize           As Long
@@ -1957,19 +2068,15 @@ Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As 
 QH:
     If hKey <> 0 Then
         Call CryptDestroyKey(hKey)
-        hKey = 0
     End If
     If hProv <> 0 And lFree <> 0 Then
         Call CryptReleaseContext(hProv, 0)
-        hProv = 0
     End If
     If hCngKey <> 0 And lFree <> 0 Then
         Call NCryptFreeObject(hCngKey)
-        hCngKey = 0
     End If
     If hNewKey <> 0 Then
         Call NCryptFreeObject(hNewKey)
-        hNewKey = 0
     End If
     If LenB(sApiSource) <> 0 Then
         Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource

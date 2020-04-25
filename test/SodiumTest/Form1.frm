@@ -121,8 +121,8 @@ End Sub
 
 Private Sub Form_Load()
 '    Const PEM_FILES     As String = "eccert.pem|ecprivkey.pem|fullchain2.pem"
-    Const PFX_FILE      As String = "eccert.pfx"
-    Const PFX_PASSWORD  As String = ""
+'    Const PFX_FILE      As String = "eccert.pfx"
+'    Const PFX_PASSWORD  As String = ""
     Dim sAddr           As String
     Dim lPort           As Long
     
@@ -131,8 +131,9 @@ Private Sub Form_Load()
     End If
     ChDir App.Path
 '    If Not PkiPemImportCertificates(Split(PEM_FILES, "|"), m_cCertificates, m_baPrivateKey) Then
-    If Not PkiPfxImportCertificates(PFX_FILE, PFX_PASSWORD, m_cCertificates, m_baPrivateKey) Then
-        MsgBox "Error starting TLS server on localhost:10443" & vbCrLf & vbCrLf & "No private key found in " & PFX_FILE, vbExclamation
+'    If Not PkiPfxImportCertificates(PFX_FILE, PFX_PASSWORD, m_cCertificates, m_baPrivateKey) Then
+    If Not PkiGenSelfSignedCertificate(m_cCertificates, m_baPrivateKey) Then
+        MsgBox "Error starting TLS server on localhost:10443" & vbCrLf & vbCrLf & "No private key found!", vbExclamation
         GoTo QH
     End If
     Set m_oServerSocket = New cAsyncSocket
