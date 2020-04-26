@@ -135,7 +135,7 @@ Private Sub Form_Load()
     End If
     ChDir App.Path
 '    If Not PkiPemImportCertificates(Split(PEM_FILES, "|"), m_cCertificates, m_baPrivateKey) Then
-'    If Not PkiPkcs11ImportCertificates(PFX_FILE, PFX_PASSWORD, m_cCertificates, m_baPrivateKey) Then
+'    If Not PkiPkcs12ImportCertificates(PFX_FILE, PFX_PASSWORD, m_cCertificates, m_baPrivateKey) Then
     If Not PkiGenSelfSignedCertificate(m_cCertificates, m_baPrivateKey) Then
         MsgBox "Error starting TLS server on localhost:10443" & vbCrLf & vbCrLf & "No private key found!", vbExclamation
         GoTo QH

@@ -1895,8 +1895,8 @@ Private Function PkiPemGetTextPortions(sContents As String, sBoundary As String,
     Set PkiPemGetTextPortions = RetVal
 End Function
 
-Public Function PkiPkcs11ImportCertificates(sPfxFile As String, sPassword As String, cCerts As Collection, baPrivKey() As Byte) As Boolean
-    Const FUNC_NAME     As String = "PkiPkcs11ImportCertificates"
+Public Function PkiPkcs12ImportCertificates(sPfxFile As String, sPassword As String, cCerts As Collection, baPrivKey() As Byte) As Boolean
+    Const FUNC_NAME     As String = "PkiPkcs12ImportCertificates"
     Dim baPfx()         As Byte
     Dim uBlob           As CRYPT_BLOB_DATA
     Dim hPfxStore       As Long
@@ -1926,7 +1926,7 @@ Public Function PkiPkcs11ImportCertificates(sPfxFile As String, sPassword As Str
         End If
         If PkiImportCertificateContext(pCertContext, cCerts, baPrivKey) Then
             '--- success
-            PkiPkcs11ImportCertificates = True
+            PkiPkcs12ImportCertificates = True
         End If
     Loop
 QH:
