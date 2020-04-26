@@ -120,18 +120,22 @@ End Sub
 '=========================================================================
 
 Private Sub Form_Load()
-'    Const PEM_FILES     As String = "eccert.pem|ecprivkey.pem|fullchain2.pem"
-'    Const PFX_FILE      As String = "eccert.pfx"
-'    Const PFX_PASSWORD  As String = ""
+    Const PEM_FILES     As String = "eccert.pem|ecprivkey.pem|fullchain2.pem"
+    Const PFX_FILE      As String = "eccert.pfx"
+    Const PFX_PASSWORD  As String = ""
     Dim sAddr           As String
     Dim lPort           As Long
     
     If txtResult.Font.Name = "Arial" Then
         txtResult.Font.Name = "Courier New"
     End If
+    sAddr = GetSetting(App.Title, "Form1", "txtUrl", txtUrl.Text)
+    If LenB(sAddr) <> 0 Then
+        txtUrl.Text = sAddr
+    End If
     ChDir App.Path
 '    If Not PkiPemImportCertificates(Split(PEM_FILES, "|"), m_cCertificates, m_baPrivateKey) Then
-'    If Not PkiPfxImportCertificates(PFX_FILE, PFX_PASSWORD, m_cCertificates, m_baPrivateKey) Then
+'    If Not PkiPkcs11ImportCertificates(PFX_FILE, PFX_PASSWORD, m_cCertificates, m_baPrivateKey) Then
     If Not PkiGenSelfSignedCertificate(m_cCertificates, m_baPrivateKey) Then
         MsgBox "Error starting TLS server on localhost:10443" & vbCrLf & vbCrLf & "No private key found!", vbExclamation
         GoTo QH
@@ -150,6 +154,11 @@ Private Sub Form_Resize()
     If WindowState <> vbMinimized Then
         txtResult.Move 0, txtResult.Top, ScaleWidth, ScaleHeight - txtResult.Top
     End If
+End Sub
+
+Private Sub Form_Unload(Cancel As Integer)
+    SaveSetting App.Title, "Form1", "txtUrl", txtUrl.Text
+    Set m_cRequestHandlers = Nothing
 End Sub
 
 Private Sub Command1_Click()
@@ -384,10 +393,6 @@ End Sub
 Public Function IsKeyPressed(ByVal lVirtKey As KeyCodeConstants) As Boolean
     IsKeyPressed = ((GetAsyncKeyState(lVirtKey) And &H8000) = &H8000)
 End Function
-
-Private Sub Form_Unload(Cancel As Integer)
-    Set m_cRequestHandlers = Nothing
-End Sub
 
 Private Sub m_oServerSocket_OnAccept()
     Const FUNC_NAME     As String = "m_oServerSocket_OnAccept"
