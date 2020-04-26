@@ -68,6 +68,8 @@ Private Const CRYPT_EXPORTABLE                          As Long = &H1
 '--- for CryptExportKey
 Private Const PRIVATEKEYBLOB                            As Long = 7
 '--- for CryptAcquireCertificatePrivateKey
+Private Const CRYPT_ACQUIRE_CACHE_FLAG                  As Long = &H1
+Private Const CRYPT_ACQUIRE_SILENT_FLAG                 As Long = &H40
 Private Const CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG       As Long = &H10000
 'Private Const CRYPT_ACQUIRE_PREFER_NCRYPT_KEY_FLAG      As Long = &H20000
 '--- for NCryptImportKey
@@ -430,6 +432,7 @@ End Property
 '=========================================================================
 
 Public Function CryptoInit() As Boolean
+    Const FUNC_NAME     As String = "CryptoInit"
     Dim lOffset         As Long
     Dim lIdx            As Long
     Dim hResult          As Long
@@ -494,7 +497,7 @@ Public Function CryptoInit() As Boolean
     CryptoInit = True
 QH:
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
@@ -1062,6 +1065,7 @@ End Sub
 '= RSA helpers ===========================================================
 
 Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As Byte, baCert() As Byte, baPubKey() As Byte, Optional ByVal SignatureType As Long) As Boolean
+    Const FUNC_NAME     As String = "CryptoRsaInitContext"
     Dim lHashAlgId      As Long
     Dim hProv           As Long
     Dim lPkiPtr         As Long
@@ -1170,7 +1174,7 @@ QH:
         Call LocalFree(lKeyPtr)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
@@ -1190,6 +1194,7 @@ Public Sub CryptoRsaTerminateContext(uCtx As UcsRsaContextType)
 End Sub
 
 Public Function CryptoRsaSign(uCtx As UcsRsaContextType, baMessage() As Byte) As Byte()
+    Const FUNC_NAME     As String = "CryptoRsaSign"
     Const MAX_SIG_SIZE  As Long = MAX_RSA_KEY / 8
     Dim baRetVal()      As Byte
     Dim hHash           As Long
@@ -1227,11 +1232,12 @@ QH:
         Call CryptDestroyHash(hHash)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
 Public Function CryptoRsaVerify(uCtx As UcsRsaContextType, baMessage() As Byte, baSignature() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoRsaVerify"
     Dim hHash           As Long
     Dim lSize           As Long
     Dim hResult         As Long
@@ -1268,11 +1274,12 @@ QH:
         Call CryptDestroyHash(hHash)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
 Public Function CryptoExtractPublicKey(baCert() As Byte, baPubKey() As Byte, Optional sObjId As String) As Boolean
+    Const FUNC_NAME     As String = "CryptoExtractPublicKey"
     Dim pContext        As Long
     Dim lPtr            As Long
     Dim hResult         As Long
@@ -1299,11 +1306,12 @@ QH:
         Call CertFreeCertificateContext(pContext)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
 Public Function CryptoRsaEncrypt(ByVal hKey As Long, baPlainText() As Byte) As Byte()
+    Const FUNC_NAME     As String = "CryptoRsaEncrypt"
     Const MAX_RSA_BYTES As Long = MAX_RSA_KEY / 8
     Dim baRetVal()      As Byte
     Dim lSize           As Long
@@ -1325,11 +1333,12 @@ Public Function CryptoRsaEncrypt(ByVal hKey As Long, baPlainText() As Byte) As B
     CryptoRsaEncrypt = baRetVal
 QH:
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
 Public Function CryptoRsaDecrypt(ByVal hPrivKey As Long, baCipherText() As Byte) As Byte()
+    Const FUNC_NAME     As String = "CryptoRsaDecrypt"
     Dim baRetVal()      As Byte
     Dim lSize           As Long
     Dim hResult         As Long
@@ -1349,11 +1358,12 @@ Public Function CryptoRsaDecrypt(ByVal hPrivKey As Long, baCipherText() As Byte)
     CryptoRsaDecrypt = baRetVal
 QH:
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
 Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal lSignatureType As Long) As Byte()
+    Const FUNC_NAME     As String = "CryptoRsaPssSign"
     Dim baRetVal()      As Byte
     Dim lPkiPtr         As Long
     Dim lKeyPtr         As Long
@@ -1423,11 +1433,12 @@ QH:
         Call LocalFree(lPkiPtr)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
 Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSignature() As Byte, ByVal lSignatureType As Long) As Boolean
+    Const FUNC_NAME     As String = "CryptoRsaPssVerify"
     Dim pContext        As Long
     Dim lPtr            As Long
     Dim hKey            As Long
@@ -1478,7 +1489,7 @@ QH:
         Call CertFreeCertificateContext(pContext)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
@@ -1524,6 +1535,7 @@ End Function
 '= private ===============================================================
 
 Private Function CryptoFromEccPrivateKey(baPrivKey() As Byte) As Byte()
+    Const FUNC_NAME     As String = "CryptoFromEccPrivateKey"
     Dim baRetVal()      As Byte
     Dim lPkiPtr         As Long
     Dim uEccKeyInfo     As CRYPT_ECC_PRIVATE_KEY_INFO
@@ -1556,7 +1568,7 @@ QH:
         Call LocalFree(lPkiPtr)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
@@ -1864,7 +1876,8 @@ Private Function PkiPemGetTextPortions(sContents As String, sBoundary As String,
     Set PkiPemGetTextPortions = RetVal
 End Function
 
-Public Function PkiPfxImportCertificates(sPfxFile As String, sPassword As String, cCerts As Collection, baPrivKey() As Byte) As Boolean
+Public Function PkiPkcs11ImportCertificates(sPfxFile As String, sPassword As String, cCerts As Collection, baPrivKey() As Byte) As Boolean
+    Const FUNC_NAME     As String = "PkiPkcs11ImportCertificates"
     Dim baPfx()         As Byte
     Dim uBlob           As CRYPT_BLOB_DATA
     Dim hPfxStore       As Long
@@ -1894,18 +1907,18 @@ Public Function PkiPfxImportCertificates(sPfxFile As String, sPassword As String
         End If
         If PkiImportCertificateContext(pCertContext, cCerts, baPrivKey) Then
             '--- success
-            PkiPfxImportCertificates = True
+            PkiPkcs11ImportCertificates = True
         End If
     Loop
 QH:
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
-Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As Byte, Optional Subject As String) As Boolean
+Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As Byte, Optional ByVal Subject As String) As Boolean
+    Const FUNC_NAME     As String = "PkiGenSelfSignedCertificate"
     Dim hProv           As Long
-    Dim sContainer      As String
     Dim hKey            As Long
     Dim sName           As String
     Dim baName()        As Byte
@@ -1917,13 +1930,8 @@ Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As
     Dim hResult         As Long
     Dim sApiSource      As String
     
-    If LenB(Subject) = 0 Then
-        Subject = Environ$("USERDNSDOMAIN")
-        Subject = LCase$(Environ$("COMPUTERNAME") & IIf(LenB(Subject) <> 0, "." & Subject, vbNullString))
-    End If
-    sContainer = "VbAsyncSocket-" & Subject
-    Call CryptAcquireContext(hProv, StrPtr(sContainer), 0, PROV_RSA_FULL, CRYPT_DELETEKEYSET)
-    If CryptAcquireContext(hProv, StrPtr(sContainer), 0, PROV_RSA_FULL, CRYPT_NEWKEYSET) = 0 Then
+    Call CryptAcquireContext(0, 0, 0, PROV_RSA_FULL, CRYPT_DELETEKEYSET)
+    If CryptAcquireContext(hProv, 0, 0, PROV_RSA_FULL, CRYPT_NEWKEYSET) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptAcquireContext"
         GoTo QH
@@ -1932,7 +1940,10 @@ Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As
         GoTo QH
     End If
     If Left$(Subject, 3) <> "CN=" Then
-        sName = "CN=""" & Subject & """"
+        If LenB(Subject) = 0 Then
+            Subject = LCase$(Environ$("COMPUTERNAME") & IIf(LenB(Environ$("USERDNSDOMAIN")) <> 0, "." & Environ$("USERDNSDOMAIN"), vbNullString))
+        End If
+        sName = "CN=""" & Replace(Subject, """", """""") & """" & ",OU=""" & Replace(Environ$("USERDOMAIN") & "\" & Environ$("USERNAME"), """", """""") & """,O=""VbAsyncSocket Self-Signed Certificate"""
     Else
         sName = Subject
     End If
@@ -1950,7 +1961,6 @@ Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As
     Call GetSystemTime(uExpire)
     uExpire.wYear = uExpire.wYear + 1
     With uInfo
-        .pwszContainerName = StrPtr(sContainer)
         .dwProvType = PROV_RSA_FULL
         .dwKeySpec = AT_SIGNATURE
     End With
@@ -1965,9 +1975,10 @@ QH:
     End If
     If hProv <> 0 Then
         Call CryptReleaseContext(hProv, 0)
+        Call CryptAcquireContext(0, 0, 0, PROV_RSA_FULL, CRYPT_DELETEKEYSET)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
@@ -1999,21 +2010,24 @@ Private Function PkiImportCertificateContext(ByVal pCertContext As Long, cCerts 
 End Function
 
 Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As Byte) As Boolean
-    Dim lSize           As Long
-    Dim baBuffer()      As Byte
-    Dim uKeyInfo        As CRYPT_KEY_PROV_INFO
+    Const FUNC_NAME     As String = "PkiExportPrivateKey"
+    Dim dwFlags         As Long
     Dim hProv           As Long
     Dim lKeySpec        As Long
     Dim lFree           As Long
     Dim hCngKey         As Long
     Dim hNewKey         As Long
+    Dim lSize           As Long
+    Dim baBuffer()      As Byte
+    Dim uKeyInfo        As CRYPT_KEY_PROV_INFO
     Dim hKey            As Long
     Dim lMagic          As Long
     Dim hResult         As Long
     Dim sApiSource      As String
     
-    '--- can use CRYPT_ACQUIRE_PREFER_NCRYPT_KEY_FLAG for all CNG handling
-    If CryptAcquireCertificatePrivateKey(pCertContext, CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG, 0, hProv, lKeySpec, lFree) = 0 Then
+    '--- note: this function allows using CRYPT_ACQUIRE_PREFER_NCRYPT_KEY_FLAG too for key export w/ all CNG API calls
+    dwFlags = CRYPT_ACQUIRE_CACHE_FLAG Or CRYPT_ACQUIRE_SILENT_FLAG Or CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG
+    If CryptAcquireCertificatePrivateKey(pCertContext, dwFlags, 0, hProv, lKeySpec, lFree) = 0 Then
         GoTo QH
     End If
     If lKeySpec < 0 Then
@@ -2114,11 +2128,12 @@ QH:
         Call NCryptFreeObject(hNewKey)
     End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
 Private Function PkiExportRsaPrivateKey(baPrivBlob() As Byte, ByVal lStructType As Long) As Byte()
+    Const FUNC_NAME     As String = "PkiExportRsaPrivateKey"
     Dim baRetVal()      As Byte
     Dim baRsaPrivKey()  As Byte
     Dim uPrivKey        As CRYPT_PRIVATE_KEY_INFO
@@ -2158,11 +2173,12 @@ Private Function PkiExportRsaPrivateKey(baPrivBlob() As Byte, ByVal lStructType 
     PkiExportRsaPrivateKey = baRetVal
 QH:
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
 Private Function PkiExportEccPrivateKey(baPrivBlob() As Byte, ByVal lMagic As Long) As Byte()
+    Const FUNC_NAME     As String = "PkiExportEccPrivateKey"
     Dim baRetVal()      As Byte
     Dim sObjId          As String
     Dim uEccPrivKey     As CRYPT_ECC_PRIVATE_KEY_INFO
@@ -2193,11 +2209,12 @@ Private Function PkiExportEccPrivateKey(baPrivBlob() As Byte, ByVal lMagic As Lo
     PkiExportEccPrivateKey = baRetVal
 QH:
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
 Private Function PkiCloneKeyWithExportPolicy(ByVal hKey As Long, ByVal lPolicy As Long) As Long
+    Const FUNC_NAME     As String = "PkiCloneKeyWithExportPolicy"
     Const STR_PASSWORD  As String = "0000"
     Dim baPkcs8()       As Byte
     Dim uParams         As NCryptBufferDesc
@@ -2251,15 +2268,19 @@ Private Function PkiCloneKeyWithExportPolicy(ByVal hKey As Long, ByVal lPolicy A
         sApiSource = "NCryptGetProperty(Provider Handle)"
         GoTo QH
     End If
-    ReDim baBuffer(0 To 1023) As Byte
-    hResult = NCryptGetProperty(hKey, StrPtr("Name"), baBuffer(0), UBound(baBuffer) + 1, lSize, 0)
+    hResult = NCryptGetProperty(hKey, StrPtr("Name"), ByVal 0, 0, lSize, 0)
     If hResult < 0 Then
         sApiSource = "NCryptGetProperty(Name)"
         GoTo QH
     End If
-    '--- reduce size one more to strip final vbNullChar
-    ReDim Preserve baBuffer(0 To lSize - 2) As Byte
-    sKeyName = CStr(baBuffer)
+    ReDim baBuffer(0 To lSize - 1) As Byte
+    hResult = NCryptGetProperty(hKey, StrPtr("Name"), baBuffer(0), UBound(baBuffer) + 1, lSize, 0)
+    If hResult < 0 Then
+        sApiSource = "NCryptGetProperty(Name)#2"
+        GoTo QH
+    End If
+    '--- remove trailing terminating zero too
+    sKeyName = Replace(CStr(baBuffer), vbNullChar, vbNullString)
     '--- import PKCS#8 blob and set Export Policy before finalizing
     ReDim uParams.Buffers(0 To 1) As NCryptBuffer
     uParams.cBuffers = UBound(uParams.Buffers) + 1
@@ -2292,7 +2313,10 @@ Private Function PkiCloneKeyWithExportPolicy(ByVal hKey As Long, ByVal lPolicy A
     End If
     PkiCloneKeyWithExportPolicy = hRetVal
 QH:
+    If hProv <> 0 Then
+        Call NCryptFreeObject(hProv)
+    End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
