@@ -2366,6 +2366,8 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
     Dim sPubKeyObjId    As String
     Dim lCurveSize      As Long
     Dim bSkip           As Boolean
+    Dim baTemp()        As Byte
+    Dim bDeprecated     As Boolean
     
     Select Case lSignatureType
     Case TLS_SIGNATURE_RSA_PKCS1_SHA1, TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512
@@ -2399,6 +2401,18 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
         If pvArraySize(baPlainSig) = 0 Then
             GoTo InvalidSignature
         End If
+        If UBound(baVerifyHash) + 1 < lCurveSize Then
+            '--- note: when hash size is less than curve size must left-pad w/ zeros (right-align hash) -> deprecated
+            '---       incl. ECDSA_SECP384R1_SHA256 only
+            baTemp = baVerifyHash
+            ReDim baVerifyHash(0 To lCurveSize - 1) As Byte
+            Call CopyMemory(baVerifyHash(lCurveSize - UBound(baTemp) - 1), baTemp(0), UBound(baTemp) + 1)
+            bDeprecated = True
+        ElseIf UBound(baVerifyHash) + 1 > lCurveSize Then
+            '--- note: when hash size is above curve size the excess is ignored -> deprecated
+            '---       incl. ECDSA_SECP256R1_SHA384, ECDSA_SECP256R1_SHA512 and ECDSA_SECP384R1_SHA512
+            bDeprecated = True
+        End If
         Select Case lCurveSize
         Case TLS_SECP256R1_KEY_SIZE
             If Not CryptoEccSecp256r1Verify(baPubKey, baVerifyHash, baPlainSig) Then
@@ -2413,9 +2427,6 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
             eAlertCode = uscTlsAlertHandshakeFailure
             GoTo QH
         End Select
-        If lCurveSize = pvArraySize(baVerifyHash) Then
-            lCurveSize = 0
-        End If
     Case Else
         sError = Replace(ERR_UNSUPPORTED_SIGNATURE_TYPE, "%1", "0x" & Hex$(lSignatureType))
         eAlertCode = uscTlsAlertInternalError
@@ -2424,7 +2435,7 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
     '--- success
     pvCryptoVerifySignature = True
 QH:
-    Debug.Print IIf(pvCryptoVerifySignature, IIf(bSkip, "Skipping ", "Valid "), "Invalid ") & pvCryptoSignatureTypeName(lSignatureType) & " signature" & IIf(lCurveSize > 0 And pvCryptoVerifySignature, " (but with " & lCurveSize & " bytes curve)", vbNullString), Timer
+    Debug.Print IIf(pvCryptoVerifySignature, IIf(bSkip, "Skipping ", IIf(bDeprecated, "Deprecated ", "Valid ")), "Invalid ") & pvCryptoSignatureTypeName(lSignatureType) & " signature" & IIf(bDeprecated, " (lCurveSize=" & lCurveSize & " from server's public key)", vbNullString), Timer
     If uRsaCtx.hProv <> 0 Then
         Call CryptoRsaTerminateContext(uRsaCtx)
     End If
