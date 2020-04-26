@@ -625,7 +625,7 @@ Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
-    baPrivate = CryptoExtractPrivateKeyFromDer(baPrivKey)
+    baPrivate = CryptoDecodePrivateKeyFromDer(baPrivKey)
     ReDim baRandom(0 To m_uData.Ecc256KeySize - 1) As Byte
     ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize - 1) As Byte
     For lIdx = 1 To MAX_RETRIES
@@ -699,7 +699,7 @@ Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
-    baPrivate = CryptoExtractPrivateKeyFromDer(baPrivKey)
+    baPrivate = CryptoDecodePrivateKeyFromDer(baPrivKey)
     ReDim baRandom(0 To m_uData.Ecc384KeySize - 1) As Byte
     ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize - 1) As Byte
     For lIdx = 1 To MAX_RETRIES
@@ -1465,8 +1465,8 @@ QH:
     End If
 End Function
 
-Public Function CryptoExtractPrivateKeyFromDer(baPrivKey() As Byte) As Byte()
-    Const FUNC_NAME     As String = "CryptoExtractPrivateKeyFromDer"
+Public Function CryptoDecodePrivateKeyFromDer(baPrivKey() As Byte) As Byte()
+    Const FUNC_NAME     As String = "CryptoDecodePrivateKeyFromDer"
     Dim baRetVal()      As Byte
     Dim lPkiPtr         As Long
     Dim uEccKeyInfo     As CRYPT_ECC_PRIVATE_KEY_INFO
@@ -1481,7 +1481,7 @@ Public Function CryptoExtractPrivateKeyFromDer(baPrivKey() As Byte) As Byte()
             If 7 + lSize <= UBound(baPrivKey) Then
                 ReDim baRetVal(0 To lSize - 1) As Byte
                 Call CopyMemory(baRetVal(0), baPrivKey(7), lSize)
-                CryptoExtractPrivateKeyFromDer = baRetVal
+                CryptoDecodePrivateKeyFromDer = baRetVal
             Else
                 sApiSource = "CryptDecodeObjectEx(X509_ECC_PRIVATE_KEY)"
             End If
@@ -1493,7 +1493,7 @@ Public Function CryptoExtractPrivateKeyFromDer(baPrivKey() As Byte) As Byte()
     Call CopyMemory(uEccKeyInfo, ByVal lPkiPtr, Len(uEccKeyInfo))
     ReDim baRetVal(0 To uEccKeyInfo.PrivateKey.cbData - 1) As Byte
     Call CopyMemory(baRetVal(0), ByVal uEccKeyInfo.PrivateKey.pbData, uEccKeyInfo.PrivateKey.cbData)
-    CryptoExtractPrivateKeyFromDer = baRetVal
+    CryptoDecodePrivateKeyFromDer = baRetVal
 QH:
     If lPkiPtr <> 0 Then
         Call LocalFree(lPkiPtr)
@@ -1503,8 +1503,8 @@ QH:
     End If
 End Function
 
-Public Function CryptoExtractPublicKeyFromDer(baCert() As Byte, Optional AlgoObjId As String, Optional KeyLen As Long) As Byte()
-    Const FUNC_NAME     As String = "CryptoExtractPublicKeyFromDer"
+Public Function CryptoDecodePublicKeyFromDer(baCert() As Byte, Optional AlgoObjId As String, Optional KeyLen As Long) As Byte()
+    Const FUNC_NAME     As String = "CryptoDecodePublicKeyFromDer"
     Dim baRetVal()      As Byte
     Dim pContext        As Long
     Dim lPtr            As Long
@@ -1534,7 +1534,7 @@ Public Function CryptoExtractPublicKeyFromDer(baCert() As Byte, Optional AlgoObj
         End If
     End If
     '--- success
-    CryptoExtractPublicKeyFromDer = baRetVal
+    CryptoDecodePublicKeyFromDer = baRetVal
 QH:
     If hKey <> 0 Then
         Call CryptDestroyKey(hKey)

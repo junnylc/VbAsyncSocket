@@ -54,7 +54,7 @@ Public Function Init(oSocket As cAsyncSocket, sKey As String, oParent As Form1, 
     m_sKey = sKey
     m_lParentWeakRef = ObjPtr(oParent)
     oSocket.GetPeerName sAddr, lPort
-    If Not mdTlsSupport.TlsInitServer(m_uCtx, RemoteHostName:=sAddr & ":" & lPort, Certificates:=cCertificates, PrivateKey:=baPrivateKey) Then
+    If Not TlsInitServer(m_uCtx, RemoteHostName:=sAddr & ":" & lPort, Certificates:=cCertificates, PrivateKey:=baPrivateKey) Then
         GoTo QH
     End If
     '--- success
@@ -100,10 +100,13 @@ Private Sub m_oSocket_OnReceive()
     
     On Error GoTo EH
     If Not m_oSocket.ReceiveArray(baRecv) Then
+        sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
         GoTo QH
     End If
+'    Debug.Print "m_oSocket_OnReceive, UBound(baRecv)=" & UBound(baRecv), Timer
     If Not TlsIsReady(m_uCtx) Then
-        If Not mdTlsSupport.TlsHandshake(m_uCtx, baRecv, -1, baBuffer, lSize) Then
+        lSize = 0
+        If Not TlsHandshake(m_uCtx, baRecv, -1, baBuffer, lSize) Then
             sError = TlsGetLastError(m_uCtx)
         End If
         If lSize > 0 Then
@@ -113,26 +116,32 @@ Private Sub m_oSocket_OnReceive()
                 GoTo QH
             End If
         End If
-    Else
-        If Not mdTlsSupport.TlsReceive(m_uCtx, baRecv, -1, baBuffer, lSize) Then
-            sError = TlsGetLastError(m_uCtx)
-        ElseIf lSize > 0 Then
-            If UBound(baBuffer) <> lSize - 1 Then
-                ReDim Preserve baBuffer(0 To lSize - 1) As Byte
-            End If
-            sText = HandleRequest(FromUtf8Array(baBuffer))
+        If m_uCtx.DecrPos = 0 Then
+            GoTo QH
         End If
-        lSize = 0
-        If Not mdTlsSupport.TlsSend(m_uCtx, m_oSocket.ToTextArray(sText, ucsScpUtf8), -1, baBuffer, lSize) Then
-            If LenB(sError) = 0 Then
-                sError = TlsGetLastError(m_uCtx)
-            End If
-        ElseIf lSize > 0 Then
-            Call m_oSocket.Send(VarPtr(baBuffer(0)), lSize)
-            If m_oSocket.LastError <> 0 Then
-                sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
-                GoTo QH
-            End If
+        baRecv = EmptyByteArray
+    End If
+    lSize = 0
+    If Not TlsReceive(m_uCtx, baRecv, -1, baBuffer, lSize) Then
+        sError = TlsGetLastError(m_uCtx)
+    End If
+    If lSize > 0 Then
+        If UBound(baBuffer) <> lSize - 1 Then
+            ReDim Preserve baBuffer(0 To lSize - 1) As Byte
+        End If
+        sText = HandleRequest(FromUtf8Array(baBuffer))
+    End If
+    lSize = 0
+    If Not TlsSend(m_uCtx, m_oSocket.ToTextArray(sText, ucsScpUtf8), -1, baBuffer, lSize) Then
+        If LenB(sError) = 0 Then
+            sError = TlsGetLastError(m_uCtx)
+        End If
+    End If
+    If lSize > 0 Then
+        Call m_oSocket.Send(VarPtr(baBuffer(0)), lSize)
+        If m_oSocket.LastError <> 0 Then
+            sError = m_oSocket.GetErrorDescription(m_oSocket.LastError)
+            GoTo QH
         End If
     End If
 QH:
