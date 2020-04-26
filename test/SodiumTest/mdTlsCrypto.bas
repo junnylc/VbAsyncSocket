@@ -543,6 +543,7 @@ Public Function CryptoEccCurve25519MakeKey(baPrivate() As Byte, baPublic() As By
     #If ImplUseLibSodium Then
         Call crypto_scalarmult_curve25519_base(baPublic(0), baPrivate(0))
     #Else
+        Debug.Assert pvPatchTrampoline(AddressOf pvCallCurve25519MulBase)
         pvCallCurve25519MulBase m_uData.Pfn(ucsPfnCurve25519ScalarMultBase), baPublic(0), baPrivate(0)
     #End If
     '--- success
@@ -558,6 +559,7 @@ Public Function CryptoEccCurve25519SharedSecret(baPrivate() As Byte, baPublic() 
     #If ImplUseLibSodium Then
         Call crypto_scalarmult_curve25519(baRetVal(0), baPrivate(0), baPublic(0))
     #Else
+        Debug.Assert pvPatchTrampoline(AddressOf pvCallCurve25519Multiply)
         pvCallCurve25519Multiply m_uData.Pfn(ucsPfnCurve25519ScalarMultiply), baRetVal(0), baPrivate(0), baPublic(0)
     #End If
     CryptoEccCurve25519SharedSecret = baRetVal
@@ -571,6 +573,7 @@ Public Function CryptoEccSecp256r1MakeKey(baPrivate() As Byte, baPublic() As Byt
     ReDim baPublic(0 To m_uData.Ecc256KeySize) As Byte
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baPrivate(0)), m_uData.Ecc256KeySize
+        Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpMakeKey)
         If pvCallSecpMakeKey(m_uData.Pfn(ucsPfnSecp256r1MakeKey), baPublic(0), baPrivate(0)) = 1 Then
             Exit For
         End If
@@ -588,6 +591,7 @@ Public Function CryptoEccSecp256r1SharedSecret(baPrivate() As Byte, baPublic() A
     Debug.Assert UBound(baPrivate) >= m_uData.Ecc256KeySize - 1
     Debug.Assert UBound(baPublic) >= m_uData.Ecc256KeySize
     ReDim baRetVal(0 To m_uData.Ecc256KeySize - 1) As Byte
+    Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSharedSecret)
     If pvCallSecpSharedSecret(m_uData.Pfn(ucsPfnSecp256r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
         GoTo QH
     End If
@@ -599,6 +603,7 @@ Public Function CryptoEccSecp256r1UncompressKey(baPublic() As Byte) As Byte()
     Dim baRetVal()      As Byte
     
     ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize) As Byte
+    Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpUncompressKey)
     If pvCallSecpUncompressKey(m_uData.Pfn(ucsPfnSecp256r1UncompressKey), baPublic(0), baRetVal(0)) = 0 Then
         GoTo QH
     End If
@@ -618,6 +623,7 @@ Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize - 1) As Byte
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc256KeySize
+        Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSign)
         If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp256r1Sign), baPrivate(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
             Exit For
         End If
@@ -629,6 +635,7 @@ Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As
 End Function
 
 Public Function CryptoEccSecp256r1Verify(baPublic() As Byte, baHash() As Byte, baSignature() As Byte) As Boolean
+    Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpVerify)
     CryptoEccSecp256r1Verify = (pvCallSecpVerify(m_uData.Pfn(ucsPfnSecp256r1Verify), baPublic(0), baHash(0), baSignature(0)) <> 0)
 End Function
 
@@ -640,6 +647,7 @@ Public Function CryptoEccSecp384r1MakeKey(baPrivate() As Byte, baPublic() As Byt
     ReDim baPublic(0 To m_uData.Ecc384KeySize) As Byte
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baPrivate(0)), m_uData.Ecc384KeySize
+        Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpMakeKey)
         If pvCallSecpMakeKey(m_uData.Pfn(ucsPfnSecp384r1MakeKey), baPublic(0), baPrivate(0)) = 1 Then
             Exit For
         End If
@@ -657,6 +665,7 @@ Public Function CryptoEccSecp384r1SharedSecret(baPrivate() As Byte, baPublic() A
     Debug.Assert UBound(baPrivate) >= m_uData.Ecc384KeySize - 1
     Debug.Assert UBound(baPublic) >= m_uData.Ecc384KeySize
     ReDim baRetVal(0 To m_uData.Ecc384KeySize - 1) As Byte
+    Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSharedSecret)
     If pvCallSecpSharedSecret(m_uData.Pfn(ucsPfnSecp384r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
         GoTo QH
     End If
@@ -668,6 +677,7 @@ Public Function CryptoEccSecp384r1UncompressKey(baPublic() As Byte) As Byte()
     Dim baRetVal()      As Byte
     
     ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize) As Byte
+    Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpUncompressKey)
     If pvCallSecpUncompressKey(m_uData.Pfn(ucsPfnSecp384r1UncompressKey), baPublic(0), baRetVal(0)) = 0 Then
         GoTo QH
     End If
@@ -687,6 +697,7 @@ Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize - 1) As Byte
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc384KeySize
+        Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSign)
         If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp384r1Sign), baPrivate(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
             Exit For
         End If
@@ -698,6 +709,7 @@ Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As
 End Function
 
 Public Function CryptoEccSecp384r1Verify(baPublic() As Byte, baHash() As Byte, baSignature() As Byte) As Boolean
+    Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpVerify)
     CryptoEccSecp384r1Verify = (pvCallSecpVerify(m_uData.Pfn(ucsPfnSecp384r1Verify), baPublic(0), baHash(0), baSignature(0)) <> 0)
 End Function
 
@@ -719,6 +731,9 @@ Public Function CryptoHashSha256(baInput() As Byte, ByVal lPos As Long, Optional
         Call crypto_hash_sha256(baRetVal(0), ByVal lPtr, Size)
     #Else
         With m_uData
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Init)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Update)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Final)
             lCtxPtr = VarPtr(.HashCtx(0))
             pvCallSha2Init .Pfn(ucsPfnSha256Init), lCtxPtr
             pvCallSha2Update .Pfn(ucsPfnSha256Update), lCtxPtr, lPtr, Size
@@ -750,6 +765,9 @@ Public Function CryptoHashSha384(baInput() As Byte, ByVal lPos As Long, Optional
             Call crypto_hash_sha512_final(ByVal lCtxPtr, .HashFinal(0))
             Call CopyMemory(baRetVal(0), .HashFinal(0), LNG_SHA384_HASHSZ)
         #Else
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Init)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Update)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Final)
             pvCallSha2Init .Pfn(ucsPfnSha384Init), lCtxPtr
             pvCallSha2Update .Pfn(ucsPfnSha384Update), lCtxPtr, lPtr, Size
             pvCallSha2Final .Pfn(ucsPfnSha384Final), lCtxPtr, baRetVal(0)
@@ -780,6 +798,9 @@ Public Function CryptoHashSha512(baInput() As Byte, ByVal lPos As Long, Optional
             Call crypto_hash_sha512_final(ByVal lCtxPtr, .HashFinal(0))
             Call CopyMemory(baRetVal(0), .HashFinal(0), LNG_SHA512_HASHSZ)
         #Else
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Init)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Update)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Final)
             pvCallSha2Init .Pfn(ucsPfnSha512Init), lCtxPtr
             pvCallSha2Update .Pfn(ucsPfnSha512Update), lCtxPtr, lPtr, Size
             pvCallSha2Final .Pfn(ucsPfnSha512Final), lCtxPtr, baRetVal(0)
@@ -825,6 +846,9 @@ Public Function CryptoHmacSha256(baKey() As Byte, baInput() As Byte, ByVal lPos 
             Call crypto_hash_sha256_update(ByVal lCtxPtr, .HashFinal(0), LNG_SHA256_HASHSZ)
             Call crypto_hash_sha256_final(ByVal lCtxPtr, baRetVal(0))
         #Else
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Init)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Update)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Final)
             '-- inner hash
             pvCallSha2Init .Pfn(ucsPfnSha256Init), lCtxPtr
             Call FillMemory(.HashPad(0), LNG_SHA256_BLOCKSZ, LNG_HMAC_INNER_PAD)
@@ -886,6 +910,9 @@ Public Function CryptoHmacSha384(baKey() As Byte, baInput() As Byte, ByVal lPos 
             Call crypto_hash_sha512_final(ByVal lCtxPtr, .HashFinal(0))
             Call CopyMemory(baRetVal(0), .HashFinal(0), LNG_SHA384_HASHSZ)
         #Else
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Init)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Update)
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallSha2Final)
             '-- inner hash
             pvCallSha2Init .Pfn(ucsPfnSha384Init), lCtxPtr
             Call FillMemory(.HashPad(0), LNG_SHA384_BLOCKSZ, LNG_HMAC_INNER_PAD)
@@ -925,6 +952,7 @@ Public Function CryptoAeadChacha20Poly1305Encrypt( _
         #If ImplUseLibSodium Then
             Call crypto_aead_chacha20poly1305_ietf_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baNonce(0), baKey(0))
         #Else
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallChacha20Poly1305Encrypt)
             Call pvCallChacha20Poly1305Encrypt(m_uData.Pfn(ucsPfnChacha20Poly1305Encrypt), _
                     baKey(0), baNonce(0), _
                     lAdPtr, lAdSize, _
@@ -949,6 +977,7 @@ Public Function CryptoAeadChacha20Poly1305Decrypt( _
             CryptoAeadChacha20Poly1305Decrypt = True
         End If
     #Else
+        Debug.Assert pvPatchTrampoline(AddressOf pvCallChacha20Poly1305Decrypt)
         If pvCallChacha20Poly1305Decrypt(m_uData.Pfn(ucsPfnChacha20Poly1305Decrypt), _
                 baKey(0), baNonce(0), _
                 baAad(lAadPos), lAdSize, _
@@ -980,6 +1009,7 @@ Public Function CryptoAeadAesGcmEncrypt( _
         #If ImplUseLibSodium Then
             Call crypto_aead_aes256gcm_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baNonce(0), baKey(0))
         #Else
+            Debug.Assert pvPatchTrampoline(AddressOf pvCallAesGcmEncrypt)
             Call pvCallAesGcmEncrypt(m_uData.Pfn(ucsPfnAesGcmEncrypt), _
                     baBuffer(lPos), baBuffer(lPos + lSize), _
                     baBuffer(lPos), lSize, _
@@ -1008,6 +1038,7 @@ Public Function CryptoAeadAesGcmDecrypt( _
             CryptoAeadAesGcmDecrypt = True
         End If
     #Else
+        Debug.Assert pvPatchTrampoline(AddressOf pvCallAesGcmDecrypt)
         If pvCallAesGcmDecrypt(m_uData.Pfn(ucsPfnAesGcmDecrypt), _
                 baBuffer(lPos), _
                 baBuffer(lPos), lSize - LNG_AESGCM_TAGSZ, _
@@ -1586,7 +1617,7 @@ Private Function pvThunkAllocate(sText As String, Optional ByVal ThunkPtr As Lon
     Next
 End Function
 
-Private Sub pvPatchTrampoline(ByVal Pfn As Long)
+Private Function pvPatchTrampoline(ByVal Pfn As Long) As Boolean
     Dim bInIDE          As Boolean
  
     Debug.Assert pvSetTrue(bInIDE)
@@ -1603,9 +1634,11 @@ Private Sub pvPatchTrampoline(ByVal Pfn As Long)
     ' 6:  90                      nop
     ' 7:  90                      nop
     Call CopyMemory(ByVal Pfn, -802975883527609.7192@, 8)
-End Sub
+    '--- success
+    pvPatchTrampoline = True
+End Function
 
-Private Sub pvPatchMethodTrampoline(ByVal Pfn As Long, ByVal lMethodIdx As Long)
+Private Function pvPatchMethodTrampoline(ByVal Pfn As Long, ByVal lMethodIdx As Long) As Boolean
     Dim bInIDE          As Boolean
 
     Debug.Assert pvSetTrue(bInIDE)
@@ -1620,7 +1653,9 @@ Private Sub pvPatchMethodTrampoline(ByVal Pfn As Long, ByVal lMethodIdx As Long)
     ' 6: FF A0 00 00 00 00    jmp         dword ptr [eax+lMethodIdx*4]
     Call CopyMemory(ByVal Pfn, -684575231150992.4725@, 8)
     Call CopyMemory(ByVal (Pfn Xor &H80000000) + 8 Xor &H80000000, lMethodIdx * 4, 4)
-End Sub
+    '--- success
+    pvPatchMethodTrampoline = True
+End Function
 
 Private Function pvSetTrue(bValue As Boolean) As Boolean
     bValue = True
