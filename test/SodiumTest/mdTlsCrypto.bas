@@ -39,6 +39,7 @@ Private Const PKCS_RSA_PRIVATE_KEY                      As Long = 43
 Private Const PKCS_PRIVATE_KEY_INFO                     As Long = 44
 Private Const X509_ECC_PRIVATE_KEY                      As Long = 82
 Private Const CNG_RSA_PRIVATE_KEY_BLOB                  As Long = 83
+Private Const CRYPT_DECODE_NOCOPY_FLAG                  As Long = &H1
 Private Const CRYPT_DECODE_ALLOC_FLAG                   As Long = &H8000
 '--- for CryptCreateHash
 Private Const CALG_MD5                                  As Long = &H8003&
@@ -625,7 +626,7 @@ Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
-    baPrivate = CryptoDecodePrivateKeyFromDer(baPrivKey)
+    baPrivate = Asn1DecodePrivateKeyFromDer(baPrivKey)
     ReDim baRandom(0 To m_uData.Ecc256KeySize - 1) As Byte
     ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize - 1) As Byte
     For lIdx = 1 To MAX_RETRIES
@@ -699,7 +700,7 @@ Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
-    baPrivate = CryptoDecodePrivateKeyFromDer(baPrivKey)
+    baPrivate = Asn1DecodePrivateKeyFromDer(baPrivKey)
     ReDim baRandom(0 To m_uData.Ecc384KeySize - 1) As Byte
     ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize - 1) As Byte
     For lIdx = 1 To MAX_RETRIES
@@ -1077,7 +1078,7 @@ Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As B
     Dim lKeySize        As Long
     Dim uKeyBlob        As CRYPT_BLOB_DATA
     Dim hPrivKey        As Long
-    Dim pContext        As Long
+    Dim pCertContext    As Long
     Dim lPtr            As Long
     Dim hPubKey         As Long
     Dim hResult         As Long
@@ -1108,13 +1109,13 @@ Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As B
         GoTo QH
     End If
     If pvArraySize(baPrivKey) > 0 Then
-        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG, 0, lPkiPtr, 0) = 0 Then
+        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptDecodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
             GoTo QH
         End If
         Call CopyMemory(uKeyBlob, ByVal UnsignedAdd(lPkiPtr, 16), Len(uKeyBlob)) '--- dereference PCRYPT_PRIVATE_KEY_INFO->PrivateKey
-        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG, 0, lKeyPtr, lKeySize) = 0 Then
+        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, lKeySize) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptDecodeObjectEx(PKCS_RSA_PRIVATE_KEY)"
             GoTo QH
@@ -1126,21 +1127,21 @@ Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As B
         End If
     End If
     If pvArraySize(baCert) > 0 Then
-        pContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
-        If pContext = 0 Then
+        pCertContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
+        If pCertContext = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CertCreateCertificateContext"
             GoTo QH
         End If
-        Call CopyMemory(lPtr, ByVal UnsignedAdd(pContext, 12), 4)       '--- dereference pContext->pCertInfo
-        lPtr = UnsignedAdd(lPtr, 56)                                    '--- &pContext->pCertInfo->SubjectPublicKeyInfo
+        Call CopyMemory(lPtr, ByVal UnsignedAdd(pCertContext, 12), 4)       '--- dereference pCertContext->pCertInfo
+        lPtr = UnsignedAdd(lPtr, 56)                                    '--- &pCertContext->pCertInfo->SubjectPublicKeyInfo
         If CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal lPtr, hPubKey) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptImportPublicKeyInfo#1"
             GoTo QH
         End If
     ElseIf pvArraySize(baPubKey) > 0 Then
-        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_PUBLIC_KEY_INFO, baPubKey(0), UBound(baPubKey) + 1, CRYPT_DECODE_ALLOC_FLAG, 0, lKeyPtr, 0) = 0 Then
+        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_PUBLIC_KEY_INFO, baPubKey(0), UBound(baPubKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, 0) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptDecodeObjectEx(X509_PUBLIC_KEY_INFO)"
             GoTo QH
@@ -1165,8 +1166,8 @@ QH:
     If hPubKey <> 0 Then
         Call CryptDestroyKey(hPubKey)
     End If
-    If pContext <> 0 Then
-        Call CertFreeCertificateContext(pContext)
+    If pCertContext <> 0 Then
+        Call CertFreeCertificateContext(pCertContext)
     End If
     If hProv <> 0 Then
         Call CryptReleaseContext(hProv, 0)
@@ -1351,13 +1352,13 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
     If OsVersion < ucsOsvVista Then
         GoTo QH
     End If
-    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG, 0, lPkiPtr, 0) = 0 Then
+    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptDecodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
         GoTo QH
     End If
     Call CopyMemory(uKeyBlob, ByVal UnsignedAdd(lPkiPtr, 16), Len(uKeyBlob)) '--- dereference PCRYPT_PRIVATE_KEY_INFO->PrivateKey
-    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG, 0, lKeyPtr, lKeySize) = 0 Then
+    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, lKeySize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptDecodeObjectEx(PKCS_RSA_PRIVATE_KEY)"
         GoTo QH
@@ -1383,13 +1384,17 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
         uPadInfo.pszAlgId = StrPtr("SHA512")
         uPadInfo.cbSalt = 64
     End Select
-    ReDim baRetVal(0 To 1023) As Byte
-    hResult = BCryptSignHash(hKey, uPadInfo, baMessage(0), UBound(baMessage) + 1, baRetVal(0), UBound(baRetVal) + 1, lSize, BCRYPT_PAD_PSS)
+    hResult = BCryptSignHash(hKey, uPadInfo, baMessage(0), UBound(baMessage) + 1, ByVal 0, 0, lSize, BCRYPT_PAD_PSS)
     If hResult < 0 Then
         sApiSource = "BCryptSignHash"
         GoTo QH
     End If
-    ReDim Preserve baRetVal(0 To lSize - 1) As Byte
+    ReDim baRetVal(0 To lSize - 1) As Byte
+    hResult = BCryptSignHash(hKey, uPadInfo, baMessage(0), UBound(baMessage) + 1, baRetVal(0), UBound(baRetVal) + 1, lSize, BCRYPT_PAD_PSS)
+    If hResult < 0 Then
+        sApiSource = "BCryptSignHash#2"
+        GoTo QH
+    End If
     CryptoRsaPssSign = baRetVal
 QH:
     If hKey <> 0 Then
@@ -1411,7 +1416,7 @@ End Function
 
 Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSignature() As Byte, ByVal lSignatureType As Long) As Boolean
     Const FUNC_NAME     As String = "CryptoRsaPssVerify"
-    Dim pContext        As Long
+    Dim pCertContext    As Long
     Dim lPtr            As Long
     Dim hKey            As Long
     Dim uPadInfo        As BCRYPT_PSS_PADDING_INFO
@@ -1421,13 +1426,13 @@ Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSign
     If OsVersion < ucsOsvVista Then
         GoTo QH
     End If
-    pContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
-    If pContext = 0 Then
+    pCertContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
+    If pCertContext = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CertCreateCertificateContext"
         GoTo QH
     End If
-    Call CopyMemory(lPtr, ByVal UnsignedAdd(pContext, 12), 4)       '--- dereference pContext->pCertInfo
+    Call CopyMemory(lPtr, ByVal UnsignedAdd(pCertContext, 12), 4)       '--- dereference pCertContext->pCertInfo
     lPtr = UnsignedAdd(lPtr, 56)
     If CryptImportPublicKeyInfoEx2(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, lPtr, 0, 0, hKey) = 0 Then
         hResult = Err.LastDllError
@@ -1457,16 +1462,16 @@ QH:
     If hKey <> 0 Then
         Call BCryptDestroyKey(hKey)
     End If
-    If pContext <> 0 Then
-        Call CertFreeCertificateContext(pContext)
+    If pCertContext <> 0 Then
+        Call CertFreeCertificateContext(pCertContext)
     End If
     If LenB(sApiSource) <> 0 Then
         Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
-Public Function CryptoDecodePrivateKeyFromDer(baPrivKey() As Byte) As Byte()
-    Const FUNC_NAME     As String = "CryptoDecodePrivateKeyFromDer"
+Public Function Asn1DecodePrivateKeyFromDer(baPrivKey() As Byte) As Byte()
+    Const FUNC_NAME     As String = "Asn1DecodePrivateKeyFromDer"
     Dim baRetVal()      As Byte
     Dim lPkiPtr         As Long
     Dim uEccKeyInfo     As CRYPT_ECC_PRIVATE_KEY_INFO
@@ -1474,14 +1479,14 @@ Public Function CryptoDecodePrivateKeyFromDer(baPrivKey() As Byte) As Byte()
     Dim hResult         As Long
     Dim sApiSource      As String
 
-    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG, 0, lPkiPtr, 0) = 0 Then
+    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
         hResult = Err.LastDllError
         If hResult = ERROR_FILE_NOT_FOUND Then '--- no X509_ECC_PRIVATE_KEY struct type on NT4
             Call CopyMemory(lSize, baPrivKey(6), 1)
             If 7 + lSize <= UBound(baPrivKey) Then
                 ReDim baRetVal(0 To lSize - 1) As Byte
                 Call CopyMemory(baRetVal(0), baPrivKey(7), lSize)
-                CryptoDecodePrivateKeyFromDer = baRetVal
+                Asn1DecodePrivateKeyFromDer = baRetVal
             Else
                 sApiSource = "CryptDecodeObjectEx(X509_ECC_PRIVATE_KEY)"
             End If
@@ -1493,7 +1498,7 @@ Public Function CryptoDecodePrivateKeyFromDer(baPrivKey() As Byte) As Byte()
     Call CopyMemory(uEccKeyInfo, ByVal lPkiPtr, Len(uEccKeyInfo))
     ReDim baRetVal(0 To uEccKeyInfo.PrivateKey.cbData - 1) As Byte
     Call CopyMemory(baRetVal(0), ByVal uEccKeyInfo.PrivateKey.pbData, uEccKeyInfo.PrivateKey.cbData)
-    CryptoDecodePrivateKeyFromDer = baRetVal
+    Asn1DecodePrivateKeyFromDer = baRetVal
 QH:
     If lPkiPtr <> 0 Then
         Call LocalFree(lPkiPtr)
@@ -1503,10 +1508,10 @@ QH:
     End If
 End Function
 
-Public Function CryptoDecodePublicKeyFromDer(baCert() As Byte, Optional AlgoObjId As String, Optional KeyLen As Long) As Byte()
-    Const FUNC_NAME     As String = "CryptoDecodePublicKeyFromDer"
+Public Function Asn1DecodePublicKeyFromDer(baCert() As Byte, Optional AlgoObjId As String, Optional KeyLen As Long) As Byte()
+    Const FUNC_NAME     As String = "Asn1DecodePublicKeyFromDer"
     Dim baRetVal()      As Byte
-    Dim pContext        As Long
+    Dim pCertContext    As Long
     Dim lPtr            As Long
     Dim uInfo           As CERT_PUBLIC_KEY_INFO
     Dim hProv           As Long
@@ -1514,14 +1519,14 @@ Public Function CryptoDecodePublicKeyFromDer(baCert() As Byte, Optional AlgoObjI
     Dim hResult         As Long
     Dim sApiSource      As String
 
-    pContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
-    If pContext = 0 Then
+    pCertContext = CertCreateCertificateContext(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1)
+    If pCertContext = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CertCreateCertificateContext"
         GoTo QH
     End If
-    Call CopyMemory(lPtr, ByVal UnsignedAdd(pContext, 12), 4)       '--- dereference pContext->pCertInfo
-    lPtr = UnsignedAdd(lPtr, 56)                                    '--- &pContext->pCertInfo->SubjectPublicKeyInfo
+    Call CopyMemory(lPtr, ByVal UnsignedAdd(pCertContext, 12), 4)       '--- dereference pCertContext->pCertInfo
+    lPtr = UnsignedAdd(lPtr, 56)                                    '--- &pCertContext->pCertInfo->SubjectPublicKeyInfo
     Call CopyMemory(uInfo, ByVal lPtr, Len(uInfo))
     AlgoObjId = String$(lstrlen(uInfo.Algorithm.pszObjId), 0)
     Call CopyMemory(ByVal AlgoObjId, ByVal uInfo.Algorithm.pszObjId, Len(AlgoObjId))
@@ -1534,7 +1539,7 @@ Public Function CryptoDecodePublicKeyFromDer(baCert() As Byte, Optional AlgoObjI
         End If
     End If
     '--- success
-    CryptoDecodePublicKeyFromDer = baRetVal
+    Asn1DecodePublicKeyFromDer = baRetVal
 QH:
     If hKey <> 0 Then
         Call CryptDestroyKey(hKey)
@@ -1542,8 +1547,8 @@ QH:
     If hProv <> 0 Then
         Call CryptReleaseContext(hProv, 0)
     End If
-    If pContext <> 0 Then
-        Call CertFreeCertificateContext(pContext)
+    If pCertContext <> 0 Then
+        Call CertFreeCertificateContext(pCertContext)
     End If
     If LenB(sApiSource) <> 0 Then
         Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
@@ -1924,7 +1929,7 @@ Public Function PkiPkcs12ImportCertificates(sPfxFile As String, sPassword As Str
         If pCertContext = 0 Then
             Exit Do
         End If
-        If PkiImportCertificateContext(pCertContext, cCerts, baPrivKey) Then
+        If PkiAppendCertContext(pCertContext, cCerts, baPrivKey) Then
             '--- success
             PkiPkcs12ImportCertificates = True
         End If
@@ -1945,7 +1950,7 @@ Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As
     Dim uName           As CRYPT_BLOB_DATA
     Dim uExpire         As SYSTEMTIME
     Dim uInfo           As CRYPT_KEY_PROV_INFO
-    Dim pContext        As Long
+    Dim pCertContext    As Long
     Dim hResult         As Long
     Dim sApiSource      As String
     
@@ -1983,8 +1988,8 @@ Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As
         .dwProvType = PROV_RSA_FULL
         .dwKeySpec = AT_SIGNATURE
     End With
-    pContext = CertCreateSelfSignCertificate(hProv, uName, 0, uInfo, 0, ByVal 0, uExpire, 0)
-    If PkiImportCertificateContext(pContext, cCerts, baPrivKey) Then
+    pCertContext = CertCreateSelfSignCertificate(hProv, uName, 0, uInfo, 0, ByVal 0, uExpire, 0)
+    If PkiAppendCertContext(pCertContext, cCerts, baPrivKey) Then
         '--- success
         PkiGenSelfSignedCertificate = True
     End If
@@ -2003,7 +2008,7 @@ End Function
 
 '= private ===============================================================
 
-Private Function PkiImportCertificateContext(ByVal pCertContext As Long, cCerts As Collection, baPrivKey() As Byte) As Boolean
+Private Function PkiAppendCertContext(ByVal pCertContext As Long, cCerts As Collection, baPrivKey() As Byte) As Boolean
     Dim uCertContext    As CERT_CONTEXT
     Dim baBuffer()      As Byte
     
@@ -2024,7 +2029,7 @@ Private Function PkiImportCertificateContext(ByVal pCertContext As Long, cCerts 
             cCerts.Add baBuffer, Before:=1
         End If
         '--- success
-        PkiImportCertificateContext = True
+        PkiAppendCertContext = True
     End If
 End Function
 

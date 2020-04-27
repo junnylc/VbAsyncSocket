@@ -134,7 +134,7 @@ Private Const ERR_UNSUPPORTED_PUBLIC_KEY As String = "Unsupported public key OID
 Private Const ERR_UNSUPPORTED_CURVE_SIZE As String = "Unsupported curve size (%1)"
 Private Const ERR_UNSUPPORTED_PROTOCOL  As String = "Invalid protocol version"
 Private Const ERR_ENCRYPTION_FAILED     As String = "Encryption failed"
-Private Const ERR_SIGNATURE_FAILED      As String = "Certificate signature failed"
+Private Const ERR_SIGNATURE_FAILED      As String = "Certificate signature failed (%1)"
 Private Const ERR_DECRYPTION_FAILED     As String = "Decryption failed"
 Private Const ERR_SERVER_HANDSHAKE_FAILED As String = "Handshake verification failed"
 Private Const ERR_NEGOTIATE_SIGNATURE_FAILED As String = "Negotiate signature type failed"
@@ -1018,17 +1018,17 @@ Private Function pvBuildServerHandshakeFinished(uCtx As UcsTlsContext, baOutput(
                             baSignature = CryptoRsaPssSign(.LocalPrivateKey, baVerifyData, .LocalSignatureType)
                         Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256
                             baSignature = CryptoEccSecp256r1Sign(.LocalPrivateKey, baVerifyData)
-                            baSignature = pvCryptoEncodeSignatureToDer(baSignature, TLS_SECP256R1_KEY_SIZE)
+                            baSignature = pvAsn1EncodeSignatureToDer(baSignature, TLS_SECP256R1_KEY_SIZE)
                         Case TLS_SIGNATURE_ECDSA_SECP384R1_SHA384
                             baSignature = CryptoEccSecp384r1Sign(.LocalPrivateKey, baVerifyData)
-                            baSignature = pvCryptoEncodeSignatureToDer(baSignature, TLS_SECP384R1_KEY_SIZE)
+                            baSignature = pvAsn1EncodeSignatureToDer(baSignature, TLS_SECP384R1_KEY_SIZE)
                         Case Else
                             sError = Replace(ERR_UNSUPPORTED_SIGNATURE_TYPE, "%1", "0x" & Hex$(.LocalSignatureType))
                             eAlertCode = uscTlsAlertInternalError
                         End Select
                     End Select
                     If pvArraySize(baSignature) = 0 Then
-                        sError = ERR_SIGNATURE_FAILED
+                        sError = Replace(ERR_SIGNATURE_FAILED, "%1", pvCryptoSignatureTypeName(.LocalSignatureType))
                         eAlertCode = uscTlsAlertInternalError
                     End If
                     lPos = pvWriteArray(baOutput, lPos, baSignature)
@@ -1676,7 +1676,7 @@ Private Function pvParseHandshakeServerHello(uCtx As UcsTlsContext, baInput() As
     Dim lLegacyCompress As Long
     Dim lExtType        As Long
     Dim lExtSize        As Long
-    Dim lExchGroup  As Long
+    Dim lExchGroup      As Long
     Dim lBlockSize      As Long
     
     If pvArraySize(baHelloRetryRandom) = 0 Then
@@ -1773,7 +1773,7 @@ Private Function pvParseHandshakeClientHello(uCtx As UcsTlsContext, baInput() As
     Dim lExtType        As Long
     Dim lExtSize        As Long
     Dim lExtEnd         As Long
-    Dim lExchGroup  As Long
+    Dim lExchGroup      As Long
     Dim lBlockSize      As Long
     Dim lBlockEnd       As Long
     Dim lProtocolVersion As Long
@@ -1792,7 +1792,7 @@ Private Function pvParseHandshakeClientHello(uCtx As UcsTlsContext, baInput() As
     lCipherPref = 1000
     With uCtx
         If SearchCollection(.LocalCertificates, 1, RetVal:=baCert) Then
-            CryptoDecodePublicKeyFromDer baCert, AlgoObjId:=sPubAlgoObjId, KeyLen:=lPubKeyLen
+            Asn1DecodePublicKeyFromDer baCert, AlgoObjId:=sPubAlgoObjId, KeyLen:=lPubKeyLen
         End If
         .ProtocolVersion = lRecordProtocol
         lPos = pvReadLong(baInput, lPos, lLegacyVersion, Size:=2)
@@ -2414,7 +2414,7 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
             End If
         End If
     Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, TLS_SIGNATURE_ECDSA_SECP384R1_SHA384, TLS_SIGNATURE_ECDSA_SECP521R1_SHA512
-        baPubKey = CryptoDecodePublicKeyFromDer(baCert, sPubKeyObjId)
+        baPubKey = Asn1DecodePublicKeyFromDer(baCert, sPubKeyObjId)
         If sPubKeyObjId <> szOID_ECC_PUBLIC_KEY Then
             sError = Replace(ERR_UNSUPPORTED_PUBLIC_KEY, "%1", sPubKeyObjId)
             eAlertCode = uscTlsAlertHandshakeFailure
@@ -2422,7 +2422,7 @@ Private Function pvCryptoVerifySignature(baCert() As Byte, baVerifyData() As Byt
         End If
         baVerifyHash = pvCryptoHash(pvCryptoSignatureDigestAlgo(lSignatureType), baVerifyData, 0)
         lCurveSize = UBound(baPubKey) \ 2
-        baPlainSig = pvCryptoDecodeSignatureFromDer(baSignature, lCurveSize)
+        baPlainSig = pvAsn1DecodeSignatureFromDer(baSignature, lCurveSize)
         If pvArraySize(baPlainSig) = 0 Then
             GoTo InvalidSignature
         End If
@@ -2496,7 +2496,7 @@ Private Function pvCryptoSignatureDigestAlgo(ByVal lSignatureType As Long) As Uc
     End Select
 End Function
 
-Private Function pvCryptoDecodeSignatureFromDer(baDerSig() As Byte, ByVal lCurveSize As Long) As Byte()
+Private Function pvAsn1DecodeSignatureFromDer(baDerSig() As Byte, ByVal lCurveSize As Long) As Byte()
     Dim baRetVal()      As Byte
     Dim lType           As Long
     Dim lPos            As Long
@@ -2534,11 +2534,11 @@ Private Function pvCryptoDecodeSignatureFromDer(baDerSig() As Byte, ByVal lCurve
             pvWriteBuffer baRetVal, lCurveSize, VarPtr(baTemp(lSize - lCurveSize)), lCurveSize
         End If
     lPos = pvReadEndOfBlock(baDerSig, lPos, cStack)
-    pvCryptoDecodeSignatureFromDer = baRetVal
+    pvAsn1DecodeSignatureFromDer = baRetVal
 QH:
 End Function
 
-Private Function pvCryptoEncodeSignatureToDer(baPlainSig() As Byte, ByVal lPartSize As Long) As Byte()
+Private Function pvAsn1EncodeSignatureToDer(baPlainSig() As Byte, ByVal lPartSize As Long) As Byte()
     Dim baRetVal()      As Byte
     Dim lPos            As Long
     Dim cStack          As Collection
@@ -2571,7 +2571,7 @@ Private Function pvCryptoEncodeSignatureToDer(baPlainSig() As Byte, ByVal lPartS
             lPos = pvWriteBuffer(baRetVal, lPos, VarPtr(baPlainSig(lPartSize + lStart)), lPartSize - lStart)
         lPos = pvWriteEndOfBlock(baRetVal, lPos, cStack)
     lPos = pvWriteEndOfBlock(baRetVal, lPos, cStack)
-    pvCryptoEncodeSignatureToDer = baRetVal
+    pvAsn1EncodeSignatureToDer = baRetVal
 End Function
 
 '= buffer management =====================================================
