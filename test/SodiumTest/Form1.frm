@@ -252,6 +252,12 @@ InLoop:
                 GoTo QH
             End If
         Loop While Not TlsIsReady(uCtx)
+        If Not PkiValidateCertificates(uRemote.Host, m_uCtx.RemoteCertificates, sError) Then
+            If MsgBox(sError & vbCrLf & vbCrLf & "Do you want to continue?", vbQuestion Or vbYesNo) = vbNo Then
+                GoTo QH
+            End If
+            sError = vbNullString
+        End If
     End If
     '--- send TLS application data and wait for recv
     sRequest = "GET " & uRemote.Path & uRemote.QueryString & " HTTP/1.1" & vbCrLf & _
