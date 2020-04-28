@@ -91,6 +91,7 @@ Attribute m_oServerSocket.VB_VarHelpID = -1
 Private m_cRequestHandlers      As Collection
 Private m_cCertificates         As Collection
 Private m_baPrivateKey()        As Byte
+Private m_hRootStore            As Long
 
 Private Type UcsParsedUrl
     Protocol        As String
@@ -126,6 +127,7 @@ Private Sub Form_Load()
     Dim sAddr           As String
     Dim lPort           As Long
     
+    On Error GoTo EH
     If txtResult.Font.Name = "Arial" Then
         txtResult.Font.Name = "Courier New"
     End If
@@ -133,10 +135,11 @@ Private Sub Form_Load()
     If LenB(sAddr) <> 0 Then
         txtUrl.Text = sAddr
     End If
+    m_hRootStore = PkiPemImportRootCaCertStore(App.Path & "\ca-bundle.pem")
     ChDir App.Path
 '    If Not PkiPemImportCertificates(Split(PEM_FILES, "|"), m_cCertificates, m_baPrivateKey) Then
 '    If Not PkiPkcs12ImportCertificates(PFX_FILE, PFX_PASSWORD, m_cCertificates, m_baPrivateKey) Then
-    If Not PkiGenSelfSignedCertificate(m_cCertificates, m_baPrivateKey) Then
+    If Not PkiGenerSelfSignedCertificate(m_cCertificates, m_baPrivateKey) Then
         MsgBox "Error starting TLS server on localhost:10443" & vbCrLf & vbCrLf & "No private key found!", vbExclamation
         GoTo QH
     End If
@@ -148,6 +151,10 @@ Private Sub Form_Load()
         Debug.Print "Listening on " & sAddr & ":" & lPort
     End If
 QH:
+    Exit Sub
+EH:
+    MsgBox Err.Description, vbCritical
+    Resume QH
 End Sub
 
 Private Sub Form_Resize()
@@ -252,14 +259,14 @@ InLoop:
                 GoTo QH
             End If
         Loop While Not TlsIsReady(uCtx)
-        If Not PkiValidateCertificates(uRemote.Host, m_uCtx.RemoteCertificates, sError) Then
+        If Not PkiCertChainValidate(uRemote.Host, m_uCtx.RemoteCertificates, m_hRootStore, sError) Then
             If MsgBox(sError & vbCrLf & vbCrLf & "Do you want to continue?", vbQuestion Or vbYesNo) = vbNo Then
                 GoTo QH
             End If
             sError = vbNullString
         End If
     End If
-    '--- send TLS application data and wait for recv
+    '--- send TLS application data and wait for reply
     sRequest = "GET " & uRemote.Path & uRemote.QueryString & " HTTP/1.1" & vbCrLf & _
                "Connection: keep-alive" & vbCrLf & _
                "Host: " & uRemote.Host & vbCrLf & vbCrLf

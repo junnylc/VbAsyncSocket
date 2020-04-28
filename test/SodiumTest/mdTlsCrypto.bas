@@ -91,9 +91,12 @@ Private Const CERT_STORE_ADD_USE_EXISTING               As Long = 2
 Private Const CERT_TRUST_IS_NOT_TIME_VALID              As Long = &H1
 Private Const CERT_TRUST_IS_NOT_TIME_NESTED             As Long = &H2
 Private Const CERT_TRUST_IS_REVOKED                     As Long = &H4
+Private Const CERT_TRUST_IS_NOT_SIGNATURE_VALID         As Long = &H8
 Private Const CERT_TRUST_IS_UNTRUSTED_ROOT              As Long = &H20
 Private Const CERT_TRUST_REVOCATION_STATUS_UNKNOWN      As Long = &H40
 Private Const CERT_TRUST_IS_PARTIAL_CHAIN               As Long = &H10000
+'--- for CertFindCertificateInStore
+Private Const CERT_FIND_EXISTING                        As Long = &HD0000
 '--- for CERT_ALT_NAME_ENTRY
 Private Const CERT_ALT_NAME_DNS_NAME                    As Long = 3
 '--- OIDs
@@ -153,8 +156,8 @@ Private Declare Function CryptGetKeyParam Lib "advapi32" (ByVal hKey As Long, By
 '--- Crypt32
 Private Declare Function CryptImportPublicKeyInfo Lib "crypt32" (ByVal hCryptProv As Long, ByVal dwCertEncodingType As Long, pInfo As Any, phKey As Long) As Long
 Private Declare Function CryptImportPublicKeyInfoEx2 Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal pInfo As Long, ByVal dwFlags As Long, ByVal pvAuxInfo As Long, phKey As Long) As Long
-Private Declare Function CryptDecodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, lpszStructType As Any, pbEncoded As Any, ByVal cbEncoded As Long, ByVal dwFlags As Long, ByVal pDecodePara As Long, pvStructInfo As Any, pcbStructInfo As Long) As Long
-Private Declare Function CryptEncodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, lpszStructType As Any, pvStructInfo As Any, ByVal dwFlags As Long, ByVal pEncodePara As Long, pvEncoded As Any, pcbEncoded As Long) As Long
+Private Declare Function CryptDecodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal lpszStructType As Any, pbEncoded As Any, ByVal cbEncoded As Long, ByVal dwFlags As Long, ByVal pDecodePara As Long, pvStructInfo As Any, pcbStructInfo As Long) As Long
+Private Declare Function CryptEncodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal lpszStructType As Any, pvStructInfo As Any, ByVal dwFlags As Long, ByVal pEncodePara As Long, pvEncoded As Any, pcbEncoded As Long) As Long
 Private Declare Function CryptAcquireCertificatePrivateKey Lib "crypt32" (ByVal pCert As Long, ByVal dwFlags As Long, ByVal pvParameters As Long, phCryptProvOrNCryptKey As Long, pdwKeySpec As Long, pfCallerFreeProvOrNCryptKey As Long) As Long
 Private Declare Function PFXImportCertStore Lib "crypt32" (pPFX As Any, ByVal szPassword As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CertCreateCertificateContext Lib "crypt32" (ByVal dwCertEncodingType As Long, pbCertEncoded As Any, ByVal cbCertEncoded As Long) As Long
@@ -165,10 +168,13 @@ Private Declare Function CertStrToName Lib "crypt32" Alias "CertStrToNameW" (ByV
 Private Declare Function CertCreateSelfSignCertificate Lib "crypt32" (ByVal hCryptProvOrNCryptKey As Long, pSubjectIssuerBlob As Any, ByVal dwFlags As Long, pKeyProvInfo As Any, ByVal pSignatureAlgorithm As Long, pStartTime As Any, pEndTime As Any, ByVal pExtensions As Long) As Long
 Private Declare Function CertOpenStore Lib "crypt32" (ByVal lpszStoreProvider As Long, ByVal dwEncodingType As Long, ByVal hCryptProv As Long, ByVal dwFlags As Long, ByVal pvPara As Long) As Long
 Private Declare Function CertCloseStore Lib "crypt32" (ByVal hCertStore As Long, ByVal dwFlags As Long) As Long
-Private Declare Function CertAddEncodedCertificateToStore Lib "crypt32" (ByVal hCertStore As Long, ByVal dwCertEncodingType As Long, pbCertEncoded As Any, ByVal cbCertEncoded As Long, ByVal dwAddDisposition As Long, ppCertContext As Any) As Long
+Private Declare Function CertAddEncodedCertificateToStore Lib "crypt32" (ByVal hCertStore As Long, ByVal dwCertEncodingType As Long, pbCertEncoded As Any, ByVal cbCertEncoded As Long, ByVal dwAddDisposition As Long, ByVal ppCertContext As Long) As Long
+Private Declare Function CertCreateCertificateChainEngine Lib "crypt32" (pConfig As Any, phChainEngine As Long) As Long
+Private Declare Function CertFreeCertificateChainEngine Lib "crypt32" (ByVal hChainEngine As Long) As Long
 Private Declare Function CertGetCertificateChain Lib "crypt32" (ByVal hChainEngine As Long, ByVal pCertContext As Long, ByVal pTime As Long, ByVal hAdditionalStore As Long, pChainPara As Any, ByVal dwFlags As Long, ByVal pvReserved As Long, ppChainContext As Long) As Long
 Private Declare Function CertFreeCertificateChain Lib "crypt32" (ByVal pChainContext As Long) As Long
 Private Declare Function CertFindExtension Lib "crypt32" (ByVal pszObjId As String, ByVal cExtensions As Long, ByVal rgExtensions As Long) As Long
+Private Declare Function CertFindCertificateInStore Lib "crypt32" (ByVal hCertStore As Long, ByVal dwCertEncodingType As Long, ByVal dwFindFlags As Long, ByVal dwFindType As Long, pvFindPara As Any, ByVal pPrevCertContext As Long) As Long
 '--- NCrypt
 Private Declare Function NCryptImportKey Lib "ncrypt" (ByVal hProvider As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, pParameterList As Any, phKey As Long, pbData As Any, ByVal cbData As Long, ByVal dwFlags As Long) As Long
 Private Declare Function NCryptExportKey Lib "ncrypt" (ByVal hKey As Long, ByVal hExportKey As Long, ByVal pszBlobType As Long, pParameterList As Any, pbOutput As Any, ByVal cbOutput As Long, pcbResult As Any, ByVal dwFlags As Long) As Long
@@ -355,6 +361,34 @@ Private Type SYSTEMTIME
     wMinute             As Integer
     wSecond             As Integer
     wMilliseconds       As Integer
+End Type
+
+Private Type CERT_CHAIN_ENGINE_CONFIG
+    cbSize              As Long
+    hRestrictedRoot     As Long
+    hRestrictedTrust    As Long
+    hRestrictedOther    As Long
+    cAdditionalStore    As Long
+    rghAdditionalStore  As Long
+    dwFlags             As Long
+    dwUrlRetrievalTimeout As Long
+    MaximumCachedCertificates As Long
+    CycleDetectionModulus As Long
+    '--- Win7+
+    hExclusiveRoot      As Long
+    hExclusiveTrustedPeople As Long
+    dwExclusiveFlags    As Long
+End Type
+
+    
+Private Type CERT_CHAIN_ELEMENT
+    cbSize              As Long
+    pCertContext        As Long
+    TrustStatus         As CERT_TRUST_STATUS
+    pRevocationInfo     As Long
+    pIssuanceUsage      As Long
+    pApplicationUsage   As Long
+    pwszExtendedErrorInfo As Long
 End Type
 
 '=========================================================================
@@ -1207,13 +1241,13 @@ Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As B
         GoTo QH
     End If
     If pvArraySize(baPrivKey) > 0 Then
-        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
+        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptDecodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
             GoTo QH
         End If
         Call CopyMemory(uKeyBlob, ByVal UnsignedAdd(lPkiPtr, 16), Len(uKeyBlob)) '--- dereference PCRYPT_PRIVATE_KEY_INFO->PrivateKey
-        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, lKeySize) = 0 Then
+        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, lKeySize) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptDecodeObjectEx(PKCS_RSA_PRIVATE_KEY)"
             GoTo QH
@@ -1239,7 +1273,7 @@ Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As B
             GoTo QH
         End If
     ElseIf pvArraySize(baPubKey) > 0 Then
-        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal X509_PUBLIC_KEY_INFO, baPubKey(0), UBound(baPubKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, 0) = 0 Then
+        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_PUBLIC_KEY_INFO, baPubKey(0), UBound(baPubKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, 0) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptDecodeObjectEx(X509_PUBLIC_KEY_INFO)"
             GoTo QH
@@ -1450,13 +1484,13 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
     If OsVersion < ucsOsvVista Then
         GoTo QH
     End If
-    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
+    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptDecodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
         GoTo QH
     End If
     Call CopyMemory(uKeyBlob, ByVal UnsignedAdd(lPkiPtr, 16), Len(uKeyBlob)) '--- dereference PCRYPT_PRIVATE_KEY_INFO->PrivateKey
-    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, lKeySize) = 0 Then
+    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, lKeySize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptDecodeObjectEx(PKCS_RSA_PRIVATE_KEY)"
         GoTo QH
@@ -1577,7 +1611,7 @@ Public Function Asn1DecodePrivateKeyFromDer(baPrivKey() As Byte) As Byte()
     Dim hResult         As Long
     Dim sApiSource      As String
 
-    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
+    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
         hResult = Err.LastDllError
         If hResult = ERROR_FILE_NOT_FOUND Then '--- no X509_ECC_PRIVATE_KEY struct type on NT4
             Call CopyMemory(lSize, baPrivKey(6), 1)
@@ -1955,6 +1989,45 @@ Public Function PkiPemImportCertificates(ByVal vPemFiles As Variant, cCerts As C
     End If
 End Function
 
+Public Function PkiPemImportRootCaCertStore(sCaBundlePemFile As String) As Long
+    Const FUNC_NAME     As String = "PkiPemImportRootCaCertStore"
+    Dim hCertStore      As Long
+    Dim cCerts          As Collection
+    Dim vElem           As Variant
+    Dim baCert()        As Byte
+    Dim hResult         As Long
+    Dim sApiSource      As String
+    
+    Set cCerts = PkiPemGetTextPortions(StrConv(CStr(ReadBinaryFile(CStr(sCaBundlePemFile))), vbUnicode), "CERTIFICATE")
+    If cCerts.Count = 0 Then
+        GoTo QH
+    End If
+    hCertStore = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, 0)
+    If hCertStore = 0 Then
+        hResult = Err.LastDllError
+        sApiSource = "CertOpenStore"
+        GoTo QH
+    End If
+    For Each vElem In cCerts
+        baCert = vElem
+        If CertAddEncodedCertificateToStore(hCertStore, X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1, CERT_STORE_ADD_USE_EXISTING, 0) = 0 Then
+            hResult = Err.LastDllError
+            sApiSource = "CertAddEncodedCertificateToStore"
+            GoTo QH
+        End If
+    Next
+    '--- commit
+    PkiPemImportRootCaCertStore = hCertStore
+    hCertStore = 0
+QH:
+    If hCertStore <> 0 Then
+        Call CertCloseStore(hCertStore, 0)
+    End If
+    If LenB(sApiSource) <> 0 Then
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
+    End If
+End Function
+
 Private Function PkiPemGetTextPortions(sContents As String, sBoundary As String, Optional RetVal As Collection) As Collection
     Dim vSplit          As Variant
     Dim lIdx            As Long
@@ -2037,8 +2110,8 @@ QH:
     End If
 End Function
 
-Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As Byte, Optional ByVal Subject As String) As Boolean
-    Const FUNC_NAME     As String = "PkiGenSelfSignedCertificate"
+Public Function PkiGenerSelfSignedCertificate(cCerts As Collection, baPrivKey() As Byte, Optional ByVal Subject As String) As Boolean
+    Const FUNC_NAME     As String = "PkiGenerSelfSignedCertificate"
     Dim hProv           As Long
     Dim hKey            As Long
     Dim sName           As String
@@ -2088,7 +2161,7 @@ Public Function PkiGenSelfSignedCertificate(cCerts As Collection, baPrivKey() As
     pCertContext = CertCreateSelfSignCertificate(hProv, uName, 0, uInfo, 0, ByVal 0, uExpire, 0)
     If PkiAppendCertContext(pCertContext, cCerts, baPrivKey) Then
         '--- success
-        PkiGenSelfSignedCertificate = True
+        PkiGenerSelfSignedCertificate = True
     End If
 QH:
     If hKey <> 0 Then
@@ -2263,13 +2336,13 @@ Private Function PkiExportRsaPrivateKey(baPrivBlob() As Byte, ByVal lStructType 
     Dim hResult         As Long
     Dim sApiSource      As String
     
-    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal lStructType, baPrivBlob(0), 0, 0, ByVal 0, lSize) = 0 Then
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, lStructType, baPrivBlob(0), 0, 0, ByVal 0, lSize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptEncodeObjectEx"
         GoTo QH
     End If
     ReDim baRsaPrivKey(0 To lSize - 1)
-    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal lStructType, baPrivBlob(0), 0, 0, baRsaPrivKey(0), lSize) = 0 Then
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, lStructType, baPrivBlob(0), 0, 0, baRsaPrivKey(0), lSize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptEncodeObjectEx#2"
         GoTo QH
@@ -2280,13 +2353,13 @@ Private Function PkiExportRsaPrivateKey(baPrivBlob() As Byte, ByVal lStructType 
         .PrivateKey.pbData = VarPtr(baRsaPrivKey(0))
         .PrivateKey.cbData = UBound(baRsaPrivKey) + 1
     End With
-    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal PKCS_PRIVATE_KEY_INFO, uPrivKey, 0, 0, ByVal 0, lSize) = 0 Then
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, uPrivKey, 0, 0, ByVal 0, lSize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptEncodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
         GoTo QH
     End If
     ReDim baRetVal(0 To lSize - 1)
-    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal PKCS_PRIVATE_KEY_INFO, uPrivKey, 0, 0, baRetVal(0), lSize) = 0 Then
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, uPrivKey, 0, 0, baRetVal(0), lSize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptEncodeObjectEx(PKCS_PRIVATE_KEY_INFO)#2"
         GoTo QH
@@ -2316,13 +2389,13 @@ Private Function PkiExportEccPrivateKey(baPrivBlob() As Byte, ByVal lMagic As Lo
         .PrivateKey.cbData = UBound(baPrivBlob) + 1
         .szCurveOid = StrPtr(sObjId)
     End With
-    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal X509_ECC_PRIVATE_KEY, uEccPrivKey, 0, 0, ByVal 0, lSize) = 0 Then
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, uEccPrivKey, 0, 0, ByVal 0, lSize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptEncodeObjectEx(X509_ECC_PRIVATE_KEY)"
         GoTo QH
     End If
     ReDim baRetVal(0 To lSize - 1)
-    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal X509_ECC_PRIVATE_KEY, uEccPrivKey, 0, 0, baRetVal(0), lSize) = 0 Then
+    If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, uEccPrivKey, 0, 0, baRetVal(0), lSize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptEncodeObjectEx(X509_ECC_PRIVATE_KEY)#2"
         GoTo QH
@@ -2442,7 +2515,8 @@ QH:
     End If
 End Function
 
-Public Function PkiValidateCertificates(sRemoteHostName As String, cCerts As Collection, sError As String) As Boolean
+Public Function PkiCertChainValidate(sRemoteHostName As String, cCerts As Collection, ByVal hRootStore As Long, sError As String) As Boolean
+    Const FUNC_NAME     As String = "PkiCertChainValidate"
     Dim hCertStore      As Long
     Dim lIdx            As Long
     Dim baCert()        As Byte
@@ -2459,9 +2533,14 @@ Public Function PkiValidateCertificates(sRemoteHostName As String, cCerts As Col
     Dim uEntry          As CERT_ALT_NAME_ENTRY
     Dim sDnsName        As String
     Dim bValidName      As Boolean
+    Dim uEngineConfig   As CERT_CHAIN_ENGINE_CONFIG
+    Dim hChainEngine    As Long
+    Dim uChainElem      As CERT_CHAIN_ELEMENT
+    Dim pExistContext   As Long
     Dim hResult         As Long
     Dim sApiSource      As String
     
+    '--- load server X.509 certificates to an in-memory certificate store
     hCertStore = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, 0)
     If hCertStore = 0 Then
         hResult = Err.LastDllError
@@ -2470,13 +2549,13 @@ Public Function PkiValidateCertificates(sRemoteHostName As String, cCerts As Col
     End If
     For lIdx = 1 To cCerts.Count
         baCert = cCerts.Item(lIdx)
-        If CertAddEncodedCertificateToStore(hCertStore, X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1, CERT_STORE_ADD_USE_EXISTING, ByVal 0) = 0 Then
+        If CertAddEncodedCertificateToStore(hCertStore, X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, baCert(0), UBound(baCert) + 1, CERT_STORE_ADD_USE_EXISTING, 0) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CertAddEncodedCertificateToStore"
             GoTo QH
         End If
     Next
-    '--- first validate remote host by name from certificates "Subject Alternative Name" strings
+    '--- search remote host FQDN in any X.509 certificate's "Subject Alternative Name" list of DNS names (incl. wildcards)
     Do
         pCertContext = CertEnumCertificatesInStore(hCertStore, pCertContext)
         If pCertContext = 0 Then
@@ -2488,7 +2567,7 @@ Public Function PkiValidateCertificates(sRemoteHostName As String, cCerts As Col
         lPtr = CertFindExtension(szOID_SUBJECT_ALT_NAME2, uInfo.cExtension, uInfo.rgExtension)
         If lPtr <> 0 Then
             Call CopyMemory(uExtension, ByVal lPtr, Len(uExtension))
-            If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal szOID_SUBJECT_ALT_NAME2, ByVal uExtension.Value.pbData, _
+            If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, szOID_SUBJECT_ALT_NAME2, ByVal uExtension.Value.pbData, _
                         uExtension.Value.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lAltInfoPtr, 0) = 0 Then
                 hResult = Err.LastDllError
                 sApiSource = "CryptDecodeObjectEx(szOID_SUBJECT_ALT_NAME2)"
@@ -2517,9 +2596,21 @@ Public Function PkiValidateCertificates(sRemoteHostName As String, cCerts As Col
             lAltInfoPtr = 0
         End If
     Loop
-    '--- then validate chain of certificates for revokation, expiry and trusted root
+    '--- build custom chain engine that trusts the additional root CA certificates if provided
+    If hRootStore <> 0 Then
+        uEngineConfig.cbSize = Len(uEngineConfig) - IIf(OsVersion < ucsOsvWin7, 12, 0)
+        uEngineConfig.cAdditionalStore = 1
+        uEngineConfig.rghAdditionalStore = VarPtr(hRootStore)
+        If CertCreateCertificateChainEngine(uEngineConfig, hChainEngine) = 0 Then
+            hResult = Err.LastDllError
+            sApiSource = "CertCreateCertificateChainEngine"
+            GoTo QH
+        End If
+    End If
+    '--- for the matched server certificate try to build a chain of certificates from the ones in the in-memory certificate store
+    '---    and check this chain for revokation, expiry or missing link to a trust anchor
     uChainParams.cbSize = Len(uChainParams)
-    If CertGetCertificateChain(0, pCertContext, 0, hCertStore, uChainParams, 0, 0, pChainContext) = 0 Then
+    If CertGetCertificateChain(hChainEngine, pCertContext, 0, hCertStore, uChainParams, 0, 0, pChainContext) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CertGetCertificateChain"
         GoTo QH
@@ -2528,6 +2619,17 @@ Public Function PkiValidateCertificates(sRemoteHostName As String, cCerts As Col
     Call CopyMemory(lPtr, ByVal uChain.rgElem, 4)
     Call CopyMemory(uChain, ByVal lPtr, Len(uChain))
     dwErrorStatus = uChain.TrustStatus.dwErrorStatus And Not CERT_TRUST_IS_NOT_TIME_NESTED
+    If hRootStore <> 0 And uChain.cElems > 0 Then
+        '--- check if the last certificate in the chain is from our custom hRootStore and remove untrusted flags from status
+        Call CopyMemory(lPtr, ByVal UnsignedAdd(uChain.rgElem, (uChain.cElems - 1) * 4), 4)
+        Call CopyMemory(uChainElem, ByVal lPtr, Len(uChainElem))
+        pExistContext = CertFindCertificateInStore(hRootStore, X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, 0, CERT_FIND_EXISTING, ByVal uChainElem.pCertContext, 0)
+        If pExistContext <> 0 Then
+            Call CertFreeCertificateContext(pExistContext)
+            pExistContext = 0
+            dwErrorStatus = dwErrorStatus And Not CERT_TRUST_IS_UNTRUSTED_ROOT And Not CERT_TRUST_IS_NOT_SIGNATURE_VALID
+        End If
+    End If
     If dwErrorStatus <> 0 Then
         If (dwErrorStatus And CERT_TRUST_IS_REVOKED) <> 0 Then
             sError = ERR_TRUST_IS_REVOKED
@@ -2545,7 +2647,7 @@ Public Function PkiValidateCertificates(sRemoteHostName As String, cCerts As Col
         GoTo QH
     End If
     '--- success
-    PkiValidateCertificates = True
+    PkiCertChainValidate = True
 QH:
     If pChainContext <> 0 Then
         Call CertFreeCertificateChain(pChainContext)
@@ -2556,8 +2658,11 @@ QH:
     If hCertStore <> 0 Then
         Call CertCloseStore(hCertStore, 0)
     End If
+    If hChainEngine <> 0 Then
+        Call CertFreeCertificateChainEngine(hChainEngine)
+    End If
     If LenB(sApiSource) <> 0 Then
-        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), sApiSource
+        Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
 End Function
 
