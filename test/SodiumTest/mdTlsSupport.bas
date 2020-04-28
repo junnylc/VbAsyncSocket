@@ -718,6 +718,7 @@ Private Function pvTlsBuildClientLegacyKeyExchange(uCtx As UcsTlsContext, baOutp
             lPos = pvWriteReserved(baOutput, lPos, .TagSize)
             '--- encrypt message
             ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
+            Debug.Assert RedimStats("pvTlsBuildClientLegacyKeyExchange.baAad", UBound(baAad) + 1)
             lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
             lAadPos = pvWriteLong(baAad, lAadPos, .LocalTrafficSeqNo, Size:=4)
             lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baOutput(lRecordPos)), 3)
@@ -955,6 +956,7 @@ Private Function pvTlsBuildApplicationData(uCtx As UcsTlsContext, baOutput() As 
             bResult = pvTlsAeadEncrypt(.AeadAlgo, baLocalIV, .LocalTrafficKey, baOutput, lRecordPos, LNG_AAD_SIZE, baOutput, lMessagePos, lMessageSize)
         ElseIf .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS12 Then
             ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
+            Debug.Assert RedimStats("pvTlsBuildApplicationData.baAad", UBound(baAad) + 1)
             lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
             lAadPos = pvWriteLong(baAad, lAadPos, .LocalTrafficSeqNo, Size:=4)
             lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baOutput(lRecordPos)), 3)
@@ -985,6 +987,7 @@ Private Function pvTlsBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVa
         '--- for TLS 1.3 -> tunnel alert through application data encryption
         If .State = ucsTlsStatePostHandshake And .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS13 Then
             ReDim baLocalIV(0 To 1) As Byte
+            Debug.Assert RedimStats("pvTlsBuildAlert.baLocalIV", UBound(baLocalIV) + 1)
             baLocalIV(0) = lAlertLevel
             baLocalIV(1) = eAlertDesc
             pvTlsBuildAlert = pvTlsBuildApplicationData(uCtx, baOutput, lPos, baLocalIV, UBound(baLocalIV) + 1, TLS_CONTENT_TYPE_ALERT, sError, eAlertCode)
@@ -1012,6 +1015,7 @@ Private Function pvTlsBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVa
         If .State = ucsTlsStatePostHandshake And .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS12 Then
             '--- encrypt message
             ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
+            Debug.Assert RedimStats("pvTlsBuildAlert.baAad", UBound(baAad) + 1)
             lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
             lAadPos = pvWriteLong(baAad, lAadPos, .LocalTrafficSeqNo, Size:=4)
             lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baOutput(lRecordPos)), 3)
@@ -1922,6 +1926,7 @@ Private Function pvTlsPrepareLegacyDecryptParams(uCtx As UcsTlsContext, baInput(
             lPos = lPos + .IvDynamicSize
         End If
         ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
+        Debug.Assert RedimStats("pvTlsPrepareLegacyDecryptParams.baAad", UBound(baAad) + 1)
         lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
         lAadPos = pvWriteLong(baAad, lAadPos, .RemoteTrafficSeqNo, Size:=4)
         lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baInput(lRecordPos)), 3)
@@ -2137,6 +2142,7 @@ Private Function pvTlsHkdfExpandLabel(ByVal eHash As UcsTlsCryptoAlgorithmsEnum,
     Loop
     If UBound(baRetVal) <> lSize - 1 Then
         ReDim Preserve baRetVal(0 To lSize - 1) As Byte
+        Debug.Assert RedimStats("pvTlsHkdfExpandLabel.baRetVal", UBound(baRetVal) + 1)
     End If
     pvTlsHkdfExpandLabel = baRetVal
 End Function
@@ -2159,6 +2165,7 @@ Private Function pvTlsDeriveLegacySecrets(uCtx As UcsTlsContext, sError As Strin
         Debug.Assert pvArraySize(.RemoteExchRandom) = TLS_HELLO_RANDOM_SIZE
         baPreMasterSecret = pvTlsSharedSecret(.ExchAlgo, .LocalExchPrivate, .RemoteExchPublic)
         ReDim baRandom(0 To pvArraySize(.LocalExchRandom) + pvArraySize(.RemoteExchRandom) - 1) As Byte
+        Debug.Assert RedimStats("pvTlsDeriveLegacySecrets.baRandom", UBound(baRandom) + 1)
         lPos = pvWriteArray(baRandom, 0, .LocalExchRandom)
         lPos = pvWriteArray(baRandom, lPos, .RemoteExchRandom)
         .MasterSecret = pvTlsKdfLegacyPrf(.DigestAlgo, baPreMasterSecret, "master secret", baRandom, TLS_HELLO_RANDOM_SIZE + TLS_HELLO_RANDOM_SIZE \ 2) '--- always 48
@@ -2200,6 +2207,7 @@ Private Function pvTlsKdfLegacyPrf(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, ba
     Loop
     If lRetValPos <> lSize Then
         ReDim Preserve baRetVal(0 To lSize - 1) As Byte
+        Debug.Assert RedimStats("pvTlsKdfLegacyPrf.baRetVal", UBound(baRetVal) + 1)
     End If
     pvTlsKdfLegacyPrf = baRetVal
 End Function
@@ -2211,6 +2219,7 @@ Private Function pvTlsArrayRandom(ByVal lSize As Long) As Byte()
     
     If lSize > 0 Then
         ReDim baRetVal(0 To lSize - 1) As Byte
+        Debug.Assert RedimStats("pvTlsArrayRandom.baRetVal", UBound(baRetVal) + 1)
         CryptoRandomBytes VarPtr(baRetVal(0)), lSize
     End If
     pvTlsArrayRandom = baRetVal
@@ -2457,6 +2466,7 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
             '---       incl. ECDSA_SECP384R1_SHA256 only
             baTemp = baVerifyHash
             ReDim baVerifyHash(0 To lCurveSize - 1) As Byte
+            Debug.Assert RedimStats("pvTlsSignatureVerify.baVerifyHash", UBound(baVerifyHash) + 1)
             Call CopyMemory(baVerifyHash(lCurveSize - UBound(baTemp) - 1), baTemp(0), UBound(baTemp) + 1)
             bDeprecated = True
         ElseIf UBound(baVerifyHash) + 1 > lCurveSize Then
@@ -2531,6 +2541,7 @@ Private Function pvAsn1DecodeSignatureFromDer(baDerSig() As Byte, ByVal lCurveSi
     Dim baTemp()        As Byte
     
     ReDim baRetVal(0 To 63) As Byte
+    Debug.Assert RedimStats("pvAsn1DecodeSignatureFromDer.baRetVal", UBound(baRetVal) + 1)
     '--- ECDSA-Sig-Value ::= SEQUENCE { r INTEGER, s INTEGER }
     lPos = pvReadLong(baDerSig, 0, lType)
     If lType <> LNG_ANS1_TYPE_SEQUENCE Then
@@ -2665,8 +2676,10 @@ Private Function pvWriteBuffer(baBuffer() As Byte, ByVal lPos As Long, ByVal lPt
     Call CopyMemory(lBufPtr, ByVal ArrPtr(baBuffer), 4)
     If lBufPtr = 0 Then
         ReDim baBuffer(0 To lPos + lSize - 1) As Byte
+        Debug.Assert RedimStats("pvWriteBuffer.baBuffer", UBound(baBuffer) + 1)
     ElseIf UBound(baBuffer) < lPos + lSize - 1 Then
         ReDim Preserve baBuffer(0 To lPos + lSize - 1) As Byte
+        Debug.Assert RedimStats("pvWriteBuffer.baBuffer", UBound(baBuffer) + 1)
     End If
     If lSize > 0 And lPtr <> 0 Then
         Debug.Assert IsBadReadPtr(lPtr, lSize) = 0
@@ -2723,6 +2736,7 @@ Private Function pvReadArray(baBuffer() As Byte, ByVal lPos As Long, baDest() As
     End If
     If lSize > 0 Then
         ReDim baDest(0 To lSize - 1) As Byte
+        Debug.Assert RedimStats("pvReadArray.baDest", UBound(baDest) + 1)
         If lPos + lSize <= pvArraySize(baBuffer) Then
             Call CopyMemory(baDest(0), baBuffer(lPos), lSize)
         ElseIf lPos < pvArraySize(baBuffer) Then
@@ -2778,6 +2792,7 @@ Private Function pvArrayByte(ParamArray A() As Variant) As Byte()
     
     If UBound(A) >= 0 Then
         ReDim baRetVal(0 To UBound(A)) As Byte
+        Debug.Assert RedimStats("pvArrayByte.baRetVal", UBound(baRetVal) + 1)
         For Each vElem In A
             baRetVal(lIdx) = vElem And &HFF
             lIdx = lIdx + 1
@@ -2793,6 +2808,7 @@ Private Function EmptyByteArray(Optional ByVal Size As Long) As Byte()
     
     If Size > 0 Then
         ReDim baRetVal(0 To Size - 1) As Byte
+        Debug.Assert RedimStats("EmptyByteArray.baRetVal", UBound(baRetVal) + 1)
     End If
     EmptyByteArray = baRetVal
 End Function
@@ -2813,6 +2829,7 @@ Private Function SplitOrReindex(Expression As String, Delimiter As String) As Va
             End If
         Next
         ReDim vResult(0 To lSize) As Variant
+        Debug.Assert RedimStats("SplitOrReindex.vResult", 0)
         For lIdx = 0 To UBound(vTemp) Step 2
             vResult(vTemp(lIdx)) = vTemp(lIdx + 1)
         Next

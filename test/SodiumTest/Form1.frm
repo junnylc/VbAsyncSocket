@@ -4,11 +4,19 @@ Begin VB.Form Form1
    ClientHeight    =   5568
    ClientLeft      =   108
    ClientTop       =   456
-   ClientWidth     =   9948
+   ClientWidth     =   11064
    LinkTopic       =   "Form1"
    ScaleHeight     =   5568
-   ScaleWidth      =   9948
+   ScaleWidth      =   11064
    StartUpPosition =   3  'Windows Default
+   Begin VB.CommandButton Command2 
+      Caption         =   "ReDim Info"
+      Height          =   348
+      Left            =   9828
+      TabIndex        =   4
+      Top             =   168
+      Width           =   1104
+   End
    Begin VB.TextBox txtResult 
       BeginProperty Font 
          Name            =   "Consolas"
@@ -114,6 +122,13 @@ Private Sub PrintError(sFunction As String)
     #Else
         Debug.Print "Critical error: " & Err.Description & " [" & MODULE_NAME & "." & sFunction & "]"
     #End If
+End Sub
+
+Private Sub Command2_Click()
+    txtResult.Text = DesignRedimStats
+    If IsKeyPressed(vbKeyControl) Then
+        Set g_oRedimStats = Nothing
+    End If
 End Sub
 
 '=========================================================================

@@ -9,6 +9,8 @@ Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal uc
 Private Declare Function WideCharToMultiByte Lib "kernel32" (ByVal CodePage As Long, ByVal dwFlags As Long, ByVal lpWideCharStr As Long, ByVal cchWideChar As Long, lpMultiByteStr As Any, ByVal cchMultiByte As Long, ByVal lpDefaultChar As Long, ByVal lpUsedDefaultChar As Long) As Long
 Private Declare Function MultiByteToWideChar Lib "kernel32" (ByVal CodePage As Long, ByVal dwFlags As Long, lpMultiByteStr As Any, ByVal cchMultiByte As Long, ByVal lpWideCharStr As Long, ByVal cchWideChar As Long) As Long
 
+Public g_oRedimStats As Object
+
 Public Function DesignDumpArray(baData() As Byte, Optional ByVal lPos As Long, Optional ByVal lSize As Long = -1) As String
     If lSize < 0 Then
         lSize = UBound(baData) + 1 - lPos
@@ -26,6 +28,7 @@ Public Function DesignDumpMemory(ByVal lPtr As Long, ByVal lSize As Long) As Str
     Dim aResult()       As String
     
     ReDim aResult(0 To (lSize + 15) \ 16) As String
+    Debug.Assert RedimStats("DesignDumpMemory.aResult", UBound(aResult) + 1)
     For lIdx = 0 To ((lSize + 15) \ 16) * 16
         If lIdx < lSize Then
             If IsBadReadPtr(lPtr, 1) = 0 Then
@@ -73,6 +76,7 @@ Public Function ToHex(baText() As Byte, Optional Delimiter As String = "-") As S
     
     If LenB(CStr(baText)) <> 0 Then
         ReDim aText(0 To UBound(baText)) As String
+        Debug.Assert RedimStats("ToHex.aText", 0)
         For lIdx = 0 To UBound(baText)
             aText(lIdx) = Right$("0" & Hex$(baText(lIdx)), 2)
         Next
@@ -88,11 +92,13 @@ Public Function FromHex(sText As String) As Byte()
     '--- check for hexdump delimiter
     If sText Like "*[!0-9A-Fa-f]*" Then
         ReDim baRetVal(0 To Len(sText) \ 3) As Byte
+        Debug.Assert RedimStats("FromHex.baRetVal", UBound(baRetVal) + 1)
         For lIdx = 1 To Len(sText) Step 3
             baRetVal(lIdx \ 3) = "&H" & Mid$(sText, lIdx, 2)
         Next
     ElseIf LenB(sText) <> 0 Then
         ReDim baRetVal(0 To Len(sText) \ 2 - 1) As Byte
+        Debug.Assert RedimStats("FromHex.baRetVal", UBound(baRetVal) + 1)
         For lIdx = 1 To Len(sText) Step 2
             baRetVal(lIdx \ 2) = "&H" & Mid$(sText, lIdx, 2)
         Next
@@ -110,6 +116,7 @@ Public Function ToUtf8Array(sText As String) As Byte()
     lSize = WideCharToMultiByte(CP_UTF8, 0, StrPtr(sText), Len(sText), ByVal 0, 0, 0, 0)
     If lSize > 0 Then
         ReDim baRetVal(0 To lSize - 1) As Byte
+        Debug.Assert RedimStats("ToUtf8Array.baRetVal", UBound(baRetVal) + 1)
         Call WideCharToMultiByte(CP_UTF8, 0, StrPtr(sText), Len(sText), baRetVal(0), lSize, 0, 0)
     Else
         baRetVal = vbNullString
@@ -129,4 +136,32 @@ End Function
 
 Public Function EmptyByteArray() As Byte()
 
+End Function
+
+Public Function RedimStats(sFuncName As String, ByVal lSize As Long) As Boolean
+    If g_oRedimStats Is Nothing Then
+        Set g_oRedimStats = CreateObject("Scripting.Dictionary")
+    End If
+    g_oRedimStats.Item(sFuncName) = g_oRedimStats.Item(sFuncName) + 1
+    g_oRedimStats.Item("#" & sFuncName) = g_oRedimStats.Item("#" & sFuncName) + lSize
+    RedimStats = True
+End Function
+
+Public Function DesignRedimStats() As String
+    Dim vElem           As Variant
+    Dim aText()         As String
+    Dim lIdx            As Long
+    
+    If g_oRedimStats Is Nothing Then
+        Exit Function
+    End If
+    ReDim aText(0 To g_oRedimStats.Count - 1) As String
+    For Each vElem In g_oRedimStats.Keys
+        aText(lIdx) = vElem & ": " & g_oRedimStats.Item(vElem)
+        If Left$(vElem, 1) = "#" Then
+            aText(lIdx) = aText(lIdx) & " (avg. " & Format$(g_oRedimStats.Item(vElem) / g_oRedimStats.Item(Mid(vElem, 2)), "0.0") & ")"
+        End If
+        lIdx = lIdx + 1
+    Next
+    DesignRedimStats = Join(aText, vbCrLf)
 End Function

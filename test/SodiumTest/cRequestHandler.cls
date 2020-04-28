@@ -128,6 +128,7 @@ Private Sub m_oSocket_OnReceive()
     If lSize > 0 Then
         If UBound(baBuffer) <> lSize - 1 Then
             ReDim Preserve baBuffer(0 To lSize - 1) As Byte
+            Debug.Assert RedimStats("m_oSocket_OnReceive.baBuffer", UBound(baBuffer) + 1)
         End If
         sText = HandleRequest(FromUtf8Array(baBuffer))
     End If
