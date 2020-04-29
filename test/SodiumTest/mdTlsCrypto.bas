@@ -2236,7 +2236,7 @@ End Function
 Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As Byte) As Boolean
     Const FUNC_NAME     As String = "PkiExportPrivateKey"
     Dim dwFlags         As Long
-    Dim hProv           As Long
+    Dim hProvOrKey      As Long
     Dim lKeySpec        As Long
     Dim lFree           As Long
     Dim hCngKey         As Long
@@ -2244,6 +2244,7 @@ Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As 
     Dim lSize           As Long
     Dim baBuffer()      As Byte
     Dim uKeyInfo        As CRYPT_KEY_PROV_INFO
+    Dim hProv           As Long
     Dim hKey            As Long
     Dim lMagic          As Long
     Dim hResult         As Long
@@ -2251,11 +2252,11 @@ Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As 
     
     '--- note: this function allows using CRYPT_ACQUIRE_PREFER_NCRYPT_KEY_FLAG too for key export w/ all CNG API calls
     dwFlags = CRYPT_ACQUIRE_CACHE_FLAG Or CRYPT_ACQUIRE_SILENT_FLAG Or CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG
-    If CryptAcquireCertificatePrivateKey(pCertContext, dwFlags, 0, hProv, lKeySpec, lFree) = 0 Then
+    If CryptAcquireCertificatePrivateKey(pCertContext, dwFlags, 0, hProvOrKey, lKeySpec, lFree) = 0 Then
         GoTo QH
     End If
     If lKeySpec < 0 Then
-        hCngKey = hProv: hProv = 0
+        hCngKey = hProvOrKey: hProvOrKey = 0
         hNewKey = PkiCloneKeyWithExportPolicy(hCngKey, NCRYPT_ALLOW_EXPORT_FLAG Or NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG)
         hResult = NCryptExportKey(hNewKey, 0, StrPtr("PRIVATEBLOB"), ByVal 0, ByVal 0, 0, lSize, 0)
         If hResult < 0 Then
@@ -2347,8 +2348,11 @@ QH:
     If hKey <> 0 Then
         Call CryptDestroyKey(hKey)
     End If
-    If hProv <> 0 And lFree <> 0 Then
+    If hProv <> 0 Then
         Call CryptReleaseContext(hProv, 0)
+    End If
+    If hProvOrKey <> 0 And lFree <> 0 Then
+        Call CryptReleaseContext(hProvOrKey, 0)
     End If
     If hCngKey <> 0 And lFree <> 0 Then
         Call NCryptFreeObject(hCngKey)
