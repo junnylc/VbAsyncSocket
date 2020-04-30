@@ -60,5 +60,14 @@
     <ClCompile Include="ecc384.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="mini-gmp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rsa.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sshbn.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

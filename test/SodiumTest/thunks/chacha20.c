@@ -22,6 +22,7 @@ typedef struct
   size_t ncounter;
 } cf_salsa20_ctx, cf_chacha20_ctx;
 
+static
 void cf_chacha20_core(const uint8_t key0[16],
                       const uint8_t key1[16],
                       const uint8_t nonce[16],

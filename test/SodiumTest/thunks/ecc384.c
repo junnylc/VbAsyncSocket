@@ -683,7 +683,7 @@ static void vli_mmod_fast384(uint64_t *p_result, uint64_t *p_product)
 #endif
 
 /* Computes p_result = (p_left * p_right) % curve_p_384. */
-static void vli_modMult384_fast384(uint64_t *p_result, uint64_t *p_left, uint64_t *p_right)
+static void vli_modMult_fast384(uint64_t *p_result, uint64_t *p_left, uint64_t *p_right)
 {
     uint64_t l_product[2 * NUM_ECC_DIGITS_384];
     vli_mult384(l_product, p_left, p_right);
@@ -817,15 +817,15 @@ static void EccPoint_double_jacobian384(uint64_t *X1, uint64_t *Y1, uint64_t *Z1
     }
     
     vli_modSquare_fast384(t4, Y1);   /* t4 = y1^2 */
-    vli_modMult384_fast384(t5, X1, t4); /* t5 = x1*y1^2 = A */
+    vli_modMult_fast384(t5, X1, t4); /* t5 = x1*y1^2 = A */
     vli_modSquare_fast384(t4, t4);   /* t4 = y1^4 */
-    vli_modMult384_fast384(Y1, Y1, Z1); /* t2 = y1*z1 = z3 */
+    vli_modMult_fast384(Y1, Y1, Z1); /* t2 = y1*z1 = z3 */
     vli_modSquare_fast384(Z1, Z1);   /* t3 = z1^2 */
     
     vli_modAdd384(X1, X1, Z1, curve_p_384); /* t1 = x1 + z1^2 */
     vli_modAdd384(Z1, Z1, Z1, curve_p_384); /* t3 = 2*z1^2 */
     vli_modSub384(Z1, X1, Z1, curve_p_384); /* t3 = x1 - z1^2 */
-    vli_modMult384_fast384(X1, X1, Z1);    /* t1 = x1^2 - z1^4 */
+    vli_modMult_fast384(X1, X1, Z1);    /* t1 = x1^2 - z1^4 */
     
     vli_modAdd384(Z1, X1, X1, curve_p_384); /* t3 = 2*(x1^2 - z1^4) */
     vli_modAdd384(X1, X1, Z1, curve_p_384); /* t1 = 3*(x1^2 - z1^4) */
@@ -845,7 +845,7 @@ static void EccPoint_double_jacobian384(uint64_t *X1, uint64_t *Y1, uint64_t *Z1
     vli_modSub384(Z1, Z1, t5, curve_p_384); /* t3 = B^2 - A */
     vli_modSub384(Z1, Z1, t5, curve_p_384); /* t3 = B^2 - 2A = x3 */
     vli_modSub384(t5, t5, Z1, curve_p_384); /* t5 = A - x3 */
-    vli_modMult384_fast384(X1, X1, t5);    /* t1 = B * (A - x3) */
+    vli_modMult_fast384(X1, X1, t5);    /* t1 = B * (A - x3) */
     vli_modSub384(t4, X1, t4, curve_p_384); /* t4 = B * (A - x3) - y1^4 = y3 */
     
     vli_set384(X1, Z1);
@@ -859,9 +859,9 @@ static void apply_z384(uint64_t *X1, uint64_t *Y1, uint64_t *Z)
     uint64_t t1[NUM_ECC_DIGITS_384];
 
     vli_modSquare_fast384(t1, Z);    /* z^2 */
-    vli_modMult384_fast384(X1, X1, t1); /* x1 * z^2 */
-    vli_modMult384_fast384(t1, t1, Z);  /* z^3 */
-    vli_modMult384_fast384(Y1, Y1, t1); /* y1 * z^3 */
+    vli_modMult_fast384(X1, X1, t1); /* x1 * z^2 */
+    vli_modMult_fast384(t1, t1, Z);  /* z^3 */
+    vli_modMult_fast384(Y1, Y1, t1); /* y1 * z^3 */
 }
 
 /* P = (x1, y1) => 2P, (x2, y2) => P' */
@@ -897,17 +897,17 @@ static void XYcZ_add384(uint64_t *X1, uint64_t *Y1, uint64_t *X2, uint64_t *Y2)
     
     vli_modSub384(t5, X2, X1, curve_p_384); /* t5 = x2 - x1 */
     vli_modSquare_fast384(t5, t5);      /* t5 = (x2 - x1)^2 = A */
-    vli_modMult384_fast384(X1, X1, t5);    /* t1 = x1*A = B */
-    vli_modMult384_fast384(X2, X2, t5);    /* t3 = x2*A = C */
+    vli_modMult_fast384(X1, X1, t5);    /* t1 = x1*A = B */
+    vli_modMult_fast384(X2, X2, t5);    /* t3 = x2*A = C */
     vli_modSub384(Y2, Y2, Y1, curve_p_384); /* t4 = y2 - y1 */
     vli_modSquare_fast384(t5, Y2);      /* t5 = (y2 - y1)^2 = D */
     
     vli_modSub384(t5, t5, X1, curve_p_384); /* t5 = D - B */
     vli_modSub384(t5, t5, X2, curve_p_384); /* t5 = D - B - C = x3 */
     vli_modSub384(X2, X2, X1, curve_p_384); /* t3 = C - B */
-    vli_modMult384_fast384(Y1, Y1, X2);    /* t2 = y1*(C - B) */
+    vli_modMult_fast384(Y1, Y1, X2);    /* t2 = y1*(C - B) */
     vli_modSub384(X2, X1, t5, curve_p_384); /* t3 = B - x3 */
-    vli_modMult384_fast384(Y2, Y2, X2);    /* t4 = (y2 - y1)*(B - x3) */
+    vli_modMult_fast384(Y2, Y2, X2);    /* t4 = (y2 - y1)*(B - x3) */
     vli_modSub384(Y2, Y2, Y1, curve_p_384); /* t4 = y3 */
     
     vli_set384(X2, t5);
@@ -926,25 +926,25 @@ static void XYcZ_addC384(uint64_t *X1, uint64_t *Y1, uint64_t *X2, uint64_t *Y2)
     
     vli_modSub384(t5, X2, X1, curve_p_384); /* t5 = x2 - x1 */
     vli_modSquare_fast384(t5, t5);      /* t5 = (x2 - x1)^2 = A */
-    vli_modMult384_fast384(X1, X1, t5);    /* t1 = x1*A = B */
-    vli_modMult384_fast384(X2, X2, t5);    /* t3 = x2*A = C */
+    vli_modMult_fast384(X1, X1, t5);    /* t1 = x1*A = B */
+    vli_modMult_fast384(X2, X2, t5);    /* t3 = x2*A = C */
     vli_modAdd384(t5, Y2, Y1, curve_p_384); /* t4 = y2 + y1 */
     vli_modSub384(Y2, Y2, Y1, curve_p_384); /* t4 = y2 - y1 */
 
     vli_modSub384(t6, X2, X1, curve_p_384); /* t6 = C - B */
-    vli_modMult384_fast384(Y1, Y1, t6);    /* t2 = y1 * (C - B) */
+    vli_modMult_fast384(Y1, Y1, t6);    /* t2 = y1 * (C - B) */
     vli_modAdd384(t6, X1, X2, curve_p_384); /* t6 = B + C */
     vli_modSquare_fast384(X2, Y2);      /* t3 = (y2 - y1)^2 */
     vli_modSub384(X2, X2, t6, curve_p_384); /* t3 = x3 */
     
     vli_modSub384(t7, X1, X2, curve_p_384); /* t7 = B - x3 */
-    vli_modMult384_fast384(Y2, Y2, t7);    /* t4 = (y2 - y1)*(B - x3) */
+    vli_modMult_fast384(Y2, Y2, t7);    /* t4 = (y2 - y1)*(B - x3) */
     vli_modSub384(Y2, Y2, Y1, curve_p_384); /* t4 = y3 */
     
     vli_modSquare_fast384(t7, t5);      /* t7 = (y2 + y1)^2 = F */
     vli_modSub384(t7, t7, t6, curve_p_384); /* t7 = x3' */
     vli_modSub384(t6, t7, X1, curve_p_384); /* t6 = x3' - B */
-    vli_modMult384_fast384(t6, t6, t5);    /* t6 = (y2 + y1)*(x3' - B) */
+    vli_modMult_fast384(t6, t6, t5);    /* t6 = (y2 + y1)*(x3' - B) */
     vli_modSub384(Y1, t6, Y1, curve_p_384); /* t2 = y3' */
     
     vli_set384(X1, t7);
@@ -976,11 +976,11 @@ static void EccPoint_mult384(EccPoint384 *p_result, EccPoint384 *p_point, uint64
     
     /* Find final 1/Z value. */
     vli_modSub384(z, Rx[1], Rx[0], curve_p_384); /* X1 - X0 */
-    vli_modMult384_fast384(z, z, Ry[1-nb]);     /* Yb * (X1 - X0) */
-    vli_modMult384_fast384(z, z, p_point->x);   /* xP * Yb * (X1 - X0) */
+    vli_modMult_fast384(z, z, Ry[1-nb]);     /* Yb * (X1 - X0) */
+    vli_modMult_fast384(z, z, p_point->x);   /* xP * Yb * (X1 - X0) */
     vli_modInv384(z, z, curve_p_384);            /* 1 / (xP * Yb * (X1 - X0)) */
-    vli_modMult384_fast384(z, z, p_point->y);   /* yP / (xP * Yb * (X1 - X0)) */
-    vli_modMult384_fast384(z, z, Rx[1-nb]);     /* Xb * yP / (xP * Yb * (X1 - X0)) */
+    vli_modMult_fast384(z, z, p_point->y);   /* yP / (xP * Yb * (X1 - X0)) */
+    vli_modMult_fast384(z, z, Rx[1-nb]);     /* Xb * yP / (xP * Yb * (X1 - X0)) */
     /* End 1/Z calculation */
 
     XYcZ_add384(Rx[nb], Ry[nb], Rx[1-nb], Ry[1-nb]);
@@ -1034,7 +1034,7 @@ static void mod_sqrt384(uint64_t a[NUM_ECC_DIGITS_384])
         vli_modSquare_fast384(l_result, l_result);
         if(vli_testBit384(p1, i))
         {
-            vli_modMult384_fast384(l_result, l_result, a);
+            vli_modMult_fast384(l_result, l_result, a);
         }
     }
     vli_set384(a, l_result);
@@ -1051,7 +1051,7 @@ static void ecc_point_decompress384(EccPoint384 *p_point, const uint8_t p_compre
     
     vli_modSquare_fast384(p_point->y, p_point->x); /* y = x^2 */
     vli_modSub384(p_point->y, p_point->y, _3, curve_p_384); /* y = x^2 - 3 */
-    vli_modMult384_fast384(p_point->y, p_point->y, p_point->x); /* y = x^3 - 3x */
+    vli_modMult_fast384(p_point->y, p_point->y, p_point->x); /* y = x^3 - 3x */
     vli_modAdd384(p_point->y, p_point->y, curve_b_384, curve_p_384); /* y = x^3 - 3x + b */
     
     mod_sqrt384(p_point->y);
@@ -1062,7 +1062,7 @@ static void ecc_point_decompress384(EccPoint384 *p_point, const uint8_t p_compre
     }
 }
 
-int ecc_make_key384(uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_privateKey[ECC_BYTES_384])
+static int ecc_make_key384(uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_privateKey[ECC_BYTES_384])
 {
     uint64_t l_private[NUM_ECC_DIGITS_384];
     EccPoint384 l_public;
@@ -1090,7 +1090,7 @@ int ecc_make_key384(uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_privat
     return 1;
 }
 
-int ecdh_shared_secret384(const uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_privateKey[ECC_BYTES_384], uint8_t p_secret[ECC_BYTES_384])
+static int ecdh_shared_secret384(const uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_privateKey[ECC_BYTES_384], uint8_t p_secret[ECC_BYTES_384])
 {
     EccPoint384 l_public;
     uint64_t l_private[NUM_ECC_DIGITS_384];
@@ -1108,7 +1108,7 @@ int ecdh_shared_secret384(const uint8_t p_publicKey[ECC_BYTES_384+1], const uint
     return !EccPoint_isZero384(&l_product);
 }
 
-int ecdh_uncompress_key384(const uint8_t p_publicKey[ECC_BYTES_384 + 1], uint8_t p_uncompressedKey[2 * ECC_BYTES_384 + 1])
+static int ecdh_uncompress_key384(const uint8_t p_publicKey[ECC_BYTES_384 + 1], uint8_t p_uncompressedKey[2 * ECC_BYTES_384 + 1])
 {
     EccPoint384 l_public;
     ecc_point_decompress384(&l_public, p_publicKey);
@@ -1190,7 +1190,7 @@ static inline uint umax384(uint a, uint b)
     return (a > b ? a : b);
 }
 
-int ecdsa_sign384(const uint8_t p_privateKey[ECC_BYTES_384], const uint8_t p_hash[ECC_BYTES_384], uint64_t k[NUM_ECC_DIGITS_384], uint8_t p_signature[ECC_BYTES_384*2])
+static int ecdsa_sign384(const uint8_t p_privateKey[ECC_BYTES_384], const uint8_t p_hash[ECC_BYTES_384], uint64_t k[NUM_ECC_DIGITS_384], uint8_t p_signature[ECC_BYTES_384*2])
 {
     uint64_t l_tmp[NUM_ECC_DIGITS_384];
     uint64_t l_s[NUM_ECC_DIGITS_384];
@@ -1230,7 +1230,7 @@ int ecdsa_sign384(const uint8_t p_privateKey[ECC_BYTES_384], const uint8_t p_has
     return 1;
 }
 
-int ecdsa_verify384(const uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_hash[ECC_BYTES_384], const uint8_t p_signature[ECC_BYTES_384*2])
+static int ecdsa_verify384(const uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_hash[ECC_BYTES_384], const uint8_t p_signature[ECC_BYTES_384*2])
 {
     uint64_t u1[NUM_ECC_DIGITS_384], u2[NUM_ECC_DIGITS_384];
     uint64_t z[NUM_ECC_DIGITS_384];
@@ -1297,7 +1297,7 @@ int ecdsa_verify384(const uint8_t p_publicKey[ECC_BYTES_384+1], const uint8_t p_
             apply_z384(tx, ty, z);
             vli_modSub384(tz, rx, tx, curve_p_384); /* Z = x2 - x1 */
             XYcZ_add384(tx, ty, rx, ry);
-            vli_modMult384_fast384(z, z, tz);
+            vli_modMult_fast384(z, z, tz);
         }
     }
 

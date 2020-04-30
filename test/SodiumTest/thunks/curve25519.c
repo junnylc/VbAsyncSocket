@@ -129,7 +129,7 @@ static void inv25519(gf o, const gf i)
     o[a] = c[a];
 }
 
-
+static
 void cf_curve25519_mul(uint8_t out[32], const uint8_t priv[32], const uint8_t pub[32])
 {
   uint8_t z[32];
@@ -184,6 +184,7 @@ void cf_curve25519_mul(uint8_t out[32], const uint8_t priv[32], const uint8_t pu
   pack25519(out, a);
 }
 
+static
 void cf_curve25519_mul_base(uint8_t out[32], const uint8_t priv[32])
 {
   const uint8_t _9[32] = {9};

@@ -2387,12 +2387,12 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
             GoTo QH
         End If
         baSignature = CryptoRsaSign(uRsaCtx, baVerifyData)
+    Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, _
+            TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
+        baSignature = CryptoRsaPssSign(baPrivKey, baVerifyData, lSignatureType)
     Case Else
         baVerifyHash = pvTlsArrayHash(pvTlsSignatureDigestAlgo(lSignatureType), baVerifyData, 0)
         Select Case lSignatureType
-        Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, _
-                TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
-            baSignature = CryptoRsaPssSign(baPrivKey, baVerifyHash, lSignatureType)
         Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256
             baSignature = CryptoEccSecp256r1Sign(baPrivKey, baVerifyHash)
             baSignature = pvAsn1EncodeSignatureToDer(baSignature, TLS_SECP256R1_KEY_SIZE)
@@ -2440,11 +2440,10 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
         End If
     Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, _
             TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
-        baVerifyHash = pvTlsArrayHash(pvTlsSignatureDigestAlgo(lSignatureType), baVerifyData, 0)
-        If OsVersion < ucsOsvVista Then
+        If Not CryptoIsSupported(ucsTlsAlgoSignaturePss) Then
             bSkip = True
         Else
-            If Not CryptoRsaPssVerify(baCert, baVerifyHash, baSignature, lSignatureType) Then
+            If Not CryptoRsaPssVerify(baCert, baVerifyData, baSignature, lSignatureType) Then
                 GoTo InvalidSignature
             End If
         End If

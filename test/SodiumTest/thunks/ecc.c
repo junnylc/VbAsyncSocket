@@ -1060,7 +1060,7 @@ static void ecc_point_decompress(EccPoint *p_point, const uint8_t p_compressed[E
     }
 }
 
-int ecc_make_key(uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_privateKey[ECC_BYTES])
+static int ecc_make_key(uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_privateKey[ECC_BYTES])
 {
     uint64_t l_private[NUM_ECC_DIGITS];
     EccPoint l_public;
@@ -1088,7 +1088,7 @@ int ecc_make_key(uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_privateKey[EC
     return 1;
 }
 
-int ecdh_shared_secret(const uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_privateKey[ECC_BYTES], uint8_t p_secret[ECC_BYTES])
+static int ecdh_shared_secret(const uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_privateKey[ECC_BYTES], uint8_t p_secret[ECC_BYTES])
 {
     EccPoint l_public;
     uint64_t l_private[NUM_ECC_DIGITS];
@@ -1106,7 +1106,7 @@ int ecdh_shared_secret(const uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_p
     return !EccPoint_isZero(&l_product);
 }
 
-int ecdh_uncompress_key(const uint8_t p_publicKey[ECC_BYTES + 1], uint8_t p_uncompressedKey[2 * ECC_BYTES + 1])
+static int ecdh_uncompress_key(const uint8_t p_publicKey[ECC_BYTES + 1], uint8_t p_uncompressedKey[2 * ECC_BYTES + 1])
 {
     EccPoint l_public;
     ecc_point_decompress(&l_public, p_publicKey);
@@ -1188,7 +1188,7 @@ static inline uint umax(uint a, uint b)
     return (a > b ? a : b);
 }
 
-int ecdsa_sign(const uint8_t p_privateKey[ECC_BYTES], const uint8_t p_hash[ECC_BYTES], uint64_t k[NUM_ECC_DIGITS], uint8_t p_signature[ECC_BYTES*2])
+static int ecdsa_sign(const uint8_t p_privateKey[ECC_BYTES], const uint8_t p_hash[ECC_BYTES], uint64_t k[NUM_ECC_DIGITS], uint8_t p_signature[ECC_BYTES*2])
 {
     uint64_t l_tmp[NUM_ECC_DIGITS];
     uint64_t l_s[NUM_ECC_DIGITS];
@@ -1228,7 +1228,7 @@ int ecdsa_sign(const uint8_t p_privateKey[ECC_BYTES], const uint8_t p_hash[ECC_B
     return 1;
 }
 
-int ecdsa_verify(const uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_hash[ECC_BYTES], const uint8_t p_signature[ECC_BYTES*2])
+static int ecdsa_verify(const uint8_t p_publicKey[ECC_BYTES+1], const uint8_t p_hash[ECC_BYTES], const uint8_t p_signature[ECC_BYTES*2])
 {
     uint64_t u1[NUM_ECC_DIGITS], u2[NUM_ECC_DIGITS];
     uint64_t z[NUM_ECC_DIGITS];

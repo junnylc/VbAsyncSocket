@@ -6,6 +6,8 @@
 #define IMPL_SHA512_THUNK
 #define IMPL_CHACHA20_THUNK
 #define IMPL_AESGCM_THUNK
+//#define IMPL_GMPRSA_THUNK
+#define IMPL_SSHRSA_THUNK
 
 #include <stdio.h>
 #include <string.h>
@@ -21,7 +23,7 @@
 
 #pragma code_seg(".supcode")
 
-LPWSTR __stdcall GetCurrentDateTime()
+static LPWSTR __stdcall GetCurrentDateTime()
 {
     static WCHAR szResult[50];
     SYSTEMTIME  st;
@@ -40,7 +42,7 @@ LPWSTR __stdcall GetCurrentDateTime()
 
 
 #define assert(e)
-#define abort(e)
+#define abort() { }
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 #ifdef IMPL_ECC256_THUNK
@@ -49,8 +51,19 @@ LPWSTR __stdcall GetCurrentDateTime()
 #ifdef IMPL_ECC384_THUNK
     #include "ecc384.h"
 #endif
+#ifdef IMPL_SSHRSA_THUNK
+    #include "sshbn.h"
+#endif
+typedef LPVOID (__stdcall *CoTaskMemAlloc_t)(SIZE_T cb);
+typedef LPVOID (__stdcall *CoTaskMemRealloc_t)(LPVOID pv, SIZE_T cb);
+typedef void (__stdcall *CoTaskMemFree_t)(LPVOID pv);
 
 typedef struct {
+#if defined(IMPL_SSHRSA_THUNK) || defined (IMPL_GMPRSA_THUNK)
+    CoTaskMemAlloc_t m_CoTaskMemAlloc;
+    CoTaskMemRealloc_t m_CoTaskMemRealloc;
+    CoTaskMemFree_t m_CoTaskMemFree;
+#endif
 #ifdef IMPL_ECC256_THUNK
     uint64_t m_curve_p[NUM_ECC_DIGITS];
     uint64_t m_curve_b[NUM_ECC_DIGITS];
@@ -79,6 +92,10 @@ typedef struct {
     uint8_t m_Rcon[11];
     uint8_t m_S_inv[256];
 #endif
+#ifdef IMPL_SSHRSA_THUNK
+    BignumInt m_bnZero[1];
+    BignumInt m_bnOne[2];
+#endif
 } thunk_context_t;
 
 #define curve_p (getContext()->m_curve_p)
@@ -97,14 +114,16 @@ typedef struct {
 #define S (getContext()->m_S)
 #define Rcon (getContext()->m_Rcon)
 #define S_inv (getContext()->m_S_inv)
+#define bnZero (getContext()->m_bnZero)
+#define bnOne (getContext()->m_bnOne)
 
 #pragma code_seg(push, r1, ".mythunk")
 
-int beginOfThunk(int i) { 
+static int beginOfThunk(int i) { 
     int a[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }; return a[i]; 
 }
 
-__declspec(naked) thunk_context_t *getContext() {
+__declspec(naked) static thunk_context_t *getContext() {
     __asm {
         call    _next
 _next:
@@ -116,7 +135,7 @@ _next:
     }
 }
 
-__declspec(naked) uint8_t *getThunk() {
+__declspec(naked) static uint8_t *getThunk() {
     __asm {
         call    _next
 _next:
@@ -164,6 +183,14 @@ extern "C" {
     #include "gf128.c"
     #include "modes.c"
     #include "gcm.c"
+#endif
+#ifdef IMPL_GMPRSA_THUNK
+    #include "mini-gmp.c"
+    #include "rsa.c"
+#endif
+#ifdef IMPL_SSHRSA_THUNK
+    #include "sshbn.c"
+    #include "rsa.c"
 #endif
 
 #ifdef __cplusplus
@@ -220,9 +247,22 @@ static int endOfThunk() { return 0; }
     typedef int (*cf_aesgcm_decrypt_t)(uint8_t *m, const uint8_t *c, const size_t clen, const uint8_t *mac, const uint8_t *ad, const size_t adlen,
                                        const uint8_t *npub, const uint8_t *k, const size_t klen);
 #endif
+#if defined(IMPL_GMPRSA_THUNK) || defined(IMPL_SSHRSA_THUNK)
+    typedef void (*rsa_modexp_t)(uint32_t maxbytes, void *b, void *e, void *m, void *r);
+#endif
+
+typedef struct _RSA_PUBLIC_KEY_XX
+{
+    #pragma pack(push, 1)
+    PUBLICKEYSTRUC PublicKeyStruc;
+    RSAPUBKEY RsaPubKey;
+    BYTE RsaModulus[ANYSIZE_ARRAY];
+} RSA_PUBLIC_KEY_XX;
 
 void __cdecl main()
 {
+    RSA_PUBLIC_KEY_XX a;
+    printf("pubexp offset=%d\n", ((uint8_t *)&a.RsaPubKey.pubexp) - ((uint8_t *)&a));
 #ifdef IMPL_SHA256_THUNK
     printf("sizeof(cf_sha256_context)=%d\n", sizeof cf_sha256_context);
 #endif
@@ -233,6 +273,11 @@ void __cdecl main()
     printf("sizeof(g_chacha20_tau)=%d\n", sizeof g_chacha20_tau);
 #endif
     static thunk_context_t ctx;
+#if defined(IMPL_SSHRSA_THUNK) || defined (IMPL_GMPRSA_THUNK)
+    ctx.m_CoTaskMemAlloc = (CoTaskMemAlloc_t)GetProcAddress(GetModuleHandle(L"ole32"), "CoTaskMemAlloc");
+    ctx.m_CoTaskMemRealloc = (CoTaskMemRealloc_t)GetProcAddress(GetModuleHandle(L"ole32"), "CoTaskMemRealloc");
+    ctx.m_CoTaskMemFree = (CoTaskMemFree_t)GetProcAddress(GetModuleHandle(L"ole32"), "CoTaskMemFree");
+#endif
 #ifdef IMPL_ECC256_THUNK
     memcpy(&ctx.m_curve_p, &g_curve_p, sizeof g_curve_p);
     memcpy(&ctx.m_curve_b, &g_curve_b, sizeof g_curve_b);
@@ -260,6 +305,10 @@ void __cdecl main()
     memcpy(&ctx.m_S, &g_S, sizeof g_S);
     memcpy(&ctx.m_Rcon, &g_Rcon, sizeof g_Rcon);
     memcpy(&ctx.m_S_inv, &g_S_inv, sizeof g_S_inv);
+#endif
+#ifdef IMPL_SSHRSA_THUNK
+    memcpy(&ctx.m_bnZero, &g_bnZero, sizeof g_bnZero);
+    memcpy(&ctx.m_bnOne, &g_bnOne, sizeof g_bnOne);
 #endif
 
     CoInitialize(0);
@@ -306,6 +355,12 @@ void __cdecl main()
     DECLARE_PFN(cf_aesgcm_encrypt_t, cf_aesgcm_encrypt);
     DECLARE_PFN(cf_aesgcm_decrypt_t, cf_aesgcm_decrypt);
 #endif
+#ifdef IMPL_GMPRSA_THUNK
+    DECLARE_PFN(rsa_modexp_t, gmp_rsa_public_encrypt);
+#endif
+#ifdef IMPL_SSHRSA_THUNK
+    DECLARE_PFN(rsa_modexp_t, rsa_modexp);
+#endif
 
 #ifdef IMPL_ECC256_THUNK
     uint8_t pubkey[ECC_BYTES+1] = { 0 };
@@ -348,6 +403,33 @@ void __cdecl main()
     uint8_t *mac = cyphertext + sizeof plaintext;
     pfn_cf_aesgcm_encrypt(cyphertext, mac, plaintext, sizeof plaintext, aad, sizeof aad, nonce, key, sizeof key);
     pfn_cf_aesgcm_decrypt(cyphertext, cyphertext, sizeof plaintext, mac, aad, sizeof aad, nonce, key, sizeof key);
+#endif
+#ifdef IMPL_GMPRSA_THUNK
+    {
+    #define BUFFER_SIZE 32
+    uint8_t m[BUFFER_SIZE] = { 0 };
+    uint8_t e[BUFFER_SIZE] = { 0 };
+    uint8_t from[BUFFER_SIZE] = { 0 };
+    uint8_t to[BUFFER_SIZE] = { 33 }, to2[BUFFER_SIZE] = { 0 };
+    m[BUFFER_SIZE-1] = 200;
+    m[BUFFER_SIZE-2] = 199;
+    e[BUFFER_SIZE-1] = 2;
+    from[BUFFER_SIZE-1] = 123;
+    pfn_gmp_rsa_public_encrypt(BUFFER_SIZE, from, e, m, to2);
+    }
+#endif
+#ifdef IMPL_SSHRSA_THUNK
+    {
+    #define BUFFER_SIZE 32
+    uint8_t m[BUFFER_SIZE] = { 0 };
+    uint8_t e[BUFFER_SIZE] = { 0 };
+    uint8_t from[BUFFER_SIZE] = { 0 };
+    uint8_t to[BUFFER_SIZE] = { 33 }, to2[BUFFER_SIZE] = { 0 };
+    m[BUFFER_SIZE-1] = 200;
+    e[BUFFER_SIZE-1] = 2;
+    from[BUFFER_SIZE-1] = 123;
+    pfn_rsa_modexp(BUFFER_SIZE, from, e, m, to);
+    }
 #endif
 
     // init offsets at beginning of thunk
@@ -392,6 +474,12 @@ void __cdecl main()
 #ifdef IMPL_AESGCM_THUNK
     ((int *)hThunk)[idx++] = ((uint8_t *)cf_aesgcm_encrypt - (uint8_t *)beginOfThunk);
     ((int *)hThunk)[idx++] = ((uint8_t *)cf_aesgcm_decrypt - (uint8_t *)beginOfThunk);
+#endif
+#ifdef IMPL_GMPRSA_THUNK
+    ((int *)hThunk)[idx++] = ((uint8_t *)gmp_rsa_public_encrypt - (uint8_t *)beginOfThunk);
+#endif
+#ifdef IMPL_SSHRSA_THUNK
+    ((int *)hThunk)[idx++] = ((uint8_t *)rsa_modexp - (uint8_t *)beginOfThunk);
 #endif
     printf("i=%d, needed=0x%02X, allocated=0x%02X\n", idx, (idx*4 + 15) & -16, ((uint8_t *)getContext) - ((uint8_t *)beginOfThunk));
 
