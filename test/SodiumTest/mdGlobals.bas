@@ -147,7 +147,7 @@ Public Function RedimStats(sFuncName As String, ByVal lSize As Long) As Boolean
     RedimStats = True
 End Function
 
-Public Function DesignRedimStats() As String
+Public Function DesignDumpRedimStats() As String
     Dim vElem           As Variant
     Dim aText()         As String
     Dim lIdx            As Long
@@ -163,5 +163,5 @@ Public Function DesignRedimStats() As String
         End If
         lIdx = lIdx + 1
     Next
-    DesignRedimStats = Join(aText, vbCrLf)
+    DesignDumpRedimStats = Join(aText, vbCrLf)
 End Function

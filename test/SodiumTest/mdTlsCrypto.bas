@@ -17,49 +17,30 @@ Option Explicit
 DefObj A-Z
 
 #Const ImplUseLibSodium = (ASYNCSOCKET_USE_LIBSODIUM <> 0)
-#Const ImplUseBCrypt = False
+#Const ImplUseCryptoRsa = (ASYNCSOCKET_USE_CRYPTO_RSA <> 0)
 
 '=========================================================================
 ' API
 '=========================================================================
 
-Private Const TLS_SIGNATURE_RSA_PSS_RSAE_SHA256         As Long = &H804
-Private Const TLS_SIGNATURE_RSA_PSS_RSAE_SHA384         As Long = &H805
-Private Const TLS_SIGNATURE_RSA_PSS_RSAE_SHA512         As Long = &H806
-Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA256          As Long = &H809
-Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA384          As Long = &H80A
-Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA512          As Long = &H80B
 '--- for CryptAcquireContext
 Private Const PROV_RSA_FULL                             As Long = 1
-Private Const PROV_RSA_AES                              As Long = 24
 Private Const CRYPT_NEWKEYSET                           As Long = &H8
 Private Const CRYPT_DELETEKEYSET                        As Long = &H10
 Private Const CRYPT_VERIFYCONTEXT                       As Long = &HF0000000
 '--- for CryptDecodeObjectEx
 Private Const X509_ASN_ENCODING                         As Long = 1
 Private Const PKCS_7_ASN_ENCODING                       As Long = &H10000
-Private Const X509_PUBLIC_KEY_INFO                      As Long = 8
 Private Const PKCS_RSA_PRIVATE_KEY                      As Long = 43
 Private Const PKCS_PRIVATE_KEY_INFO                     As Long = 44
 Private Const X509_ECC_PRIVATE_KEY                      As Long = 82
 Private Const CNG_RSA_PRIVATE_KEY_BLOB                  As Long = 83
 Private Const CRYPT_DECODE_NOCOPY_FLAG                  As Long = &H1
 Private Const CRYPT_DECODE_ALLOC_FLAG                   As Long = &H8000
-'--- for CryptCreateHash
-Private Const CALG_MD5                                  As Long = &H8003&
-Private Const CALG_SHA1                                 As Long = &H8004&
-Private Const CALG_SHA_256                              As Long = &H800C&
-Private Const CALG_SHA_384                              As Long = &H800D&
-Private Const CALG_SHA_512                              As Long = &H800E&
 '--- for CryptSignHash
-Private Const AT_KEYEXCHANGE                            As Long = 1
 Private Const AT_SIGNATURE                              As Long = 2
 Private Const RSA1024BIT_KEY                            As Long = &H4000000
-Private Const MAX_RSA_KEY                               As Long = 8192     '--- in bits
-'--- for CryptVerifySignature
-Private Const NTE_BAD_SIGNATURE                         As Long = &H80090006
 Private Const NTE_BAD_ALGID                             As Long = &H80090008
-Private Const NTE_PROV_TYPE_NOT_DEF                     As Long = &H80090017
 Private Const ERROR_FILE_NOT_FOUND                      As Long = 2
 '--- for CertGetCertificateContextProperty
 Private Const CERT_KEY_PROV_INFO_PROP_ID                As Long = 2
@@ -120,13 +101,6 @@ Private Const NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG        As Long = &H2
 '--- for thunks
 Private Const MEM_COMMIT                                As Long = &H1000
 Private Const PAGE_EXECUTE_READWRITE                    As Long = &H40
-#If ImplUseBCrypt Then
-    '--- for BCryptSignHash
-    Private Const BCRYPT_PAD_PSS                        As Long = 8
-    '--- for BCryptVerifySignature
-    Private Const STATUS_INVALID_SIGNATURE              As Long = &HC000A000
-    Private Const ERROR_INVALID_DATA                    As Long = &HC000000D
-#End If
 
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
 Private Declare Sub FillMemory Lib "kernel32" Alias "RtlFillMemory" (Destination As Any, ByVal Length As Long, ByVal Fill As Byte)
@@ -146,21 +120,12 @@ Private Declare Function lstrlenW Lib "kernel32" (ByVal lpString As Long) As Lon
 Private Declare Function CryptAcquireContext Lib "advapi32" Alias "CryptAcquireContextW" (phProv As Long, ByVal pszContainer As Long, ByVal pszProvider As Long, ByVal dwProvType As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptReleaseContext Lib "advapi32" (ByVal hProv As Long, ByVal dwFlags As Long) As Long
 Private Declare Function CryptGenRandom Lib "advapi32" (ByVal hProv As Long, ByVal dwLen As Long, ByVal pbBuffer As Long) As Long
-Private Declare Function CryptImportKey Lib "advapi32" (ByVal hProv As Long, pbData As Any, ByVal dwDataLen As Long, ByVal hPubKey As Long, ByVal dwFlags As Long, phKey As Long) As Long
 Private Declare Function CryptGenKey Lib "advapi32" (ByVal hProv As Long, ByVal AlgId As Long, ByVal dwFlags As Long, phKey As Long) As Long
 Private Declare Function CryptDestroyKey Lib "advapi32" (ByVal hKey As Long) As Long
-Private Declare Function CryptCreateHash Lib "advapi32" (ByVal hProv As Long, ByVal AlgId As Long, ByVal hKey As Long, ByVal dwFlags As Long, phHash As Long) As Long
-Private Declare Function CryptHashData Lib "advapi32" (ByVal hHash As Long, pbData As Any, ByVal dwDataLen As Long, ByVal dwFlags As Long) As Long
-Private Declare Function CryptDestroyHash Lib "advapi32" (ByVal hHash As Long) As Long
-Private Declare Function CryptSignHash Lib "advapi32" Alias "CryptSignHashA" (ByVal hHash As Long, ByVal dwKeySpec As Long, ByVal szDescription As Long, ByVal dwFlags As Long, pbSignature As Any, pdwSigLen As Long) As Long
-Private Declare Function CryptVerifySignature Lib "advapi32" Alias "CryptVerifySignatureA" (ByVal hHash As Long, pbSignature As Any, ByVal dwSigLen As Long, ByVal hPubKey As Long, ByVal szDescription As Long, ByVal dwFlags As Long) As Long
-Private Declare Function CryptEncrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long, dwBufLen As Long) As Long
-'Private Declare Function CryptDecrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long) As Long
 Private Declare Function CryptGetUserKey Lib "advapi32" (ByVal hProv As Long, ByVal dwKeySpec As Long, phUserKey As Long) As Long
 Private Declare Function CryptExportKey Lib "advapi32" (ByVal hKey As Long, ByVal hExpKey As Long, ByVal dwBlobType As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long) As Long
 '--- Crypt32
 Private Declare Function CryptImportPublicKeyInfo Lib "crypt32" (ByVal hCryptProv As Long, ByVal dwCertEncodingType As Long, pInfo As Any, phKey As Long) As Long
-Private Declare Function CryptImportPublicKeyInfoEx2 Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal pInfo As Long, ByVal dwFlags As Long, ByVal pvAuxInfo As Long, phKey As Long) As Long
 Private Declare Function CryptDecodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal lpszStructType As Any, pbEncoded As Any, ByVal cbEncoded As Long, ByVal dwFlags As Long, ByVal pDecodePara As Long, pvStructInfo As Any, pcbStructInfo As Long) As Long
 Private Declare Function CryptEncodeObjectEx Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal lpszStructType As Any, pvStructInfo As Any, ByVal dwFlags As Long, ByVal pEncodePara As Long, pvEncoded As Any, pcbEncoded As Long) As Long
 Private Declare Function CryptAcquireCertificatePrivateKey Lib "crypt32" (ByVal pCert As Long, ByVal dwFlags As Long, ByVal pvParameters As Long, phCryptProvOrNCryptKey As Long, pdwKeySpec As Long, pfCallerFreeProvOrNCryptKey As Long) As Long
@@ -187,35 +152,6 @@ Private Declare Function NCryptFreeObject Lib "ncrypt" (ByVal hKey As Long) As L
 Private Declare Function NCryptGetProperty Lib "ncrypt" (ByVal hObject As Long, ByVal pszProperty As Long, pbOutput As Any, ByVal cbOutput As Long, pcbResult As Long, ByVal dwFlags As Long) As Long
 Private Declare Function NCryptSetProperty Lib "ncrypt" (ByVal hObject As Long, ByVal pszProperty As Long, pbInput As Any, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
 Private Declare Function NCryptFinalizeKey Lib "ncrypt" (ByVal hKey As Long, ByVal dwFlags As Long) As Long
-#If ImplUseBCrypt Then
-    '--- BCrypt
-    Private Declare Function BCryptOpenAlgorithmProvider Lib "bcrypt" (ByRef hAlgorithm As Long, ByVal pszAlgId As Long, ByVal pszImplementation As Long, ByVal dwFlags As Long) As Long
-    Private Declare Function BCryptCloseAlgorithmProvider Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal dwFlags As Long) As Long
-    Private Declare Function BCryptImportKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, ByRef hKey As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
-    Private Declare Function BCryptDestroyKey Lib "bcrypt" (ByVal hKey As Long) As Long
-    Private Declare Function BCryptSignHash Lib "bcrypt" (ByVal hKey As Long, pPaddingInfo As Any, pbInput As Any, ByVal cbInput As Long, pbOutput As Any, ByVal cbOutput As Long, pcbResult As Long, ByVal dwFlags As Long) As Long
-    Private Declare Function BCryptVerifySignature Lib "bcrypt" (ByVal hKey As Long, pPaddingInfo As Any, pbHash As Any, ByVal cbHash As Long, pbSignature As Any, ByVal cbSignature As Long, ByVal dwFlags As Long) As Long
-#End If
-#If ImplUseLibSodium Then
-    '--- libsodium
-    Private Declare Function sodium_init Lib "libsodium" () As Long
-    Private Declare Function randombytes_buf Lib "libsodium" (ByVal lpOut As Long, ByVal lSize As Long) As Long
-    Private Declare Function crypto_scalarmult_curve25519 Lib "libsodium" (lpOut As Any, lpConstN As Any, lpConstP As Any) As Long
-    Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpConstN As Any) As Long
-    Private Declare Function crypto_hash_sha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
-    Private Declare Function crypto_hash_sha256_init Lib "libsodium" (lpState As Any) As Long
-    Private Declare Function crypto_hash_sha256_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
-    Private Declare Function crypto_hash_sha256_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
-    Private Declare Function crypto_hash_sha512_init Lib "libsodium" (lpState As Any) As Long
-    Private Declare Function crypto_hash_sha512_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
-    Private Declare Function crypto_hash_sha512_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
-    Private Declare Function crypto_aead_chacha20poly1305_ietf_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-    Private Declare Function crypto_aead_chacha20poly1305_ietf_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-    Private Declare Function crypto_aead_aes256gcm_is_available Lib "libsodium" () As Long
-    Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-    Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
-    Private Declare Function crypto_hash_sha512_statebytes Lib "libsodium" () As Long
-#End If
 
 Private Type CRYPT_BLOB_DATA
     cbData              As Long
@@ -392,11 +328,73 @@ Private Type CERT_CHAIN_ELEMENT
     pwszExtendedErrorInfo As Long
 End Type
 
-#If ImplUseBCrypt Then
+#If ImplUseCryptoRsa Then
+    Private Const TLS_SIGNATURE_RSA_PSS_RSAE_SHA256     As Long = &H804
+    Private Const TLS_SIGNATURE_RSA_PSS_RSAE_SHA384     As Long = &H805
+    Private Const TLS_SIGNATURE_RSA_PSS_RSAE_SHA512     As Long = &H806
+    Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA256      As Long = &H809
+    Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA384      As Long = &H80A
+    Private Const TLS_SIGNATURE_RSA_PSS_PSS_SHA512      As Long = &H80B
+    Private Const PROV_RSA_AES                          As Long = 24
+    Private Const X509_PUBLIC_KEY_INFO                  As Long = 8
+    '--- for CryptCreateHash
+    Private Const CALG_MD5                              As Long = &H8003&
+    Private Const CALG_SHA1                             As Long = &H8004&
+    Private Const CALG_SHA_256                          As Long = &H800C&
+    Private Const CALG_SHA_384                          As Long = &H800D&
+    Private Const CALG_SHA_512                          As Long = &H800E&
+    Private Const AT_KEYEXCHANGE                        As Long = 1
+    Private Const MAX_RSA_KEY                           As Long = 8192     '--- in bits
+    '--- for CryptVerifySignature
+    Private Const NTE_BAD_SIGNATURE                     As Long = &H80090006
+    Private Const NTE_PROV_TYPE_NOT_DEF                 As Long = &H80090017
+    '--- for BCryptSignHash
+    Private Const BCRYPT_PAD_PSS                        As Long = 8
+    '--- for BCryptVerifySignature
+    Private Const STATUS_INVALID_SIGNATURE              As Long = &HC000A000
+    Private Const ERROR_INVALID_DATA                    As Long = &HC000000D
+    
+    '--- Crypt
+    Private Declare Function CryptImportKey Lib "advapi32" (ByVal hProv As Long, pbData As Any, ByVal dwDataLen As Long, ByVal hPubKey As Long, ByVal dwFlags As Long, phKey As Long) As Long
+    Private Declare Function CryptCreateHash Lib "advapi32" (ByVal hProv As Long, ByVal AlgId As Long, ByVal hKey As Long, ByVal dwFlags As Long, phHash As Long) As Long
+    Private Declare Function CryptHashData Lib "advapi32" (ByVal hHash As Long, pbData As Any, ByVal dwDataLen As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function CryptDestroyHash Lib "advapi32" (ByVal hHash As Long) As Long
+    Private Declare Function CryptSignHash Lib "advapi32" Alias "CryptSignHashA" (ByVal hHash As Long, ByVal dwKeySpec As Long, ByVal szDescription As Long, ByVal dwFlags As Long, pbSignature As Any, pdwSigLen As Long) As Long
+    Private Declare Function CryptVerifySignature Lib "advapi32" Alias "CryptVerifySignatureA" (ByVal hHash As Long, pbSignature As Any, ByVal dwSigLen As Long, ByVal hPubKey As Long, ByVal szDescription As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function CryptEncrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long, dwBufLen As Long) As Long
+    Private Declare Function CryptImportPublicKeyInfoEx2 Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal pInfo As Long, ByVal dwFlags As Long, ByVal pvAuxInfo As Long, phKey As Long) As Long
+    '--- BCrypt
+    Private Declare Function BCryptOpenAlgorithmProvider Lib "bcrypt" (ByRef hAlgorithm As Long, ByVal pszAlgId As Long, ByVal pszImplementation As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptCloseAlgorithmProvider Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptImportKeyPair Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal hImportKey As Long, ByVal pszBlobType As Long, ByRef hKey As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptDestroyKey Lib "bcrypt" (ByVal hKey As Long) As Long
+    Private Declare Function BCryptSignHash Lib "bcrypt" (ByVal hKey As Long, pPaddingInfo As Any, pbInput As Any, ByVal cbInput As Long, pbOutput As Any, ByVal cbOutput As Long, pcbResult As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptVerifySignature Lib "bcrypt" (ByVal hKey As Long, pPaddingInfo As Any, pbHash As Any, ByVal cbHash As Long, pbSignature As Any, ByVal cbSignature As Long, ByVal dwFlags As Long) As Long
+    
     Private Type BCRYPT_PSS_PADDING_INFO
         pszAlgId        As Long
         cbSalt          As Long
     End Type
+#End If
+#If ImplUseLibSodium Then
+    '--- libsodium
+    Private Declare Function sodium_init Lib "libsodium" () As Long
+    Private Declare Function randombytes_buf Lib "libsodium" (ByVal lpOut As Long, ByVal lSize As Long) As Long
+    Private Declare Function crypto_scalarmult_curve25519 Lib "libsodium" (lpOut As Any, lpConstN As Any, lpConstP As Any) As Long
+    Private Declare Function crypto_scalarmult_curve25519_base Lib "libsodium" (lpOut As Any, lpConstN As Any) As Long
+    Private Declare Function crypto_hash_sha256 Lib "libsodium" (lpOut As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
+    Private Declare Function crypto_hash_sha256_init Lib "libsodium" (lpState As Any) As Long
+    Private Declare Function crypto_hash_sha256_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
+    Private Declare Function crypto_hash_sha256_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
+    Private Declare Function crypto_hash_sha512_init Lib "libsodium" (lpState As Any) As Long
+    Private Declare Function crypto_hash_sha512_update Lib "libsodium" (lpState As Any, lpConstIn As Any, ByVal lSize As Long, Optional ByVal lHighSize As Long) As Long
+    Private Declare Function crypto_hash_sha512_final Lib "libsodium" (lpState As Any, lpOut As Any) As Long
+    Private Declare Function crypto_aead_chacha20poly1305_ietf_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+    Private Declare Function crypto_aead_chacha20poly1305_ietf_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+    Private Declare Function crypto_aead_aes256gcm_is_available Lib "libsodium" () As Long
+    Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+    Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
+    Private Declare Function crypto_hash_sha512_statebytes Lib "libsodium" () As Long
 #End If
 
 '=========================================================================
@@ -550,12 +548,14 @@ Private Type UcsCryptoThunkData
     hRandomProv         As Long
 End Type
 
-Public Type UcsRsaContextType
-    hProv               As Long
-    hPrivKey            As Long
-    hPubKey             As Long
-    HashAlgId           As Long
-End Type
+#If ImplUseCryptoRsa Then
+    Public Type UcsRsaContextType
+        hProv               As Long
+        hPrivKey            As Long
+        hPubKey             As Long
+        HashAlgId           As Long
+    End Type
+#End If
 
 Public Type UcsKeyInfo
     AlgoObjId           As String
@@ -699,13 +699,21 @@ Public Function CryptoIsSupported(ByVal eAead As UcsTlsCryptoAlgorithmsEnum) As 
             CryptoIsSupported = (crypto_aead_aes256gcm_is_available() <> 0 And eAead = PREF + ucsTlsAlgoAeadAes256)
         #End If
     Case ucsTlsAlgoSignaturePss
-        #If ImplUseBCrypt Then
+        #If ImplUseCryptoRsa Then
             CryptoIsSupported = (OsVersion >= ucsOsvVista)  '--- need BCrypt for PSS padding on signatures
         #Else
             CryptoIsSupported = True
         #End If
     Case ucsTlsAlgoSignaturePkcsSha2
-        CryptoIsSupported = (OsVersion >= ucsOsvXp)         '--- need PROV_RSA_AES for SHA-2
+        #If ImplUseCryptoRsa Then
+            CryptoIsSupported = (OsVersion >= ucsOsvXp)         '--- need PROV_RSA_AES for SHA-2
+        #Else
+            CryptoIsSupported = True
+        #End If
+    Case ucsTlsAlgoSignaturePkcsSha1
+        #If ImplUseCryptoRsa Then
+            CryptoIsSupported = True
+        #End If
     Case Else
         CryptoIsSupported = True
     End Select
@@ -798,14 +806,10 @@ End Function
 
 Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As Byte()
     Const MAX_RETRIES   As Long = 16
-    Dim uKeyInfo        As UcsKeyInfo
     Dim baRandom()      As Byte
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
-    If Not Asn1DecodePrivateKey(baPrivKey, uKeyInfo) Then
-        GoTo QH
-    End If
     ReDim baRandom(0 To m_uData.Ecc256KeySize - 1) As Byte
     Debug.Assert RedimStats("CryptoEccSecp256r1Sign.baRandom", UBound(baRandom) + 1)
     ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize - 1) As Byte
@@ -813,7 +817,7 @@ Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc256KeySize
         Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSign)
-        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp256r1Sign), uKeyInfo.KeyBlob(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
+        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp256r1Sign), baPrivKey(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
             Exit For
         End If
     Next
@@ -881,14 +885,10 @@ End Function
 
 Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As Byte()
     Const MAX_RETRIES   As Long = 16
-    Dim uKeyInfo        As UcsKeyInfo
     Dim baRandom()      As Byte
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
-    If Not Asn1DecodePrivateKey(baPrivKey, uKeyInfo) Then
-        GoTo QH
-    End If
     ReDim baRandom(0 To m_uData.Ecc384KeySize - 1) As Byte
     Debug.Assert RedimStats("CryptoEccSecp384r1Sign.baRandom", UBound(baRandom) + 1)
     ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize - 1) As Byte
@@ -896,7 +896,7 @@ Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc384KeySize
         Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSign)
-        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp384r1Sign), uKeyInfo.KeyBlob(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
+        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp384r1Sign), baPrivKey(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
             Exit For
         End If
     Next
@@ -1263,15 +1263,17 @@ Public Sub CryptoRandomBytes(ByVal lPtr As Long, ByVal lSize As Long)
     #End If
 End Sub
 
-Public Function CryptoRsaModExp(baBase() As Byte, baExp() As Byte, baModulo() As Byte) As Byte()
-    Dim baRetVal()      As Byte
-
+Public Function CryptoRsaModExp(baBase() As Byte, baExp() As Byte, baModulus() As Byte, baRetVal() As Byte) As Boolean
     ReDim baRetVal(0 To UBound(baBase)) As Byte
-    Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), UBound(baBase) + 1, baBase(0), baExp(0), baModulo(0), baRetVal(0))
+    Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), UBound(baBase) + 1, baBase(0), baExp(0), baModulus(0), baRetVal(0))
     CryptoRsaModExp = baRetVal
+    '--- success
+    CryptoRsaModExp = True
 End Function
 
 '= RSA helpers ===========================================================
+
+#If ImplUseCryptoRsa Then
 
 Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As Byte, baCert() As Byte, baPubKey() As Byte, Optional ByVal SignatureType As Long) As Boolean
     Const FUNC_NAME     As String = "CryptoRsaInitContext"
@@ -1287,7 +1289,7 @@ Public Function CryptoRsaInitContext(uCtx As UcsRsaContextType, baPrivKey() As B
     Dim hPubKey         As Long
     Dim hResult         As Long
     Dim sApiSource      As String
-    
+
     Select Case SignatureType \ &H100
     Case 0
         '--- no hash
@@ -1410,7 +1412,7 @@ Public Function CryptoRsaSign(uCtx As UcsRsaContextType, baMessage() As Byte) As
     Dim lSize           As Long
     Dim hResult         As Long
     Dim sApiSource      As String
-    
+
     If CryptCreateHash(uCtx.hProv, uCtx.HashAlgId, 0, 0, hHash) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptCreateHash"
@@ -1454,7 +1456,7 @@ Public Function CryptoRsaVerify(uCtx As UcsRsaContextType, baMessage() As Byte, 
     Dim hResult         As Long
     Dim sApiSource      As String
     Dim baRevSig()      As Byte
-    
+
     If CryptCreateHash(uCtx.hProv, uCtx.HashAlgId, 0, 0, hHash) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptCreateHash"
@@ -1497,7 +1499,7 @@ Public Function CryptoRsaEncrypt(ByVal hKey As Long, baPlainText() As Byte) As B
     Dim lAlignedSize    As Long
     Dim hResult         As Long
     Dim sApiSource      As String
-    
+
     lSize = pvArraySize(baPlainText)
     lAlignedSize = (lSize + MAX_RSA_BYTES - 1 And -MAX_RSA_BYTES) + MAX_RSA_BYTES
     ReDim baRetVal(0 To lAlignedSize - 1) As Byte
@@ -1518,8 +1520,6 @@ QH:
     End If
 End Function
 
-#If ImplUseBCrypt Then
-
 Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal lSignatureType As Long) As Byte()
     Const FUNC_NAME     As String = "CryptoRsaPssSign"
     Dim baRetVal()      As Byte
@@ -1534,7 +1534,7 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
     Dim baHash()        As Byte
     Dim hResult         As Long
     Dim sApiSource      As String
-    
+
     If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptDecodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
@@ -1654,39 +1654,95 @@ QH:
     End If
 End Function
 
-#Else
+#End If
 
-Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal lSignatureType As Long) As Byte()
-    Dim baRetVal()      As Byte
-    Dim uKeyInfo        As UcsKeyInfo
-    Dim lSize           As Long
-    Dim baBuffer()      As Byte
-    Dim lHashSize       As Long
+Public Function EmePkcs1Encode(baMessage() As Byte, ByVal lBitLen As Long, baEnc() As Byte) As Boolean
+    Dim lIdx            As Long
+    
+    '--- from RFC 8017, Section  7.2.1
+    ReDim baEnc(0 To (lBitLen + 7) \ 8 - 1) As Byte
+    If UBound(baMessage) > UBound(baEnc) - 11 Then
+        GoTo QH
+    End If
+    baEnc(1) = 2
+    CryptoRandomBytes VarPtr(baEnc(2)), UBound(baEnc) - UBound(baMessage) - 3
+    For lIdx = 2 To UBound(baEnc) - UBound(baMessage) - 3
+        If baEnc(lIdx) = 0 Then
+            baEnc(lIdx) = 42
+        End If
+    Next
+    Call CopyMemory(baEnc(UBound(baEnc) - UBound(baMessage)), baMessage(0), UBound(baMessage) + 1)
+    '--- success
+    EmePkcs1Encode = True
+QH:
+End Function
+
+Public Function EmsaPkcs1Encode(baMessage() As Byte, ByVal lBitLen As Long, ByVal lHashSize As Long, baEnc() As Byte) As Boolean
     Dim baHash()        As Byte
-    Dim lSaltSize       As Long
+    Dim baDerHash()     As Byte
+    Dim lPos            As Long
+    
+    '--- from RFC 8017, Section 9.2.
+    pvArrayHash lHashSize, baMessage, baHash
+    If Not Asn1EncodePkcs1SignatureHash(baHash, baDerHash) Then
+        GoTo QH
+    End If
+    ReDim baEnc(0 To (lBitLen + 7) \ 8 - 1) As Byte
+    baEnc(1) = 1
+    For lPos = 2 To UBound(baEnc) - UBound(baDerHash) - 2
+        baEnc(lPos) = &HFF
+    Next
+    lPos = lPos + 1
+    Debug.Assert UBound(baEnc) - lPos >= UBound(baDerHash)
+    Call CopyMemory(baEnc(lPos), baDerHash(0), UBound(baDerHash) + 1)
+    '--- success
+    EmsaPkcs1Encode = True
+QH:
+End Function
+
+Public Function EmsaPkcs1Decode(baMessage() As Byte, baEnc() As Byte, ByVal lHashSize As Long) As Boolean
+    Dim baHash()        As Byte
+    Dim baDerHash()     As Byte
+    Dim lIdx            As Long
+    Dim lPos            As Long
+    
+    If baEnc(0) <> &H0 Or baEnc(1) <> &H1 Then
+        GoTo QH
+    End If
+    pvArrayHash lHashSize, baMessage, baHash
+    If Not Asn1EncodePkcs1SignatureHash(baHash, baDerHash) Then
+        GoTo QH
+    End If
+    For lPos = 2 To UBound(baEnc) - UBound(baDerHash) - 2
+        If baEnc(lPos) <> &HFF Then
+            GoTo QH
+        End If
+    Next
+    If baEnc(lPos) <> &H0 Then
+        GoTo QH
+    End If
+    lPos = lPos + 1
+    For lIdx = 0 To UBound(baDerHash)
+        If baEnc(lPos) <> baDerHash(lIdx) Then
+            GoTo QH
+        End If
+        lPos = lPos + 1
+    Next
+    '--- success
+    EmsaPkcs1Decode = True
+QH:
+End Function
+
+Public Function EmsaPssEncode(baMessage() As Byte, ByVal lBitLen As Long, ByVal lHashSize As Long, ByVal lSaltSize As Long, baEnc() As Byte) As Boolean
+    Dim lSize           As Long
+    Dim baHash()        As Byte
     Dim baSalt()        As Byte
-    Dim baDecr()        As Byte
     Dim lIdx            As Long
     Dim lPos            As Long
     Dim bMask           As Byte
     
-    '--- retrieve keylen, modulo and private exponent from RSA private key
-    If Not Asn1DecodePrivateKey(baPrivKey, uKeyInfo) Then
-        GoTo QH
-    End If
-    lSize = (uKeyInfo.BitLen + 7) \ 8
-    '--- figure out hash and salt size
-    Select Case lSignatureType
-    Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA256
-        lHashSize = 32
-    Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA384
-        lHashSize = 48
-    Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
-        lHashSize = 64
-    Case Else
-        GoTo QH
-    End Select
-    lSaltSize = lHashSize
+    '--- from RFC 8017, Section 9.1.1.
+    lSize = (lBitLen + 7) \ 8
     '--- 2. Let |mHash| = |Hash(M)|, an octet string of length hLen.
     pvArrayHash lHashSize, baMessage, baHash
     '--- 3. If |emLen| < |hLen + sLen + 2|, output "encoding error" and stop.
@@ -1708,18 +1764,18 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
     pvArrayHash lHashSize, baBuffer, baHash
     '--- 7. Generate an octet string |PS| consisting of |emLen - sLen - hLen - 2| zero octets. The length of PS may be 0.
     '--- 8. Let |DB| = PS || 0x01 || salt; DB is an octet string of length |emLen - hLen - 1|.
-    ReDim baDecr(0 To lSize - 1) As Byte
-    baDecr(lSize - lHashSize - lSaltSize - 2) = &H1
-    Call CopyMemory(baDecr(lSize - lHashSize - lSaltSize - 1), baSalt(0), lSaltSize)
-    Call CopyMemory(baDecr(lSize - lHashSize - 1), baHash(0), lHashSize)
+    ReDim baEnc(0 To lSize - 1) As Byte
+    baEnc(lSize - lHashSize - lSaltSize - 2) = &H1
+    Call CopyMemory(baEnc(lSize - lHashSize - lSaltSize - 1), baSalt(0), lSaltSize)
+    Call CopyMemory(baEnc(lSize - lHashSize - 1), baHash(0), lHashSize)
     '--- 9. Let |dbMask| = MGF(H, emLen - hLen - 1).
     '--- 10. Let |maskedDB| = DB \xor dbMask.
     ReDim baSeed(0 To lHashSize - 1 + 4) As Byte '--- leave 4 more bytes at the end for counter
-    Call CopyMemory(baSeed(0), baDecr(lSize - lHashSize - 1), lHashSize)
+    Call CopyMemory(baSeed(0), baEnc(lSize - lHashSize - 1), lHashSize)
     Do
         pvArrayHash lHashSize, baSeed, baHash
         For lIdx = 0 To UBound(baHash)
-            baDecr(lPos) = baDecr(lPos) Xor baHash(lIdx)
+            baEnc(lPos) = baEnc(lPos) Xor baHash(lIdx)
             lPos = lPos + 1
             If lPos >= lSize - lHashSize - 1 Then
                 Exit Do
@@ -1728,83 +1784,50 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
         pvArrayIncCounter baSeed, lHashSize + 3
     Loop
     '--- 11. Set the leftmost |8 * emLen - emBits| bits of the leftmost octet in |maskedDB| to zero.
-    bMask = &HFF \ (2 ^ (lSize * 8 - uKeyInfo.BitLen))
-    baDecr(0) = baDecr(0) And (bMask \ 2)
+    bMask = &HFF \ (2 ^ (lSize * 8 - lBitLen))
+    baEnc(0) = baEnc(0) And (bMask \ 2)
     '--- 12. Let |EM| = maskedDB || H || 0xbc.
-    baDecr(lSize - 1) = &HBC
+    baEnc(lSize - 1) = &HBC
     '--- 13. Output EM.
-    ReDim baRetVal(0 To lSize - 1) As Byte
-    Debug.Assert pvPatchTrampoline(AddressOf pvCallRsaModExp)
-    Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), lSize, baDecr(0), uKeyInfo.PrivExp(0), uKeyInfo.Modulus(0), baRetVal(0))
+    EmsaPssEncode = True
 QH:
-    CryptoRsaPssSign = baRetVal
 End Function
 
-Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSignature() As Byte, ByVal lSignatureType As Long) As Boolean
-    Const FUNC_NAME     As String = "CryptoRsaPssVerify"
-    Dim uCertInfo       As UcsKeyInfo
+Public Function EmsaPssDecode(baMessage() As Byte, baEnc() As Byte, ByVal lBitLen As Long, ByVal lHashSize As Long, ByVal lSaltSize As Long) As Boolean
     Dim lSize           As Long
     Dim baBuffer()      As Byte
-    Dim baModulo()      As Byte
-    Dim baDecr()        As Byte
-    Dim baPubExp()      As Byte
     Dim baSeed()        As Byte
-    Dim lHashSize       As Long
     Dim baHash()        As Byte
-    Dim lSaltSize       As Long
     Dim baSalt()        As Byte
     Dim lPos            As Long
     Dim lIdx            As Long
     Dim bMask           As Byte
     
-    If Not Asn1DecodeCertificate(baCert, uCertInfo) Then
-        GoTo QH
-    End If
-    lSize = (uCertInfo.BitLen + 7) \ 8
-    '--- check signature size
-    If UBound(baSignature) + 1 <> lSize Then
-        GoTo QH
-    End If
-    '--- decrypt RSA signature
-    ReDim baDecr(0 To lSize - 1) As Byte
-    Debug.Assert RedimStats(FUNC_NAME & ".baDecr", UBound(baDecr) + 1)
-    Debug.Assert pvPatchTrampoline(AddressOf pvCallRsaModExp)
-    Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), lSize, baSignature(0), uCertInfo.PubExp(0), uCertInfo.Modulus(0), baDecr(0))
     '--- from RFC 8017, Section 9.1.2.
-    Select Case lSignatureType
-    Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA256
-        lHashSize = 32
-    Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA384
-        lHashSize = 48
-    Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
-        lHashSize = 64
-    Case Else
-        GoTo QH
-    End Select
-    lSaltSize = lHashSize
+    lSize = (lBitLen + 7) \ 8
     '--- 3. If |emLen| < |hLen + sLen + 2|, output "inconsistent" and stop.
     If lSize < lHashSize + lSaltSize + 2 Then
         GoTo QH
     End If
     '--- 4. If the rightmost octet of |EM| does not have hexadecimal value 0xbc, output "inconsistent" and stop.
-    If baDecr(lSize - 1) <> &HBC Then
+    If baEnc(lSize - 1) <> &HBC Then
         GoTo QH
     End If
     '--- 5. Let |maskedDB| be the leftmost |emLen - hLen - 1| octets of |EM|, and let |H| be the next |hLen| octets.
     '--- 6. If the leftmost |8 * emLen - emBits| bits of the leftmost octet in |maskedDB| are not all equal to zero,
     '---    output "inconsistent" and stop.
-    bMask = &HFF \ (2 ^ (lSize * 8 - uCertInfo.BitLen))
-    If (baDecr(0) And Not bMask) <> 0 Then
+    bMask = &HFF \ (2 ^ (lSize * 8 - lBitLen))
+    If (baEnc(0) And Not bMask) <> 0 Then
         GoTo QH
     End If
     '--- 7. Let |dbMask| = MGF(H, emLen - hLen - 1).
     '--- 8. Let |DB| = maskedDB \xor dbMask.
     ReDim baSeed(0 To lHashSize - 1 + 4) As Byte '--- leave 4 more bytes at the end for counter
-    Call CopyMemory(baSeed(0), baDecr(lSize - lHashSize - 1), lHashSize)
+    Call CopyMemory(baSeed(0), baEnc(lSize - lHashSize - 1), lHashSize)
     Do
         pvArrayHash lHashSize, baSeed, baHash
         For lIdx = 0 To UBound(baHash)
-            baDecr(lPos) = baDecr(lPos) Xor baHash(lIdx)
+            baEnc(lPos) = baEnc(lPos) Xor baHash(lIdx)
             lPos = lPos + 1
             If lPos >= lSize - lHashSize - 1 Then
                 Exit Do
@@ -1814,24 +1837,24 @@ Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSign
     Loop
     '--- 9. Set the leftmost |8 * emLen - emBits| bits of the leftmost octet in |DB| to zero.
     '--- note: troubles w/ sign bit so use (bMask \ 2) to clear MSB
-    baDecr(0) = baDecr(0) And (bMask \ 2)
+    baEnc(0) = baEnc(0) And (bMask \ 2)
     '--- 10. If the |emLen - hLen - sLen - 2| leftmost octets of |DB| are not zero or if the octet at position
     '---     |emLen - hLen - sLen - 1| (the leftmost position is "position 1") does not have hexadecimal
     '---     value 0x01, output "inconsistent" and stop.
     For lIdx = 0 To lPos - lHashSize - 2
-        If baDecr(lIdx) <> 0 Then
+        If baEnc(lIdx) <> 0 Then
             Exit For
         End If
     Next
     If lIdx <> lPos - lHashSize - 1 Then
         GoTo QH
     End If
-    If baDecr(lPos - lHashSize - 1) <> &H1 Then
+    If baEnc(lPos - lHashSize - 1) <> &H1 Then
         GoTo QH
     End If
     '--- 11. Let |salt| be the last |sLen| octets of |DB|.
     ReDim baSalt(0 To lSaltSize - 1) As Byte
-    Call CopyMemory(baSalt(0), baDecr(lPos - lSaltSize), lSaltSize)
+    Call CopyMemory(baSalt(0), baEnc(lPos - lSaltSize), lSaltSize)
     '--- 12. Let |M'| = (0x)00 00 00 00 00 00 00 00 || mHash || salt
     ReDim baSeed(0 To 8 + lHashSize + lSaltSize - 1) As Byte
     pvArrayHash lHashSize, baMessage, baHash
@@ -1841,17 +1864,15 @@ Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSign
     pvArrayHash lHashSize, baSeed, baHash
     '--- |H| is still not de-masked in decrypted buffer
     ReDim baBuffer(0 To lHashSize - 1) As Byte
-    Call CopyMemory(baBuffer(0), baDecr(lPos), lHashSize)
+    Call CopyMemory(baBuffer(0), baEnc(lPos), lHashSize)
     '--- 14. If |H| = |H'|, output "consistent." Otherwise, output "inconsistent."
     If StrConv(baHash, vbUnicode) <> StrConv(baBuffer, vbUnicode) Then
         GoTo QH
     End If
     '--- success
-    CryptoRsaPssVerify = True
+    EmsaPssDecode = True
 QH:
 End Function
-
-#End If
 
 Public Function Asn1DecodePrivateKey(baPrivKey() As Byte, uRetVal As UcsKeyInfo) As Boolean
     Const FUNC_NAME     As String = "Asn1DecodePrivateKey"
@@ -1949,7 +1970,6 @@ Public Function Asn1DecodeCertificate(baCert() As Byte, uRetVal As UcsKeyInfo) A
     Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.KeyBlob", UBound(uRetVal.KeyBlob) + 1)
     Call CopyMemory(uRetVal.KeyBlob(0), ByVal uPublicKeyInfo.PublicKey.pbData, uPublicKeyInfo.PublicKey.cbData)
     If uRetVal.AlgoObjId = szOID_RSA_RSA Then
-        '--- don't report failure on keylen and blob retrieval
         If CryptAcquireContext(hProv, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) = 0 Then
             GoTo QH
         End If
@@ -1994,6 +2014,24 @@ QH:
     If LenB(sApiSource) <> 0 Then
         Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
+End Function
+
+Public Function Asn1EncodePkcs1SignatureHash(baHash() As Byte, baRetVal() As Byte) As Boolean
+    Dim baPrefix()      As Byte
+    
+    Select Case UBound(baHash) + 1
+    Case 32
+        baPrefix = pvArrayByte(&H30, &H31, &H30, &HD, &H6, &H9, &H60, &H86, &H48, &H1, &H65, &H3, &H4, &H2, &H1, &H5, &H0, &H4, &H20)
+    Case 48
+        baPrefix = pvArrayByte(&H30, &H41, &H30, &HD, &H6, &H9, &H60, &H86, &H48, &H1, &H65, &H3, &H4, &H2, &H2, &H5, &H0, &H4, &H30)
+    Case 64
+        baPrefix = pvArrayByte(&H30, &H51, &H30, &HD, &H6, &H9, &H60, &H86, &H48, &H1, &H65, &H3, &H4, &H2, &H3, &H5, &H0, &H4, &H40)
+    End Select
+    ReDim baRetVal(0 To UBound(baPrefix) + UBound(baHash)) As Byte
+    Call CopyMemory(baRetVal(0), baPrefix(0), UBound(baPrefix) + 1)
+    Call CopyMemory(baRetVal(UBound(baPrefix) + 1), baHash(0), UBound(baHash) + 1)
+    '--- success
+    Asn1EncodePkcs1SignatureHash = True
 End Function
 
 Public Sub RemoveCollection(ByVal oCol As Collection, Index As Variant)
@@ -2093,6 +2131,22 @@ Private Sub pvArrayIncCounter(baInput() As Byte, ByVal lPos As Long)
         End If
     Loop
 End Sub
+
+Private Function pvArrayByte(ParamArray A() As Variant) As Byte()
+    Dim baRetVal()      As Byte
+    Dim vElem           As Variant
+    Dim lIdx            As Long
+    
+    If UBound(A) >= 0 Then
+        ReDim baRetVal(0 To UBound(A)) As Byte
+        Debug.Assert RedimStats("pvArrayByte.baRetVal", UBound(baRetVal) + 1)
+        For Each vElem In A
+            baRetVal(lIdx) = vElem And &HFF
+            lIdx = lIdx + 1
+        Next
+    End If
+    pvArrayByte = baRetVal
+End Function
 
 Private Function pvThunkAllocate(sText As String, Optional ByVal ThunkPtr As Long) As Long
     Static Map(0 To &H3FF) As Long

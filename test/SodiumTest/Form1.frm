@@ -125,7 +125,7 @@ Private Sub PrintError(sFunction As String)
 End Sub
 
 Private Sub Command2_Click()
-    txtResult.Text = DesignRedimStats
+    txtResult.Text = DesignDumpRedimStats
     If IsKeyPressed(vbKeyControl) Then
         Set g_oRedimStats = Nothing
     End If
