@@ -80,8 +80,6 @@ Private Const NCRYPT_DO_NOT_FINALIZE_FLAG               As Long = &H400
 Private Const NCRYPT_PERSIST_FLAG                       As Long = &H80000000
 '--- for CertStrToName
 Private Const CERT_OID_NAME_STR                         As Long = 2
-'--- for CryptGetKeyParam
-Private Const KP_KEYLEN                                 As Long = 9
 '--- for CertOpenStore
 Private Const CERT_STORE_PROV_MEMORY                    As Long = 2
 Private Const CERT_STORE_CREATE_NEW_FLAG                As Long = &H2000
@@ -160,7 +158,6 @@ Private Declare Function CryptEncrypt Lib "advapi32" (ByVal hKey As Long, ByVal 
 'Private Declare Function CryptDecrypt Lib "advapi32" (ByVal hKey As Long, ByVal hHash As Long, ByVal Final As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long) As Long
 Private Declare Function CryptGetUserKey Lib "advapi32" (ByVal hProv As Long, ByVal dwKeySpec As Long, phUserKey As Long) As Long
 Private Declare Function CryptExportKey Lib "advapi32" (ByVal hKey As Long, ByVal hExpKey As Long, ByVal dwBlobType As Long, ByVal dwFlags As Long, pbData As Any, pdwDataLen As Long) As Long
-Private Declare Function CryptGetKeyParam Lib "advapi32" (ByVal hKey As Long, ByVal dwParam As Long, pbData As Any, pdwDataLen As Long, ByVal dwFlags As Long) As Long
 '--- Crypt32
 Private Declare Function CryptImportPublicKeyInfo Lib "crypt32" (ByVal hCryptProv As Long, ByVal dwCertEncodingType As Long, pInfo As Any, phKey As Long) As Long
 Private Declare Function CryptImportPublicKeyInfoEx2 Lib "crypt32" (ByVal dwCertEncodingType As Long, ByVal pInfo As Long, ByVal dwFlags As Long, ByVal pvAuxInfo As Long, phKey As Long) As Long
@@ -560,6 +557,15 @@ Public Type UcsRsaContextType
     HashAlgId           As Long
 End Type
 
+Public Type UcsKeyInfo
+    AlgoObjId           As String
+    KeyBlob()           As Byte
+    BitLen              As Long
+    Modulus()           As Byte
+    PubExp()            As Byte
+    PrivExp()           As Byte
+End Type
+
 Public Enum UcsOsVersionEnum
     ucsOsvNt4 = 400
     ucsOsvWin98 = 410
@@ -792,12 +798,14 @@ End Function
 
 Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As Byte()
     Const MAX_RETRIES   As Long = 16
-    Dim baPrivate()     As Byte
+    Dim uKeyInfo        As UcsKeyInfo
     Dim baRandom()      As Byte
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
-    baPrivate = Asn1DecodePrivateKeyFromDer(baPrivKey)
+    If Not Asn1DecodePrivateKey(baPrivKey, uKeyInfo) Then
+        GoTo QH
+    End If
     ReDim baRandom(0 To m_uData.Ecc256KeySize - 1) As Byte
     Debug.Assert RedimStats("CryptoEccSecp256r1Sign.baRandom", UBound(baRandom) + 1)
     ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize - 1) As Byte
@@ -805,7 +813,7 @@ Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc256KeySize
         Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSign)
-        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp256r1Sign), baPrivate(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
+        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp256r1Sign), uKeyInfo.KeyBlob(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
             Exit For
         End If
     Next
@@ -813,6 +821,7 @@ Public Function CryptoEccSecp256r1Sign(baPrivKey() As Byte, baHash() As Byte) As
         '--- success
         CryptoEccSecp256r1Sign = baRetVal
     End If
+QH:
 End Function
 
 Public Function CryptoEccSecp256r1Verify(baPublic() As Byte, baHash() As Byte, baSignature() As Byte) As Boolean
@@ -872,12 +881,14 @@ End Function
 
 Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As Byte()
     Const MAX_RETRIES   As Long = 16
-    Dim baPrivate()     As Byte
+    Dim uKeyInfo        As UcsKeyInfo
     Dim baRandom()      As Byte
     Dim baRetVal()      As Byte
     Dim lIdx            As Long
     
-    baPrivate = Asn1DecodePrivateKeyFromDer(baPrivKey)
+    If Not Asn1DecodePrivateKey(baPrivKey, uKeyInfo) Then
+        GoTo QH
+    End If
     ReDim baRandom(0 To m_uData.Ecc384KeySize - 1) As Byte
     Debug.Assert RedimStats("CryptoEccSecp384r1Sign.baRandom", UBound(baRandom) + 1)
     ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize - 1) As Byte
@@ -885,7 +896,7 @@ Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc384KeySize
         Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSign)
-        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp384r1Sign), baPrivate(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
+        If pvCallSecpSign(m_uData.Pfn(ucsPfnSecp384r1Sign), uKeyInfo.KeyBlob(0), baHash(0), baRandom(0), baRetVal(0)) <> 0 Then
             Exit For
         End If
     Next
@@ -893,6 +904,7 @@ Public Function CryptoEccSecp384r1Sign(baPrivKey() As Byte, baHash() As Byte) As
         '--- success
         CryptoEccSecp384r1Sign = baRetVal
     End If
+QH:
 End Function
 
 Public Function CryptoEccSecp384r1Verify(baPublic() As Byte, baHash() As Byte, baSignature() As Byte) As Boolean
@@ -1646,12 +1658,9 @@ End Function
 
 Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal lSignatureType As Long) As Byte()
     Dim baRetVal()      As Byte
-    Dim baBuffer()      As Byte
-    Dim lKeyLen         As Long
+    Dim uKeyInfo        As UcsKeyInfo
     Dim lSize           As Long
-    Dim lHalfSize       As Long
-    Dim baModulo()      As Byte
-    Dim baPrivExp()     As Byte
+    Dim baBuffer()      As Byte
     Dim lHashSize       As Long
     Dim baHash()        As Byte
     Dim lSaltSize       As Long
@@ -1662,19 +1671,10 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
     Dim bMask           As Byte
     
     '--- retrieve keylen, modulo and private exponent from RSA private key
-    baBuffer = Asn1DecodePrivateKeyFromDer(baPrivKey)
-    Debug.Assert UBound(baBuffer) >= 16
-    Call CopyMemory(lKeyLen, baBuffer(12), 4)
-    lSize = (lKeyLen + 7) \ 8
-    lHalfSize = (lKeyLen + 15) \ 16
-    ReDim baModulo(0 To lSize - 1) As Byte
-    Debug.Assert UBound(baBuffer) - 20 >= UBound(baModulo)
-    Call CopyMemory(baModulo(0), baBuffer(20), UBound(baModulo) + 1)
-    pvArrayReverse baModulo
-    ReDim baPrivExp(0 To lSize - 1) As Byte
-    Debug.Assert UBound(baBuffer) >= 20 + lSize + 5 * lHalfSize + UBound(baPrivExp)
-    Call CopyMemory(baPrivExp(0), baBuffer(20 + lSize + 5 * lHalfSize), UBound(baPrivExp) + 1)
-    pvArrayReverse baPrivExp
+    If Not Asn1DecodePrivateKey(baPrivKey, uKeyInfo) Then
+        GoTo QH
+    End If
+    lSize = (uKeyInfo.BitLen + 7) \ 8
     '--- figure out hash and salt size
     Select Case lSignatureType
     Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA256
@@ -1728,22 +1728,21 @@ Public Function CryptoRsaPssSign(baPrivKey() As Byte, baMessage() As Byte, ByVal
         pvArrayIncCounter baSeed, lHashSize + 3
     Loop
     '--- 11. Set the leftmost |8 * emLen - emBits| bits of the leftmost octet in |maskedDB| to zero.
-    bMask = &HFF \ (2 ^ (lSize * 8 - lKeyLen))
+    bMask = &HFF \ (2 ^ (lSize * 8 - uKeyInfo.BitLen))
     baDecr(0) = baDecr(0) And (bMask \ 2)
     '--- 12. Let |EM| = maskedDB || H || 0xbc.
     baDecr(lSize - 1) = &HBC
     '--- 13. Output EM.
     ReDim baRetVal(0 To lSize - 1) As Byte
     Debug.Assert pvPatchTrampoline(AddressOf pvCallRsaModExp)
-    Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), lSize, baDecr(0), baPrivExp(0), baModulo(0), baRetVal(0))
+    Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), lSize, baDecr(0), uKeyInfo.PrivExp(0), uKeyInfo.Modulus(0), baRetVal(0))
 QH:
     CryptoRsaPssSign = baRetVal
 End Function
 
 Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSignature() As Byte, ByVal lSignatureType As Long) As Boolean
     Const FUNC_NAME     As String = "CryptoRsaPssVerify"
-    Dim baPubKey()      As Byte
-    Dim lKeyLen         As Long
+    Dim uCertInfo       As UcsKeyInfo
     Dim lSize           As Long
     Dim baBuffer()      As Byte
     Dim baModulo()      As Byte
@@ -1758,28 +1757,19 @@ Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSign
     Dim lIdx            As Long
     Dim bMask           As Byte
     
-    baPubKey = Asn1DecodePublicKeyFromDer(baCert, KeyLen:=lKeyLen, KeyBlob:=baBuffer)
-    lSize = (lKeyLen + 7) \ 8
+    If Not Asn1DecodeCertificate(baCert, uCertInfo) Then
+        GoTo QH
+    End If
+    lSize = (uCertInfo.BitLen + 7) \ 8
     '--- check signature size
     If UBound(baSignature) + 1 <> lSize Then
         GoTo QH
     End If
-    '--- retrieve RSA public exponent
-    ReDim baPubExp(0 To 3) As Byte
-    Debug.Assert RedimStats(FUNC_NAME & ".baPubExp", UBound(baPubExp) + 1)
-    Call CopyMemory(baPubExp(0), baBuffer(16), UBound(baPubExp) + 1)        '--- 16 = sizeof(PUBLICKEYSTRUC) + offset(RSAPUBKEY, pubexp)
-    baPubExp = pvArrayReverseResize(baPubExp, lSize)
-    '--- retrieve RSA key modulo
-    ReDim baModulo(0 To lSize - 1) As Byte
-    Debug.Assert RedimStats(FUNC_NAME & ".baModulo", UBound(baModulo) + 1)
-    Debug.Assert UBound(baBuffer) - 20 >= UBound(baModulo)
-    Call CopyMemory(baModulo(0), baBuffer(20), UBound(baModulo) + 1)        '--- 20 = sizeof(PUBLICKEYSTRUC) + sizeof(RSAPUBKEY)
-    pvArrayReverse baModulo
     '--- decrypt RSA signature
     ReDim baDecr(0 To lSize - 1) As Byte
     Debug.Assert RedimStats(FUNC_NAME & ".baDecr", UBound(baDecr) + 1)
     Debug.Assert pvPatchTrampoline(AddressOf pvCallRsaModExp)
-    Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), lSize, baSignature(0), baPubExp(0), baModulo(0), baDecr(0))
+    Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), lSize, baSignature(0), uCertInfo.PubExp(0), uCertInfo.Modulus(0), baDecr(0))
     '--- from RFC 8017, Section 9.1.2.
     Select Case lSignatureType
     Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA256
@@ -1803,7 +1793,7 @@ Public Function CryptoRsaPssVerify(baCert() As Byte, baMessage() As Byte, baSign
     '--- 5. Let |maskedDB| be the leftmost |emLen - hLen - 1| octets of |EM|, and let |H| be the next |hLen| octets.
     '--- 6. If the leftmost |8 * emLen - emBits| bits of the leftmost octet in |maskedDB| are not all equal to zero,
     '---    output "inconsistent" and stop.
-    bMask = &HFF \ (2 ^ (lSize * 8 - lKeyLen))
+    bMask = &HFF \ (2 ^ (lSize * 8 - uCertInfo.BitLen))
     If (baDecr(0) And Not bMask) <> 0 Then
         GoTo QH
     End If
@@ -1863,15 +1853,15 @@ End Function
 
 #End If
 
-Public Function Asn1DecodePrivateKeyFromDer(baPrivKey() As Byte) As Byte()
-    Const FUNC_NAME     As String = "Asn1DecodePrivateKeyFromDer"
-    Dim baRetVal()      As Byte
+Public Function Asn1DecodePrivateKey(baPrivKey() As Byte, uRetVal As UcsKeyInfo) As Boolean
+    Const FUNC_NAME     As String = "Asn1DecodePrivateKey"
     Dim lPkiPtr         As Long
     Dim uKeyBlob        As CRYPT_BLOB_DATA
     Dim lKeyPtr         As Long
     Dim lKeySize        As Long
-    Dim uEccKeyInfo     As CRYPT_ECC_PRIVATE_KEY_INFO
     Dim lSize           As Long
+    Dim lHalfSize       As Long
+    Dim uEccKeyInfo     As CRYPT_ECC_PRIVATE_KEY_INFO
     Dim hResult         As Long
     Dim sApiSource      As String
 
@@ -1882,21 +1872,33 @@ Public Function Asn1DecodePrivateKeyFromDer(baPrivKey() As Byte) As Byte()
             sApiSource = "CryptDecodeObjectEx(PKCS_RSA_PRIVATE_KEY)"
             GoTo QH
         End If
-        ReDim baRetVal(0 To lKeySize - 1) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".baRetVal", UBound(baRetVal) + 1)
-        Call CopyMemory(baRetVal(0), ByVal lKeyPtr, lKeySize)
+        ReDim uRetVal.KeyBlob(0 To lKeySize - 1) As Byte
+        Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.KeyBlob", UBound(uRetVal.KeyBlob) + 1)
+        Call CopyMemory(uRetVal.KeyBlob(0), ByVal lKeyPtr, lKeySize)
+        Debug.Assert UBound(uRetVal.KeyBlob) >= 16
+        Call CopyMemory(uRetVal.BitLen, uRetVal.KeyBlob(12), 4)
+        lSize = (uRetVal.BitLen + 7) \ 8
+        lHalfSize = (uRetVal.BitLen + 15) \ 16
+        ReDim uRetVal.Modulus(0 To lSize - 1) As Byte
+        Debug.Assert UBound(uRetVal.KeyBlob) - 20 >= UBound(uRetVal.Modulus)
+        Call CopyMemory(uRetVal.Modulus(0), uRetVal.KeyBlob(20), UBound(uRetVal.Modulus) + 1)
+        pvArrayReverse uRetVal.Modulus
+        ReDim uRetVal.PrivExp(0 To lSize - 1) As Byte
+        Debug.Assert UBound(uRetVal.KeyBlob) >= 20 + lSize + 5 * lHalfSize + UBound(uRetVal.PrivExp)
+        Call CopyMemory(uRetVal.PrivExp(0), uRetVal.KeyBlob(20 + lSize + 5 * lHalfSize), UBound(uRetVal.PrivExp) + 1)
+        pvArrayReverse uRetVal.PrivExp
     ElseIf CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, 0) <> 0 Then
         Call CopyMemory(uEccKeyInfo, ByVal lKeyPtr, Len(uEccKeyInfo))
-        ReDim baRetVal(0 To uEccKeyInfo.PrivateKey.cbData - 1) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".baRetVal", UBound(baRetVal) + 1)
-        Call CopyMemory(baRetVal(0), ByVal uEccKeyInfo.PrivateKey.pbData, uEccKeyInfo.PrivateKey.cbData)
+        ReDim uRetVal.KeyBlob(0 To uEccKeyInfo.PrivateKey.cbData - 1) As Byte
+        Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.KeyBlob", UBound(uRetVal.KeyBlob) + 1)
+        Call CopyMemory(uRetVal.KeyBlob(0), ByVal uEccKeyInfo.PrivateKey.pbData, uEccKeyInfo.PrivateKey.cbData)
     ElseIf Err.LastDllError = ERROR_FILE_NOT_FOUND Then
         '--- no X509_ECC_PRIVATE_KEY struct type on NT4 -> decode manually
         Call CopyMemory(lSize, baPrivKey(6), 1)
         If 7 + lSize <= UBound(baPrivKey) Then
-            ReDim baRetVal(0 To lSize - 1) As Byte
-            Debug.Assert RedimStats(FUNC_NAME & ".baRetVal", UBound(baRetVal) + 1)
-            Call CopyMemory(baRetVal(0), baPrivKey(7), lSize)
+            ReDim uRetVal.KeyBlob(0 To lSize - 1) As Byte
+            Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.KeyBlob", UBound(uRetVal.KeyBlob) + 1)
+            Call CopyMemory(uRetVal.KeyBlob(0), baPrivKey(7), lSize)
         Else
             hResult = ERROR_FILE_NOT_FOUND
             sApiSource = "CryptDecodeObjectEx(X509_ECC_PRIVATE_KEY)"
@@ -1907,7 +1909,8 @@ Public Function Asn1DecodePrivateKeyFromDer(baPrivKey() As Byte) As Byte()
         sApiSource = "CryptDecodeObjectEx(X509_ECC_PRIVATE_KEY)"
         GoTo QH
     End If
-    Asn1DecodePrivateKeyFromDer = baRetVal
+    '--- success
+    Asn1DecodePrivateKey = True
 QH:
     If lPkiPtr <> 0 Then
         Call LocalFree(lPkiPtr)
@@ -1920,9 +1923,8 @@ QH:
     End If
 End Function
 
-Public Function Asn1DecodePublicKeyFromDer(baCert() As Byte, Optional AlgoObjId As String, Optional KeyLen As Long, Optional KeyBlob As Variant) As Byte()
-    Const FUNC_NAME     As String = "Asn1DecodePublicKeyFromDer"
-    Dim baRetVal()      As Byte
+Public Function Asn1DecodeCertificate(baCert() As Byte, uRetVal As UcsKeyInfo) As Boolean
+    Const FUNC_NAME     As String = "Asn1DecodeCertificate"
     Dim pCertContext    As Long
     Dim lPtr            As Long
     Dim uPublicKeyInfo  As CERT_PUBLIC_KEY_INFO
@@ -1942,26 +1944,43 @@ Public Function Asn1DecodePublicKeyFromDer(baCert() As Byte, Optional AlgoObjId 
     Call CopyMemory(lPtr, ByVal UnsignedAdd(pCertContext, 12), 4)       '--- dereference pCertContext->pCertInfo
     lPtr = UnsignedAdd(lPtr, 56)                                        '--- &pCertContext->pCertInfo->SubjectPublicKeyInfo
     Call CopyMemory(uPublicKeyInfo, ByVal lPtr, Len(uPublicKeyInfo))
-    AlgoObjId = pvToString(uPublicKeyInfo.Algorithm.pszObjId)
-    ReDim baRetVal(0 To uPublicKeyInfo.PublicKey.cbData - 1) As Byte
-    Debug.Assert RedimStats(FUNC_NAME & ".baRetVal", UBound(baRetVal) + 1)
-    Call CopyMemory(baRetVal(0), ByVal uPublicKeyInfo.PublicKey.pbData, uPublicKeyInfo.PublicKey.cbData)
-    '--- don't report failure on keylen and blob retrieval
-    If CryptAcquireContext(hProv, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) <> 0 Then
-        If CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal lPtr, hKey) <> 0 Then
-            Call CryptGetKeyParam(hKey, KP_KEYLEN, KeyLen, 4, 0)
-            If Not IsMissing(KeyBlob) Then
-                If CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, ByVal 0, lSize) <> 0 Then
-                    ReDim baBuffer(0 To lSize - 1) As Byte
-                    If CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, baBuffer(0), lSize) <> 0 Then
-                        KeyBlob = baBuffer
-                    End If
-                End If
-            End If
+    uRetVal.AlgoObjId = pvToString(uPublicKeyInfo.Algorithm.pszObjId)
+    ReDim uRetVal.KeyBlob(0 To uPublicKeyInfo.PublicKey.cbData - 1) As Byte
+    Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.KeyBlob", UBound(uRetVal.KeyBlob) + 1)
+    Call CopyMemory(uRetVal.KeyBlob(0), ByVal uPublicKeyInfo.PublicKey.pbData, uPublicKeyInfo.PublicKey.cbData)
+    If uRetVal.AlgoObjId = szOID_RSA_RSA Then
+        '--- don't report failure on keylen and blob retrieval
+        If CryptAcquireContext(hProv, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) = 0 Then
+            GoTo QH
         End If
+        If CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, ByVal lPtr, hKey) = 0 Then
+            GoTo QH
+        End If
+        If CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, ByVal 0, lSize) = 0 Then
+            GoTo QH
+        End If
+        ReDim baBuffer(0 To lSize - 1) As Byte
+        Debug.Assert RedimStats(FUNC_NAME & ".baBuffer", UBound(baBuffer) + 1)
+        If CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, baBuffer(0), lSize) = 0 Then
+            GoTo QH
+        End If
+        '--- retrieve RSA key size (in bits)
+        Call CopyMemory(uRetVal.BitLen, baBuffer(12), 4)                                        '--- 12 = sizeof(PUBLICKEYSTRUC) + offset(RSAPUBKEY, bitlen)
+        lSize = (uRetVal.BitLen + 7) \ 8
+        '--- retrieve RSA public exponent
+        ReDim uRetVal.PubExp(0 To 3) As Byte
+        Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.PubExp", UBound(uRetVal.PubExp) + 1)
+        Call CopyMemory(uRetVal.PubExp(0), baBuffer(16), UBound(uRetVal.PubExp) + 1)            '--- 16 = sizeof(PUBLICKEYSTRUC) + offset(RSAPUBKEY, pubexp)
+        pvArrayReverse uRetVal.PubExp, lSize
+        '--- retrieve RSA key modulus
+        ReDim uRetVal.Modulus(0 To lSize - 1) As Byte
+        Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.Modulus", UBound(uRetVal.Modulus) + 1)
+        Debug.Assert UBound(baBuffer) - 20 >= UBound(uRetVal.Modulus)
+        Call CopyMemory(uRetVal.Modulus(0), baBuffer(20), UBound(uRetVal.Modulus) + 1)          '--- 20 = sizeof(PUBLICKEYSTRUC) + sizeof(RSAPUBKEY)
+        pvArrayReverse uRetVal.Modulus
     End If
     '--- success
-    Asn1DecodePublicKeyFromDer = baRetVal
+    Asn1DecodeCertificate = True
 QH:
     If hKey <> 0 Then
         Call CryptDestroyKey(hKey)
@@ -2031,10 +2050,18 @@ Private Function pvArraySize(baArray() As Byte) As Long
     End If
 End Function
 
-Private Sub pvArrayReverse(baData() As Byte)
+Private Sub pvArrayReverse(baData() As Byte, Optional ByVal NewSize As Long = -1)
     Dim lIdx            As Long
     Dim bTemp           As Byte
+    Dim baCopy()        As Byte
     
+    If NewSize = 0 Then
+        baData = vbNullString
+    ElseIf NewSize > 0 Then
+        baCopy = baData
+        ReDim baData(0 To NewSize - 1) As Byte
+        Call CopyMemory(baData(0), baCopy(0), IIf(NewSize < UBound(baCopy) + 1, NewSize, UBound(baCopy) + 1))
+    End If
     For lIdx = 0 To UBound(baData) \ 2
         bTemp = baData(lIdx)
         baData(lIdx) = baData(UBound(baData) - lIdx)
@@ -2054,21 +2081,6 @@ Private Sub pvArrayHash(ByVal lHashSize As Long, baInput() As Byte, baRetVal() A
         Err.Raise vbObjectError, , "Invalid hash size"
     End Select
 End Sub
-
-Private Function pvArrayReverseResize(baData() As Byte, ByVal lSize As Long) As Byte()
-    Dim baRetVal()      As Byte
-    Dim lIdx            As Long
-    Dim lJdx            As Long
-    
-    ReDim baRetVal(0 To lSize - 1) As Byte
-    For lIdx = 0 To UBound(baData)
-        lJdx = lSize - 1 - lIdx
-        If lJdx >= 0 Then
-            baRetVal(lJdx) = baData(lIdx)
-        End If
-    Next
-    pvArrayReverseResize = baRetVal
-End Function
 
 Private Sub pvArrayIncCounter(baInput() As Byte, ByVal lPos As Long)
     Do While lPos >= 0

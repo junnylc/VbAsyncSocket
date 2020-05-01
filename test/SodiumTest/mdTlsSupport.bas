@@ -116,9 +116,9 @@ Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal uc
 ' Constants and member variables
 '=========================================================================
 
-Private Const STR_VL_ALERTS             As String = "0|Close notify|10|Unexpected message|20|Bad record mac|40|Handshake failure|42|Bad certificate|44|Certificate revoked|45|Certificate expired|46|Certificate unknown|47|Illegal parameter|48|Unknown CA|50|Decode error|51|Decrypt error|70|Protocol version|80|Internal error|90|User canceled|109|Missing extension|112|Unrecognized name|116|Certificate required|120|No application protocol"
+Private Const STR_VL_ALERTS             As String = "0|Close notify|10|Unexpected message|20|Bad record mac|40|Handshake failure|42|Bad certificate|44|Certificate revoked|45|Certificate expired|46|Certificate unknown|47|Illegal parameter|48|Unknown certificate authority|50|Decode error|51|Decrypt error|70|Protocol version|80|Internal error|90|User canceled|109|Missing extension|112|Unrecognized name|116|Certificate required|120|No application protocol"
 Private Const STR_UNKNOWN               As String = "Unknown (%1)"
-Private Const STR_FORMAT_ALERT          As String = """%1"" alert"
+Private Const STR_FORMAT_ALERT          As String = "%1."
 '--- numeric
 Private Const LNG_AAD_SIZE              As Long = 5     '--- size of additional authenticated data for TLS 1.3
 Private Const LNG_LEGACY_AAD_SIZE       As Long = 13    '--- for TLS 1.2
@@ -130,6 +130,7 @@ Private Const ERR_GENER_KEYPAIR_FAILED  As String = "Failed generating key pair 
 Private Const ERR_UNSUPPORTED_EXCH_GROUP As String = "Unsupported exchange group (%1)"
 Private Const ERR_UNSUPPORTED_CIPHER_SUITE As String = "Unsupported cipher suite (%1)"
 Private Const ERR_UNSUPPORTED_SIGNATURE_TYPE As String = "Unsupported signature type (%1)"
+Private Const ERR_UNSUPPORTED_CERTIFICATE As String = "Unsupported certificate"
 Private Const ERR_UNSUPPORTED_PUBLIC_KEY As String = "Unsupported public key OID (%1)"
 Private Const ERR_UNSUPPORTED_CURVE_SIZE As String = "Unsupported curve size (%1)"
 Private Const ERR_UNSUPPORTED_PROTOCOL  As String = "Invalid protocol version"
@@ -139,7 +140,7 @@ Private Const ERR_DECRYPTION_FAILED     As String = "Decryption failed"
 Private Const ERR_SERVER_HANDSHAKE_FAILED As String = "Handshake verification failed"
 Private Const ERR_NEGOTIATE_SIGNATURE_FAILED As String = "Negotiate signature type failed"
 Private Const ERR_RECORD_TOO_BIG        As String = "Record size too big"
-Private Const ERR_FATAL_ALERT           As String = "Fatal alert"
+Private Const ERR_FATAL_ALERT           As String = "Received fatal alert"
 Private Const ERR_UNEXPECTED_RECORD_TYPE As String = "Unexpected record type (%1)"
 Private Const ERR_UNEXPECTED_MSG_TYPE   As String = "Unexpected message type for %1 (%2)"
 Private Const ERR_UNEXPECTED_PROTOCOL   As String = "Unexpected protocol for %1 (%2)"
@@ -1654,8 +1655,8 @@ Private Function pvTlsParseHandshakeClientHello(uCtx As UcsTlsContext, baInput()
     Dim vElem           As Variant
     Dim lIdx            As Long
     Dim baCert()        As Byte
-    Dim sPubAlgoObjId   As String
-    Dim lPubKeyLen      As Long
+    Dim uCertInfo       As UcsKeyInfo
+    Dim lHashSize       As Long
     
     Set cCipherPrefs = New Collection
     For Each vElem In pvTlsPrepareCipherSuitsOrder(ucsTlsSupportTls13)
@@ -1664,7 +1665,11 @@ Private Function pvTlsParseHandshakeClientHello(uCtx As UcsTlsContext, baInput()
     lCipherPref = 1000
     With uCtx
         If SearchCollection(.LocalCertificates, 1, RetVal:=baCert) Then
-            Asn1DecodePublicKeyFromDer baCert, AlgoObjId:=sPubAlgoObjId, KeyLen:=lPubKeyLen
+            If Not Asn1DecodeCertificate(baCert, uCertInfo) Then
+                sError = ERR_UNSUPPORTED_CERTIFICATE
+                eAlertCode = uscTlsAlertHandshakeFailure
+                GoTo QH
+            End If
         End If
         .ProtocolVersion = lRecordProtocol
         lPos = pvReadLong(baInput, lPos, lLegacyVersion, Size:=2)
@@ -1738,27 +1743,38 @@ Private Function pvTlsParseHandshakeClientHello(uCtx As UcsTlsContext, baInput()
                         lPos = pvReadBeginOfBlock(baInput, lPos, .BlocksStack, Size:=2, BlockSize:=lBlockSize)
                             Do While lPos < lExtEnd
                                 lPos = pvReadLong(baInput, lPos, lSignatureType, Size:=2)
+                                Select Case pvTlsSignatureDigestAlgo(lSignatureType)
+                                Case ucsTlsAlgoDigestSha256
+                                    lHashSize = 32
+                                Case ucsTlsAlgoDigestSha384
+                                    lHashSize = 48
+                                Case ucsTlsAlgoDigestSha512
+                                    lHashSize = 64
+                                End Select
                                 Select Case lSignatureType
                                 Case TLS_SIGNATURE_RSA_PKCS1_SHA1
-                                    If sPubAlgoObjId = szOID_RSA_RSA And Not CryptoIsSupported(ucsTlsAlgoSignaturePkcsSha2) Then
+                                    If uCertInfo.AlgoObjId = szOID_RSA_RSA And Not CryptoIsSupported(ucsTlsAlgoSignaturePkcsSha2) Then
                                         .LocalSignatureType = lSignatureType
                                     End If
-                                Case TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, _
-                                        TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384
-                                    If sPubAlgoObjId = szOID_RSA_RSA And CryptoIsSupported(ucsTlsAlgoSignaturePkcsSha2) Then
+                                Case TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512
+                                    If uCertInfo.AlgoObjId = szOID_RSA_RSA And CryptoIsSupported(ucsTlsAlgoSignaturePkcsSha2) Then
                                         .LocalSignatureType = lSignatureType
                                     End If
-                                Case TLS_SIGNATURE_RSA_PKCS1_SHA512, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512
-                                    '--- PSS w/ SHA512 fails on short key lengths
-                                    If sPubAlgoObjId = szOID_RSA_RSA And lPubKeyLen > 1024 And CryptoIsSupported(ucsTlsAlgoSignaturePkcsSha2) Then
-                                        .LocalSignatureType = lSignatureType
+                                Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512
+                                    '--- PSS w/ SHA512 fails on short key lengths (min PSS size is 2 + lHashSize + lSaltSize w/ lSaltSize=lHashSize)
+                                    If (uCertInfo.BitLen + 7) \ 8 > 2 + 2 * lHashSize Then
+                                        If uCertInfo.AlgoObjId = szOID_RSA_RSA And CryptoIsSupported(ucsTlsAlgoSignaturePss) Then
+                                            .LocalSignatureType = lSignatureType
+                                        End If
                                     End If
                                 Case TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
-                                    If sPubAlgoObjId = szOID_RSA_SSA_PSS And CryptoIsSupported(ucsTlsAlgoSignaturePss) Then
-                                        .LocalSignatureType = lSignatureType
+                                    If (uCertInfo.BitLen + 7) \ 8 > 2 + 2 * lHashSize Then
+                                        If uCertInfo.AlgoObjId = szOID_RSA_SSA_PSS And CryptoIsSupported(ucsTlsAlgoSignaturePss) Then
+                                            .LocalSignatureType = lSignatureType
+                                        End If
                                     End If
                                 Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, TLS_SIGNATURE_ECDSA_SECP384R1_SHA384, TLS_SIGNATURE_ECDSA_SECP521R1_SHA512
-                                    If sPubAlgoObjId = szOID_ECC_PUBLIC_KEY Then
+                                    If uCertInfo.AlgoObjId = szOID_ECC_PUBLIC_KEY Then
                                         .LocalSignatureType = lSignatureType
                                     End If
                                 End Select
@@ -2419,10 +2435,9 @@ End Function
 
 Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As Long, baVerifyData() As Byte, baSignature() As Byte, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
     Dim uRsaCtx         As UcsRsaContextType
-    Dim baPubKey()      As Byte
+    Dim uCertInfo       As UcsKeyInfo
     Dim baVerifyHash()  As Byte
     Dim baPlainSig()    As Byte
-    Dim sPubKeyObjId    As String
     Dim lCurveSize      As Long
     Dim bSkip           As Boolean
     Dim baTemp()        As Byte
@@ -2448,14 +2463,18 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
             End If
         End If
     Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, TLS_SIGNATURE_ECDSA_SECP384R1_SHA384, TLS_SIGNATURE_ECDSA_SECP521R1_SHA512
-        baPubKey = Asn1DecodePublicKeyFromDer(baCert, sPubKeyObjId)
-        If sPubKeyObjId <> szOID_ECC_PUBLIC_KEY Then
-            sError = Replace(ERR_UNSUPPORTED_PUBLIC_KEY, "%1", sPubKeyObjId)
+        If Not Asn1DecodeCertificate(baCert, uCertInfo) Then
+            sError = ERR_UNSUPPORTED_CERTIFICATE
+            eAlertCode = uscTlsAlertHandshakeFailure
+            GoTo QH
+        End If
+        If uCertInfo.AlgoObjId <> szOID_ECC_PUBLIC_KEY Then
+            sError = Replace(ERR_UNSUPPORTED_PUBLIC_KEY, "%1", uCertInfo.AlgoObjId)
             eAlertCode = uscTlsAlertHandshakeFailure
             GoTo QH
         End If
         baVerifyHash = pvTlsArrayHash(pvTlsSignatureDigestAlgo(lSignatureType), baVerifyData, 0)
-        lCurveSize = UBound(baPubKey) \ 2
+        lCurveSize = UBound(uCertInfo.KeyBlob) \ 2
         baPlainSig = pvAsn1DecodeSignatureFromDer(baSignature, lCurveSize)
         If pvArraySize(baPlainSig) = 0 Then
             GoTo InvalidSignature
@@ -2475,11 +2494,11 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
         End If
         Select Case lCurveSize
         Case TLS_SECP256R1_KEY_SIZE
-            If Not CryptoEccSecp256r1Verify(baPubKey, baVerifyHash, baPlainSig) Then
+            If Not CryptoEccSecp256r1Verify(uCertInfo.KeyBlob, baVerifyHash, baPlainSig) Then
                 GoTo InvalidSignature
             End If
         Case TLS_SECP384R1_KEY_SIZE
-            If Not CryptoEccSecp384r1Verify(baPubKey, baVerifyHash, baPlainSig) Then
+            If Not CryptoEccSecp384r1Verify(uCertInfo.KeyBlob, baVerifyHash, baPlainSig) Then
                 GoTo InvalidSignature
             End If
         Case Else
