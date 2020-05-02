@@ -6,6 +6,7 @@ Module=mdTlsSupport; mdTlsSupport.bas
 Module=mdGlobals; mdGlobals.bas
 Module=mdTlsCrypto; mdTlsCrypto.bas
 Class=cRequestHandler; cRequestHandler.cls
+ResFile32="Project1.res"
 IconForm="Form1"
 Startup="Form1"
 HelpFile=""

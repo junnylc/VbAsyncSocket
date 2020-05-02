@@ -23,6 +23,7 @@ Begin VB.Form Form1
       Left            =   9828
       TabIndex        =   4
       Top             =   168
+      Visible         =   0   'False
       Width           =   1104
    End
    Begin VB.TextBox txtResult 
@@ -141,6 +142,7 @@ Private Sub Form_Load()
     Dim lPort           As Long
     
     On Error GoTo EH
+    Debug.Assert pvSetVisible(Command2, True)
     If txtResult.Font.Name = "Arial" Then
         txtResult.Font.Name = "Courier New"
     End If
@@ -447,3 +449,8 @@ End Sub
 Friend Sub frRemoveHandler(sKey As String)
     RemoveCollection m_cRequestHandlers, sKey
 End Sub
+
+Private Function pvSetVisible(oCtl As Object, ByVal bValue As Boolean) As Boolean
+    oCtl.Visible = bValue
+    pvSetVisible = True
+End Function
