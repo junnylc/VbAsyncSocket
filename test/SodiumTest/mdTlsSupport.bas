@@ -15,8 +15,6 @@ Attribute VB_Name = "mdTlsSupport"
 Option Explicit
 DefObj A-Z
 
-#Const ImplUseCryptoRsa = (ASYNCSOCKET_USE_CRYPTO_RSA <> 0)
-
 '=========================================================================
 ' API
 '=========================================================================
@@ -1897,48 +1895,31 @@ End Function
 Private Function pvTlsSetupExchRsaCertificate(uCtx As UcsTlsContext, baCert() As Byte, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
     Dim uCertInfo       As UcsKeyInfo
     Dim baEnc()         As Byte
-    #If ImplUseCryptoRsa Then
-        Dim uRsaCtx     As UcsRsaContextType
-    #End If
     
     On Error GoTo EH
     With uCtx
         .ExchAlgo = ucsTlsAlgoExchCertificate
         .LocalExchPrivate = pvTlsArrayRandom(TLS_HELLO_RANDOM_SIZE + TLS_HELLO_RANDOM_SIZE \ 2) '--- always 48
         pvWriteLong .LocalExchPrivate, 0, TLS_LOCAL_LEGACY_VERSION, Size:=2
-        #If ImplUseCryptoRsa Then
-            If Not CryptoRsaInitContext(uRsaCtx, EmptyByteArray, baCert, EmptyByteArray) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaInitContext")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-            .LocalExchRsaEncrPriv = CryptoRsaEncrypt(uRsaCtx.hPubKey, .LocalExchPrivate)
-        #Else
-            If Not CryptoAsn1DecodeCertificate(baCert, uCertInfo) Then
-                sError = ERR_UNSUPPORTED_CERTIFICATE
-                eAlertCode = uscTlsAlertHandshakeFailure
-                GoTo QH
-            End If
-            If Not CryptoEmePkcs1Encode(baEnc, .LocalExchPrivate, uCertInfo.BitLen) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoEmePkcs1Encode")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-            If Not CryptoRsaModExp(baEnc, uCertInfo.PubExp, uCertInfo.Modulus, .LocalExchRsaEncrPriv) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaModExp")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-        #End If
+        If Not CryptoAsn1DecodeCertificate(baCert, uCertInfo) Then
+            sError = ERR_UNSUPPORTED_CERTIFICATE
+            eAlertCode = uscTlsAlertHandshakeFailure
+            GoTo QH
+        End If
+        If Not CryptoEmePkcs1Encode(baEnc, .LocalExchPrivate, uCertInfo.BitLen) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "CryptoEmePkcs1Encode")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        If Not CryptoRsaModExp(baEnc, uCertInfo.PubExp, uCertInfo.Modulus, .LocalExchRsaEncrPriv) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaModExp")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
     End With
     '--- success
     pvTlsSetupExchRsaCertificate = True
 QH:
-    #If ImplUseCryptoRsa Then
-        If uRsaCtx.hProv <> 0 Then
-            Call CryptoRsaTerminateContext(uRsaCtx)
-        End If
-    #End If
     Exit Function
 EH:
     sError = Trim$(Replace(Replace(Err.Description, vbCrLf, vbLf), vbLf, ". "))
@@ -2473,9 +2454,6 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
     Dim lHashSize       As Long
     Dim baEnc()         As Byte
     Dim baVerifyHash()  As Byte
-    #If ImplUseCryptoRsa Then
-        Dim uRsaCtx     As UcsRsaContextType
-    #End If
     
     Debug.Print "Signing with " & pvTlsSignatureTypeName(lSignatureType) & " signature", Timer
     If Not CryptoAsn1DecodePrivateKey(baPrivKey, uKeyInfo) Then
@@ -2485,51 +2463,29 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
     End If
     lHashSize = pvTlsSignatureHashSize(lSignatureType)
     Select Case lSignatureType
-    Case TLS_SIGNATURE_RSA_PKCS1_SHA1
-        #If ImplUseCryptoRsa Then
-            If Not CryptoRsaInitContext(uRsaCtx, baPrivKey, EmptyByteArray, EmptyByteArray, lSignatureType) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaInitContext")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-            baSignature = CryptoRsaSign(uRsaCtx, baVerifyData)
-        #End If
     Case TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512
-        #If ImplUseCryptoRsa Then
-            If Not CryptoRsaInitContext(uRsaCtx, baPrivKey, EmptyByteArray, EmptyByteArray, lSignatureType) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaInitContext")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-            baSignature = CryptoRsaSign(uRsaCtx, baVerifyData)
-        #Else
-            If Not CryptoEmsaPkcs1Encode(baEnc, baVerifyData, uKeyInfo.BitLen, lHashSize) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoEmsaPkcs1Encode")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-            If Not CryptoRsaModExp(baEnc, uKeyInfo.PrivExp, uKeyInfo.Modulus, baSignature) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaModExp")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-        #End If
+        If Not CryptoEmsaPkcs1Encode(baEnc, baVerifyData, uKeyInfo.BitLen, lHashSize) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "CryptoEmsaPkcs1Encode")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        If Not CryptoRsaModExp(baEnc, uKeyInfo.PrivExp, uKeyInfo.Modulus, baSignature) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaModExp")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
     Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, _
             TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
-        #If ImplUseCryptoRsa Then
-            baSignature = CryptoRsaPssSign(baPrivKey, baVerifyData, lSignatureType)
-        #Else
-            If Not CryptoEmsaPssEncode(baEnc, baVerifyData, uKeyInfo.BitLen, lHashSize, lHashSize) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoEmsaPssEncode")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-            If Not CryptoRsaModExp(baEnc, uKeyInfo.PrivExp, uKeyInfo.Modulus, baSignature) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaModExp")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-        #End If
+        If Not CryptoEmsaPssEncode(baEnc, baVerifyData, uKeyInfo.BitLen, lHashSize, lHashSize) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "CryptoEmsaPssEncode")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        If Not CryptoRsaModExp(baEnc, uKeyInfo.PrivExp, uKeyInfo.Modulus, baSignature) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaModExp")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
     Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256
         If Not CryptoHashSha256(baVerifyHash, baVerifyData, 0) Then
             sError = Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha256")
@@ -2566,11 +2522,6 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
     End If
     pvTlsSignatureSign = True
 QH:
-    #If ImplUseCryptoRsa Then
-        If uRsaCtx.hProv <> 0 Then
-            Call CryptoRsaTerminateContext(uRsaCtx)
-        End If
-    #End If
 End Function
 
 Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As Long, baVerifyData() As Byte, baSignature() As Byte, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
@@ -2584,9 +2535,6 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
     Dim baTemp()        As Byte
     Dim bDeprecated     As Boolean
     Dim baDecr()        As Byte
-    #If ImplUseCryptoRsa Then
-        Dim uRsaCtx     As UcsRsaContextType
-    #End If
     
     If Not CryptoAsn1DecodeCertificate(baCert, uCertInfo) Then
         sError = ERR_UNSUPPORTED_CERTIFICATE
@@ -2595,52 +2543,20 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
     End If
     lHashSize = pvTlsSignatureHashSize(lSignatureType)
     Select Case lSignatureType
-    Case TLS_SIGNATURE_RSA_PKCS1_SHA1
-        #If ImplUseCryptoRsa Then
-            If Not CryptoRsaInitContext(uRsaCtx, EmptyByteArray, baCert, EmptyByteArray, lSignatureType) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaInitContext")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-            If Not CryptoRsaVerify(uRsaCtx, baVerifyData, baSignature) Then
-                GoTo InvalidSignature
-            End If
-        #End If
     Case TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512
-        #If ImplUseCryptoRsa Then
-            If Not CryptoRsaInitContext(uRsaCtx, EmptyByteArray, baCert, EmptyByteArray, lSignatureType) Then
-                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaInitContext")
-                eAlertCode = uscTlsAlertInternalError
-                GoTo QH
-            End If
-            If Not CryptoRsaVerify(uRsaCtx, baVerifyData, baSignature) Then
-                GoTo InvalidSignature
-            End If
-        #Else
-            If Not CryptoRsaModExp(baSignature, uCertInfo.PubExp, uCertInfo.Modulus, baDecr) Then
-                GoTo InvalidSignature
-            End If
-            If Not CryptoEmsaPkcs1Decode(baVerifyData, baDecr, lHashSize) Then
-                GoTo InvalidSignature
-            End If
-        #End If
+        If Not CryptoRsaModExp(baSignature, uCertInfo.PubExp, uCertInfo.Modulus, baDecr) Then
+            GoTo InvalidSignature
+        End If
+        If Not CryptoEmsaPkcs1Decode(baVerifyData, baDecr, lHashSize) Then
+            GoTo InvalidSignature
+        End If
     Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, _
             TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
-        If Not CryptoIsSupported(ucsTlsAlgoSignaturePss) Then
-            bSkip = True
-        Else
-            #If ImplUseCryptoRsa Then
-                If Not CryptoRsaPssVerify(baCert, baVerifyData, baSignature, lSignatureType) Then
-                    GoTo InvalidSignature
-                End If
-            #Else
-                If Not CryptoRsaModExp(baSignature, uCertInfo.PubExp, uCertInfo.Modulus, baDecr) Then
-                    GoTo InvalidSignature
-                End If
-                If Not CryptoEmsaPssDecode(baVerifyData, baDecr, uCertInfo.BitLen, lHashSize, lHashSize) Then
-                    GoTo InvalidSignature
-                End If
-            #End If
+        If Not CryptoRsaModExp(baSignature, uCertInfo.PubExp, uCertInfo.Modulus, baDecr) Then
+            GoTo InvalidSignature
+        End If
+        If Not CryptoEmsaPssDecode(baVerifyData, baDecr, uCertInfo.BitLen, lHashSize, lHashSize) Then
+            GoTo InvalidSignature
         End If
     Case TLS_SIGNATURE_ECDSA_SECP256R1_SHA256, TLS_SIGNATURE_ECDSA_SECP384R1_SHA384, TLS_SIGNATURE_ECDSA_SECP521R1_SHA512
         If uCertInfo.AlgoObjId <> szOID_ECC_PUBLIC_KEY Then
@@ -2689,11 +2605,6 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
     pvTlsSignatureVerify = True
 QH:
     Debug.Print IIf(pvTlsSignatureVerify, IIf(bSkip, "Skipping ", IIf(bDeprecated, "Deprecated ", "Valid ")), "Invalid ") & pvTlsSignatureTypeName(lSignatureType) & " signature" & IIf(bDeprecated, " (lCurveSize=" & lCurveSize & " from server's public key)", vbNullString), Timer
-    #If ImplUseCryptoRsa Then
-        If uRsaCtx.hProv <> 0 Then
-            Call CryptoRsaTerminateContext(uRsaCtx)
-        End If
-    #End If
     Exit Function
 InvalidSignature:
     sError = ERR_INVALID_SIGNATURE
