@@ -188,8 +188,10 @@ Private Sub Command1_Click()
     Dim sResult         As String
     Dim sError          As String
     Dim bKeepDebug      As Boolean
+    Dim dblTimer        As Double
     
     On Error GoTo EH
+    dblTimer = Timer
     Screen.MousePointer = vbHourglass
     bKeepDebug = IsKeyPressed(vbKeyControl)
     ' tls13.1d.pw, localhost:44330, tls.ctf.network, www.mikestoolbox.org, swifttls.org, tls13.pinterjann.is, cert-test.sandbox.google.com
@@ -206,6 +208,7 @@ Private Sub Command1_Click()
     If LenB(sResult) <> 0 Then
         If Not bKeepDebug Then
             txtResult.Text = vbNullString
+            pvAppendLogText txtResult, "Elapsed " & Format$(Timer - dblTimer, "0.000") & " sec" & vbCrLf
         End If
         pvAppendLogText txtResult, sResult
         txtResult.SelStart = 0

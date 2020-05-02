@@ -1671,7 +1671,7 @@ Private Function pvTlsParseHandshakeClientHello(uCtx As UcsTlsContext, baInput()
     lCipherPref = 1000
     With uCtx
         If SearchCollection(.LocalCertificates, 1, RetVal:=baCert) Then
-            If Not Asn1DecodeCertificate(baCert, uCertInfo) Then
+            If Not CryptoAsn1DecodeCertificate(baCert, uCertInfo) Then
                 sError = ERR_UNSUPPORTED_CERTIFICATE
                 eAlertCode = uscTlsAlertHandshakeFailure
                 GoTo QH
@@ -1879,13 +1879,13 @@ Private Function pvTlsSetupExchRsaCertificate(uCtx As UcsTlsContext, baCert() As
             End If
             .LocalExchRsaEncrPriv = CryptoRsaEncrypt(uRsaCtx.hPubKey, .LocalExchPrivate)
         #Else
-            If Not Asn1DecodeCertificate(baCert, uCertInfo) Then
+            If Not CryptoAsn1DecodeCertificate(baCert, uCertInfo) Then
                 sError = ERR_UNSUPPORTED_CERTIFICATE
                 eAlertCode = uscTlsAlertHandshakeFailure
                 GoTo QH
             End If
-            If Not EmePkcs1Encode(.LocalExchPrivate, uCertInfo.BitLen, baEnc) Then
-                sError = "EmePkcs1Encode failed"
+            If Not CryptoEmePkcs1Encode(.LocalExchPrivate, uCertInfo.BitLen, baEnc) Then
+                sError = "CryptoEmePkcs1Encode failed"
                 eAlertCode = uscTlsAlertInternalError
                 GoTo QH
             End If
@@ -2335,11 +2335,11 @@ Private Function pvTlsSharedSecret(ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum, ba
     
     Select Case eKeyX
     Case ucsTlsAlgoExchX25519
-        baRetVal = CryptoEccCurve25519SharedSecret(baPriv, baPub)
+        CryptoEccCurve25519SharedSecret baRetVal, baPriv, baPub
     Case ucsTlsAlgoExchSecp256r1
-        baRetVal = CryptoEccSecp256r1SharedSecret(baPriv, baPub)
+        CryptoEccSecp256r1SharedSecret baRetVal, baPriv, baPub
     Case ucsTlsAlgoExchSecp384r1
-        baRetVal = CryptoEccSecp384r1SharedSecret(baPriv, baPub)
+        CryptoEccSecp384r1SharedSecret baRetVal, baPriv, baPub
     Case ucsTlsAlgoExchCertificate
         baRetVal = baPriv
     Case Else
@@ -2427,7 +2427,7 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
     #End If
     
     Debug.Print "Signing with " & pvTlsSignatureTypeName(lSignatureType) & " signature", Timer
-    If Not Asn1DecodePrivateKey(baPrivKey, uKeyInfo) Then
+    If Not CryptoAsn1DecodePrivateKey(baPrivKey, uKeyInfo) Then
         sError = ERR_UNSUPPORTED_PRIVATE_KEY
         eAlertCode = uscTlsAlertInternalError
         GoTo QH
@@ -2452,8 +2452,8 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
             End If
             baSignature = CryptoRsaSign(uRsaCtx, baVerifyData)
         #Else
-            If Not EmsaPkcs1Encode(baVerifyData, uKeyInfo.BitLen, lHashSize, baEnc) Then
-                sError = "EmsaPkcs1Encode failed"
+            If Not CryptoEmsaPkcs1Encode(baVerifyData, uKeyInfo.BitLen, lHashSize, baEnc) Then
+                sError = "CryptoEmsaPkcs1Encode failed"
                 eAlertCode = uscTlsAlertInternalError
                 GoTo QH
             End If
@@ -2468,8 +2468,8 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
         #If ImplUseCryptoRsa Then
             baSignature = CryptoRsaPssSign(baPrivKey, baVerifyData, lSignatureType)
         #Else
-            If Not EmsaPssEncode(baVerifyData, uKeyInfo.BitLen, lHashSize, lHashSize, baEnc) Then
-                sError = "EmsaPssEncode failed"
+            If Not CryptoEmsaPssEncode(baVerifyData, uKeyInfo.BitLen, lHashSize, lHashSize, baEnc) Then
+                sError = "CryptoEmsaPssEncode failed"
                 eAlertCode = uscTlsAlertInternalError
                 GoTo QH
             End If
@@ -2520,7 +2520,7 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
         Dim uRsaCtx     As UcsRsaContextType
     #End If
     
-    If Not Asn1DecodeCertificate(baCert, uCertInfo) Then
+    If Not CryptoAsn1DecodeCertificate(baCert, uCertInfo) Then
         sError = ERR_UNSUPPORTED_CERTIFICATE
         eAlertCode = uscTlsAlertHandshakeFailure
         GoTo QH
@@ -2542,7 +2542,7 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
         If Not CryptoRsaModExp(baSignature, uCertInfo.PubExp, uCertInfo.Modulus, baDecr) Then
             GoTo InvalidSignature
         End If
-        If Not EmsaPkcs1Decode(baVerifyData, baDecr, lHashSize) Then
+        If Not CryptoEmsaPkcs1Decode(baVerifyData, baDecr, lHashSize) Then
             GoTo InvalidSignature
         End If
     Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, _
@@ -2558,7 +2558,7 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
                 If Not CryptoRsaModExp(baSignature, uCertInfo.PubExp, uCertInfo.Modulus, baDecr) Then
                     GoTo InvalidSignature
                 End If
-                If Not EmsaPssDecode(baVerifyData, baDecr, uCertInfo.BitLen, lHashSize, lHashSize) Then
+                If Not CryptoEmsaPssDecode(baVerifyData, baDecr, uCertInfo.BitLen, lHashSize, lHashSize) Then
                     GoTo InvalidSignature
                 End If
             #End If
