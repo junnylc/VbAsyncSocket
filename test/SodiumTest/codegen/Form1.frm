@@ -91,7 +91,9 @@ Private Const STR_THUNK5                As String = "RfBmD+vIZg/WThjo9Hz//19eW4v
 
 Private Sub Form_Click()
     Clipboard.Clear
-    Clipboard.SetText GenerThunkData(STR_GLOB, "Glob") & vbCrLf & GenerThunkData(STR_THUNK1 & STR_THUNK2 & STR_THUNK3 & STR_THUNK4 & STR_THUNK5, "Thunk")
-    MsgBox "Thunks sucessfully generated to clipboard!", vbExclamation
+    Clipboard.SetText GenerModuleDeclares() & vbCrLf & _
+        GenerThunkData(STR_GLOB, "Glob") & vbCrLf & _
+        GenerThunkData(STR_THUNK1 & STR_THUNK2 & STR_THUNK3 & STR_THUNK4 & STR_THUNK5, "Thunk")
+    MsgBox "Thunks successfully generated to clipboard!", vbExclamation
 End Sub
 
