@@ -661,10 +661,10 @@ Public Function CryptoIsSupported(ByVal eAlgo As UcsTlsCryptoAlgorithmsEnum) As 
 End Function
 
 Public Function CryptoEccCurve25519MakeKey(baPrivate() As Byte, baPublic() As Byte) As Boolean
-    ReDim baPrivate(0 To m_uData.Ecc256KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccCurve25519MakeKey.baPrivate", UBound(baPrivate) + 1)
-    ReDim baPublic(0 To m_uData.Ecc256KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccCurve25519MakeKey.baPublic", UBound(baPublic) + 1)
+    Const FUNC_NAME     As String = "CryptoEccCurve25519MakeKey"
+    
+    pvArrayAllocate baPrivate, m_uData.Ecc256KeySize, FUNC_NAME & ".baPrivate"
+    pvArrayAllocate baPublic, m_uData.Ecc256KeySize, FUNC_NAME & ".baPublic"
     CryptoRandomBytes VarPtr(baPrivate(0)), m_uData.Ecc256KeySize
     '--- fix issues w/ specific privkeys
     baPrivate(0) = baPrivate(0) And 248
@@ -680,10 +680,11 @@ Public Function CryptoEccCurve25519MakeKey(baPrivate() As Byte, baPublic() As By
 End Function
 
 Public Function CryptoEccCurve25519SharedSecret(baRetVal() As Byte, baPrivate() As Byte, baPublic() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoEccCurve25519SharedSecret"
+    
     Debug.Assert UBound(baPrivate) >= m_uData.Ecc256KeySize - 1
     Debug.Assert UBound(baPublic) >= m_uData.Ecc256KeySize - 1
-    ReDim baRetVal(0 To m_uData.Ecc256KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccCurve25519SharedSecret.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, m_uData.Ecc256KeySize, FUNC_NAME & ".baRetVal"
     #If ImplUseLibSodium Then
         Call crypto_scalarmult_curve25519(baRetVal(0), baPrivate(0), baPublic(0))
     #Else
@@ -695,25 +696,24 @@ Public Function CryptoEccCurve25519SharedSecret(baRetVal() As Byte, baPrivate() 
 End Function
 
 Public Function CryptoEccSecp256r1MakeKey(baPrivate() As Byte, baPublic() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoEccSecp256r1MakeKey"
     Const MAX_RETRIES   As Long = 16
-    Dim baCompessed()   As Byte
+    Dim baCompressed()  As Byte
     Dim lIdx            As Long
     
-    ReDim baPrivate(0 To m_uData.Ecc256KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp256r1MakeKey.baPrivate", UBound(baPrivate) + 1)
-    ReDim baCompessed(0 To m_uData.Ecc256KeySize) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp256r1MakeKey.baCompessed", UBound(baCompessed) + 1)
+    pvArrayAllocate baPrivate, m_uData.Ecc256KeySize, FUNC_NAME & ".baPrivate"
+    pvArrayAllocate baCompressed, m_uData.Ecc256KeySize + 1, FUNC_NAME & ".baCompressed"
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baPrivate(0)), m_uData.Ecc256KeySize
         Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpMakeKey)
-        If pvCallSecpMakeKey(m_uData.Pfn(ucsPfnSecp256r1MakeKey), baCompessed(0), baPrivate(0)) = 1 Then
+        If pvCallSecpMakeKey(m_uData.Pfn(ucsPfnSecp256r1MakeKey), baCompressed(0), baPrivate(0)) = 1 Then
             Exit For
         End If
     Next
     If lIdx > MAX_RETRIES Then
         GoTo QH
     End If
-    If Not CryptoEccSecp256r1UncompressKey(baPublic, baCompessed) Then
+    If Not CryptoEccSecp256r1UncompressKey(baPublic, baCompressed) Then
         GoTo QH
     End If
     '--- success
@@ -722,10 +722,11 @@ QH:
 End Function
 
 Public Function CryptoEccSecp256r1SharedSecret(baRetVal() As Byte, baPrivate() As Byte, baPublic() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoEccSecp256r1SharedSecret"
+    
     Debug.Assert UBound(baPrivate) >= m_uData.Ecc256KeySize - 1
     Debug.Assert UBound(baPublic) >= m_uData.Ecc256KeySize
-    ReDim baRetVal(0 To m_uData.Ecc256KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp256r1SharedSecret.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, m_uData.Ecc256KeySize, FUNC_NAME & ".baRetVal"
     Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSharedSecret)
     If pvCallSecpSharedSecret(m_uData.Pfn(ucsPfnSecp256r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
         GoTo QH
@@ -736,8 +737,9 @@ QH:
 End Function
 
 Public Function CryptoEccSecp256r1UncompressKey(baRetVal() As Byte, baPublic() As Byte) As Boolean
-    ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp256r1UncompressKey.baRetVal", UBound(baRetVal) + 1)
+    Const FUNC_NAME     As String = "CryptoEccSecp256r1UncompressKey"
+    
+    pvArrayAllocate baRetVal, 1 + 2 * m_uData.Ecc256KeySize, FUNC_NAME & ".baRetVal"
     Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpUncompressKey)
     If pvCallSecpUncompressKey(m_uData.Pfn(ucsPfnSecp256r1UncompressKey), baPublic(0), baRetVal(0)) = 0 Then
         GoTo QH
@@ -748,14 +750,13 @@ QH:
 End Function
 
 Public Function CryptoEccSecp256r1Sign(baRetVal() As Byte, baPrivKey() As Byte, baHash() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoEccSecp256r1Sign"
     Const MAX_RETRIES   As Long = 16
     Dim baRandom()      As Byte
     Dim lIdx            As Long
     
-    ReDim baRandom(0 To m_uData.Ecc256KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp256r1Sign.baRandom", UBound(baRandom) + 1)
-    ReDim baRetVal(0 To 2 * m_uData.Ecc256KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp256r1Sign.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRandom, m_uData.Ecc256KeySize, FUNC_NAME & ".baRandom"
+    pvArrayAllocate baRetVal, 2 * m_uData.Ecc256KeySize, FUNC_NAME & ".baRetVal"
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc256KeySize
         Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSign)
@@ -777,14 +778,13 @@ Public Function CryptoEccSecp256r1Verify(baPublic() As Byte, baHash() As Byte, b
 End Function
 
 Public Function CryptoEccSecp384r1MakeKey(baPrivate() As Byte, baPublic() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoEccSecp384r1MakeKey"
     Const MAX_RETRIES   As Long = 16
     Dim baCompressed()  As Byte
     Dim lIdx            As Long
         
-    ReDim baPrivate(0 To m_uData.Ecc384KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp384r1MakeKey.baPrivate", UBound(baPrivate) + 1)
-    ReDim baCompressed(0 To m_uData.Ecc384KeySize) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp384r1MakeKey.baCompressed", UBound(baCompressed) + 1)
+    pvArrayAllocate baPrivate, m_uData.Ecc384KeySize, FUNC_NAME & ".baPrivate"
+    pvArrayAllocate baCompressed, 1 + m_uData.Ecc384KeySize, FUNC_NAME & ".baCompressed"
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baPrivate(0)), m_uData.Ecc384KeySize
         Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpMakeKey)
@@ -804,10 +804,11 @@ QH:
 End Function
 
 Public Function CryptoEccSecp384r1SharedSecret(baRetVal() As Byte, baPrivate() As Byte, baPublic() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoEccSecp384r1SharedSecret"
+    
     Debug.Assert UBound(baPrivate) >= m_uData.Ecc384KeySize - 1
     Debug.Assert UBound(baPublic) >= m_uData.Ecc384KeySize
-    ReDim baRetVal(0 To m_uData.Ecc384KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp384r1SharedSecret.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, m_uData.Ecc384KeySize, FUNC_NAME & ".baRetVal"
     Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSharedSecret)
     If pvCallSecpSharedSecret(m_uData.Pfn(ucsPfnSecp384r1SharedSecret), baPublic(0), baPrivate(0), baRetVal(0)) = 0 Then
         GoTo QH
@@ -818,8 +819,9 @@ QH:
 End Function
 
 Public Function CryptoEccSecp384r1UncompressKey(baRetVal() As Byte, baPublic() As Byte) As Boolean
-    ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp384r1UncompressKey.baRetVal", UBound(baRetVal) + 1)
+    Const FUNC_NAME     As String = "CryptoEccSecp384r1UncompressKey"
+    
+    pvArrayAllocate baRetVal, 1 + 2 * m_uData.Ecc384KeySize, FUNC_NAME & ".baRetVal"
     Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpUncompressKey)
     If pvCallSecpUncompressKey(m_uData.Pfn(ucsPfnSecp384r1UncompressKey), baPublic(0), baRetVal(0)) = 0 Then
         GoTo QH
@@ -830,14 +832,13 @@ QH:
 End Function
 
 Public Function CryptoEccSecp384r1Sign(baRetVal() As Byte, baPrivKey() As Byte, baHash() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoEccSecp384r1Sign"
     Const MAX_RETRIES   As Long = 16
     Dim baRandom()      As Byte
     Dim lIdx            As Long
     
-    ReDim baRandom(0 To m_uData.Ecc384KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp384r1Sign.baRandom", UBound(baRandom) + 1)
-    ReDim baRetVal(0 To 2 * m_uData.Ecc384KeySize - 1) As Byte
-    Debug.Assert RedimStats("CryptoEccSecp384r1Sign.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRandom, m_uData.Ecc384KeySize, FUNC_NAME & ".baRandom"
+    pvArrayAllocate baRetVal, 2 * m_uData.Ecc384KeySize, FUNC_NAME & ".baRetVal"
     For lIdx = 1 To MAX_RETRIES
         CryptoRandomBytes VarPtr(baRandom(0)), m_uData.Ecc384KeySize
         Debug.Assert pvPatchTrampoline(AddressOf pvCallSecpSign)
@@ -859,6 +860,7 @@ Public Function CryptoEccSecp384r1Verify(baPublic() As Byte, baHash() As Byte, b
 End Function
 
 Public Function CryptoHashSha256(baRetVal() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Boolean
+    Const FUNC_NAME     As String = "CryptoHashSha256"
     Dim lCtxPtr         As Long
     Dim lPtr            As Long
     
@@ -870,8 +872,7 @@ Public Function CryptoHashSha256(baRetVal() As Byte, baInput() As Byte, ByVal lP
     If Size > 0 Then
         lPtr = VarPtr(baInput(lPos))
     End If
-    ReDim baRetVal(0 To LNG_SHA256_HASHSZ - 1) As Byte
-    Debug.Assert RedimStats("CryptoHashSha256.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, LNG_SHA256_HASHSZ, FUNC_NAME & ".baRetVal"
     #If ImplUseLibSodium Then
         Call crypto_hash_sha256(baRetVal(0), ByVal lPtr, Size)
     #Else
@@ -890,6 +891,7 @@ Public Function CryptoHashSha256(baRetVal() As Byte, baInput() As Byte, ByVal lP
 End Function
 
 Public Function CryptoHashSha384(baRetVal() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Boolean
+    Const FUNC_NAME     As String = "CryptoHashSha384"
     Dim lCtxPtr         As Long
     Dim lPtr            As Long
     
@@ -901,8 +903,7 @@ Public Function CryptoHashSha384(baRetVal() As Byte, baInput() As Byte, ByVal lP
     If Size > 0 Then
         lPtr = VarPtr(baInput(lPos))
     End If
-    ReDim baRetVal(0 To LNG_SHA384_HASHSZ - 1) As Byte
-    Debug.Assert RedimStats("CryptoHashSha384.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, LNG_SHA384_HASHSZ, FUNC_NAME & ".baRetVal"
     With m_uData
         lCtxPtr = VarPtr(.HashCtx(0))
         #If ImplUseLibSodium Then
@@ -924,6 +925,7 @@ Public Function CryptoHashSha384(baRetVal() As Byte, baInput() As Byte, ByVal lP
 End Function
 
 Public Function CryptoHashSha512(baRetVal() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Boolean
+    Const FUNC_NAME     As String = "CryptoHashSha512"
     Dim lCtxPtr         As Long
     Dim lPtr            As Long
     
@@ -935,8 +937,7 @@ Public Function CryptoHashSha512(baRetVal() As Byte, baInput() As Byte, ByVal lP
     If Size > 0 Then
         lPtr = VarPtr(baInput(lPos))
     End If
-    ReDim baRetVal(0 To LNG_SHA512_HASHSZ - 1) As Byte
-    Debug.Assert RedimStats("CryptoHashSha512.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, LNG_SHA512_HASHSZ, FUNC_NAME & ".baRetVal"
     With m_uData
         lCtxPtr = VarPtr(.HashCtx(0))
         #If ImplUseLibSodium Then
@@ -958,6 +959,7 @@ Public Function CryptoHashSha512(baRetVal() As Byte, baInput() As Byte, ByVal lP
 End Function
 
 Public Function CryptoHmacSha256(baRetVal() As Byte, baKey() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Boolean
+    Const FUNC_NAME     As String = "CryptoHmacSha256"
     Dim lCtxPtr         As Long
     Dim lPtr            As Long
     Dim lIdx            As Long
@@ -973,8 +975,7 @@ Public Function CryptoHmacSha256(baRetVal() As Byte, baKey() As Byte, baInput() 
     End If
     With m_uData
         lCtxPtr = VarPtr(.HashCtx(0))
-        ReDim baRetVal(0 To LNG_SHA256_HASHSZ - 1) As Byte
-        Debug.Assert RedimStats("CryptoHmacSha256.baRetVal", UBound(baRetVal) + 1)
+        pvArrayAllocate baRetVal, LNG_SHA256_HASHSZ, FUNC_NAME & ".baRetVal"
         #If ImplUseLibSodium Then
             '-- inner hash
             Call crypto_hash_sha256_init(ByVal lCtxPtr)
@@ -1023,6 +1024,7 @@ Public Function CryptoHmacSha256(baRetVal() As Byte, baKey() As Byte, baInput() 
 End Function
 
 Public Function CryptoHmacSha384(baRetVal() As Byte, baKey() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Boolean
+    Const FUNC_NAME     As String = "CryptoHmacSha384"
     Dim lCtxPtr         As Long
     Dim lPtr            As Long
     Dim lIdx            As Long
@@ -1038,8 +1040,7 @@ Public Function CryptoHmacSha384(baRetVal() As Byte, baKey() As Byte, baInput() 
     End If
     With m_uData
         lCtxPtr = VarPtr(.HashCtx(0))
-        ReDim baRetVal(0 To LNG_SHA384_HASHSZ - 1) As Byte
-        Debug.Assert RedimStats("CryptoHmacSha384.baRetVal", UBound(baRetVal) + 1)
+        pvArrayAllocate baRetVal, LNG_SHA384_HASHSZ, FUNC_NAME & ".baRetVal"
         #If ImplUseLibSodium Then
             '-- inner hash
             Call crypto_hash_sha384_init(.HashCtx)
@@ -1212,13 +1213,14 @@ Public Sub CryptoRandomBytes(ByVal lPtr As Long, ByVal lSize As Long)
 End Sub
 
 Public Function CryptoRsaModExp(baBase() As Byte, baExp() As Byte, baModulus() As Byte, baRetVal() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoRsaModExp"
+    
     '--- note: allocates 32MB for 8192 bit keys
     pvArenaInit 1024& * 2048 * (pvArraySize(baBase) / 256) ^ 2
-    ReDim baRetVal(0 To UBound(baBase)) As Byte
+    pvArrayAllocate baRetVal, UBound(baBase) + 1, FUNC_NAME & ".baRetVal"
     Debug.Assert pvPatchTrampoline(AddressOf pvCallRsaModExp)
     Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), UBound(baBase) + 1, baBase(0), baExp(0), baModulus(0), baRetVal(0))
     Debug.Print "bitlen=" & pvArraySize(baBase) * 8 & ", allocated=" & pvArraySize(m_baBuffer) & ", peak=" & m_lBuffPtr & ", free=" & pvArraySize(m_baBuffer) - m_lBuffPtr
-    CryptoRsaModExp = baRetVal
     '--- success
     CryptoRsaModExp = True
 End Function
@@ -1330,11 +1332,11 @@ QH:
     If hProv <> 0 Then
         Call CryptReleaseContext(hProv, 0)
     End If
-    If lPkiPtr <> 0 Then
-        Call LocalFree(lPkiPtr)
-    End If
     If lKeyPtr <> 0 Then
         Call LocalFree(lKeyPtr)
+    End If
+    If lPkiPtr <> 0 Then
+        Call LocalFree(lPkiPtr)
     End If
     If LenB(sApiSource) <> 0 Then
         Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
@@ -1608,28 +1610,30 @@ End Function
 
 #End If
 
-Public Function CryptoEmePkcs1Encode(baMessage() As Byte, ByVal lBitLen As Long, baEnc() As Byte) As Boolean
+Public Function CryptoEmePkcs1Encode(baRetVal() As Byte, baMessage() As Byte, ByVal lBitLen As Long) As Boolean
+    Const FUNC_NAME     As String = "CryptoEmePkcs1Encode"
     Dim lIdx            As Long
     
     '--- from RFC 8017, Section  7.2.1
-    ReDim baEnc(0 To (lBitLen + 7) \ 8 - 1) As Byte
-    If UBound(baMessage) > UBound(baEnc) - 11 Then
+    pvArrayAllocate baRetVal, (lBitLen + 7) \ 8, FUNC_NAME & ".baRetVal"
+    If UBound(baMessage) > UBound(baRetVal) - 11 Then
         GoTo QH
     End If
-    baEnc(1) = 2
-    CryptoRandomBytes VarPtr(baEnc(2)), UBound(baEnc) - UBound(baMessage) - 3
-    For lIdx = 2 To UBound(baEnc) - UBound(baMessage) - 3
-        If baEnc(lIdx) = 0 Then
-            baEnc(lIdx) = 42
+    baRetVal(1) = 2
+    CryptoRandomBytes VarPtr(baRetVal(2)), UBound(baRetVal) - UBound(baMessage) - 3
+    For lIdx = 2 To UBound(baRetVal) - UBound(baMessage) - 3
+        If baRetVal(lIdx) = 0 Then
+            baRetVal(lIdx) = 42
         End If
     Next
-    Call CopyMemory(baEnc(UBound(baEnc) - UBound(baMessage)), baMessage(0), UBound(baMessage) + 1)
+    Call CopyMemory(baRetVal(UBound(baRetVal) - UBound(baMessage)), baMessage(0), UBound(baMessage) + 1)
     '--- success
     CryptoEmePkcs1Encode = True
 QH:
 End Function
 
-Public Function CryptoEmsaPkcs1Encode(baMessage() As Byte, ByVal lBitLen As Long, ByVal lHashSize As Long, baEnc() As Byte) As Boolean
+Public Function CryptoEmsaPkcs1Encode(baRetVal() As Byte, baMessage() As Byte, ByVal lBitLen As Long, ByVal lHashSize As Long) As Boolean
+    Const FUNC_NAME     As String = "CryptoEmsaPkcs1Encode"
     Dim baHash()        As Byte
     Dim baDerHash()     As Byte
     Dim lPos            As Long
@@ -1639,14 +1643,14 @@ Public Function CryptoEmsaPkcs1Encode(baMessage() As Byte, ByVal lBitLen As Long
     If Not CryptoAsn1EncodePkcs1SignatureHash(baHash, baDerHash) Then
         GoTo QH
     End If
-    ReDim baEnc(0 To (lBitLen + 7) \ 8 - 1) As Byte
-    baEnc(1) = 1
-    For lPos = 2 To UBound(baEnc) - UBound(baDerHash) - 2
-        baEnc(lPos) = &HFF
+    pvArrayAllocate baRetVal, (lBitLen + 7) \ 8, FUNC_NAME & ".baRetVal"
+    baRetVal(1) = 1
+    For lPos = 2 To UBound(baRetVal) - UBound(baDerHash) - 2
+        baRetVal(lPos) = &HFF
     Next
     lPos = lPos + 1
-    Debug.Assert UBound(baEnc) - lPos >= UBound(baDerHash)
-    Call CopyMemory(baEnc(lPos), baDerHash(0), UBound(baDerHash) + 1)
+    Debug.Assert UBound(baRetVal) - lPos >= UBound(baDerHash)
+    Call CopyMemory(baRetVal(lPos), baDerHash(0), UBound(baDerHash) + 1)
     '--- success
     CryptoEmsaPkcs1Encode = True
 QH:
@@ -1685,10 +1689,13 @@ Public Function CryptoEmsaPkcs1Decode(baMessage() As Byte, baEnc() As Byte, ByVa
 QH:
 End Function
 
-Public Function CryptoEmsaPssEncode(baMessage() As Byte, ByVal lBitLen As Long, ByVal lHashSize As Long, ByVal lSaltSize As Long, baEnc() As Byte) As Boolean
+Public Function CryptoEmsaPssEncode(baRetVal() As Byte, baMessage() As Byte, ByVal lBitLen As Long, ByVal lHashSize As Long, ByVal lSaltSize As Long) As Boolean
+    Const FUNC_NAME     As String = "CryptoEmsaPssEncode"
     Dim lSize           As Long
+    Dim baBuffer()      As Byte
     Dim baHash()        As Byte
     Dim baSalt()        As Byte
+    Dim baSeed()        As Byte
     Dim lIdx            As Long
     Dim lPos            As Long
     Dim bMask           As Byte
@@ -1703,31 +1710,31 @@ Public Function CryptoEmsaPssEncode(baMessage() As Byte, ByVal lBitLen As Long, 
     End If
     '--- 4. Generate a random octet string salt of length sLen; if |sLen| = 0, then salt is the empty string.
     If lSaltSize > 0 Then
-        ReDim baSalt(0 To lSaltSize - 1) As Byte
+        pvArrayAllocate baSalt, lSaltSize, FUNC_NAME & ".baSalt"
         CryptoRandomBytes VarPtr(baSalt(0)), lSaltSize
     Else
         baSalt = vbNullString
     End If
     '--- 5. Let |M'| = (0x)00 00 00 00 00 00 00 00 || mHash || salt;
-    ReDim baBuffer(8 + lHashSize + lSaltSize - 1) As Byte
+    pvArrayAllocate baBuffer, 8 + lHashSize + lSaltSize, FUNC_NAME & ".baBuffer"
     Call CopyMemory(baBuffer(8), baHash(0), lHashSize)
     Call CopyMemory(baBuffer(8 + lHashSize), baSalt(0), lSaltSize)
     '--- 6. Let |H| = Hash(M'), an octet string of length hLen.
     pvArrayHash lHashSize, baBuffer, baHash
     '--- 7. Generate an octet string |PS| consisting of |emLen - sLen - hLen - 2| zero octets. The length of PS may be 0.
     '--- 8. Let |DB| = PS || 0x01 || salt; DB is an octet string of length |emLen - hLen - 1|.
-    ReDim baEnc(0 To lSize - 1) As Byte
-    baEnc(lSize - lHashSize - lSaltSize - 2) = &H1
-    Call CopyMemory(baEnc(lSize - lHashSize - lSaltSize - 1), baSalt(0), lSaltSize)
-    Call CopyMemory(baEnc(lSize - lHashSize - 1), baHash(0), lHashSize)
+    pvArrayAllocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
+    baRetVal(lSize - lHashSize - lSaltSize - 2) = &H1
+    Call CopyMemory(baRetVal(lSize - lHashSize - lSaltSize - 1), baSalt(0), lSaltSize)
+    Call CopyMemory(baRetVal(lSize - lHashSize - 1), baHash(0), lHashSize)
     '--- 9. Let |dbMask| = MGF(H, emLen - hLen - 1).
     '--- 10. Let |maskedDB| = DB \xor dbMask.
-    ReDim baSeed(0 To lHashSize - 1 + 4) As Byte '--- leave 4 more bytes at the end for counter
-    Call CopyMemory(baSeed(0), baEnc(lSize - lHashSize - 1), lHashSize)
+    pvArrayAllocate baSeed, lHashSize + 4, FUNC_NAME & ".baSeed" '--- leave 4 more bytes at the end for counter
+    Call CopyMemory(baSeed(0), baRetVal(lSize - lHashSize - 1), lHashSize)
     Do
         pvArrayHash lHashSize, baSeed, baHash
         For lIdx = 0 To UBound(baHash)
-            baEnc(lPos) = baEnc(lPos) Xor baHash(lIdx)
+            baRetVal(lPos) = baRetVal(lPos) Xor baHash(lIdx)
             lPos = lPos + 1
             If lPos >= lSize - lHashSize - 1 Then
                 Exit Do
@@ -1737,15 +1744,16 @@ Public Function CryptoEmsaPssEncode(baMessage() As Byte, ByVal lBitLen As Long, 
     Loop
     '--- 11. Set the leftmost |8 * emLen - emBits| bits of the leftmost octet in |maskedDB| to zero.
     bMask = &HFF \ (2 ^ (lSize * 8 - lBitLen))
-    baEnc(0) = baEnc(0) And (bMask \ 2)
+    baRetVal(0) = baRetVal(0) And (bMask \ 2)
     '--- 12. Let |EM| = maskedDB || H || 0xbc.
-    baEnc(lSize - 1) = &HBC
+    baRetVal(lSize - 1) = &HBC
     '--- 13. Output EM.
     CryptoEmsaPssEncode = True
 QH:
 End Function
 
 Public Function CryptoEmsaPssDecode(baMessage() As Byte, baEnc() As Byte, ByVal lBitLen As Long, ByVal lHashSize As Long, ByVal lSaltSize As Long) As Boolean
+    Const FUNC_NAME     As String = "CryptoEmsaPssDecode"
     Dim lSize           As Long
     Dim baBuffer()      As Byte
     Dim baSeed()        As Byte
@@ -1774,7 +1782,7 @@ Public Function CryptoEmsaPssDecode(baMessage() As Byte, baEnc() As Byte, ByVal 
     End If
     '--- 7. Let |dbMask| = MGF(H, emLen - hLen - 1).
     '--- 8. Let |DB| = maskedDB \xor dbMask.
-    ReDim baSeed(0 To lHashSize - 1 + 4) As Byte '--- leave 4 more bytes at the end for counter
+    pvArrayAllocate baSeed, lHashSize + 4, FUNC_NAME & ".baSeed"  '--- leave 4 more bytes at the end for counter
     Call CopyMemory(baSeed(0), baEnc(lSize - lHashSize - 1), lHashSize)
     Do
         pvArrayHash lHashSize, baSeed, baHash
@@ -1805,17 +1813,17 @@ Public Function CryptoEmsaPssDecode(baMessage() As Byte, baEnc() As Byte, ByVal 
         GoTo QH
     End If
     '--- 11. Let |salt| be the last |sLen| octets of |DB|.
-    ReDim baSalt(0 To lSaltSize - 1) As Byte
+    pvArrayAllocate baSalt, lSaltSize, FUNC_NAME & ".baSalt"
     Call CopyMemory(baSalt(0), baEnc(lPos - lSaltSize), lSaltSize)
     '--- 12. Let |M'| = (0x)00 00 00 00 00 00 00 00 || mHash || salt
-    ReDim baSeed(0 To 8 + lHashSize + lSaltSize - 1) As Byte
+    pvArrayAllocate baSeed, 8 + lHashSize + lSaltSize, FUNC_NAME & ".baSeed"
     pvArrayHash lHashSize, baMessage, baHash
     Call CopyMemory(baSeed(8), baHash(0), lHashSize)
     Call CopyMemory(baSeed(8 + lHashSize), baSalt(0), lSaltSize)
     '--- 13. Let |H'| = Hash(M'), an octet string of length |hLen|.
     pvArrayHash lHashSize, baSeed, baHash
     '--- |H| is still not de-masked in decrypted buffer
-    ReDim baBuffer(0 To lHashSize - 1) As Byte
+    pvArrayAllocate baBuffer, lHashSize, FUNC_NAME & ".baBuffer"
     Call CopyMemory(baBuffer(0), baEnc(lPos), lHashSize)
     '--- 14. If |H| = |H'|, output "consistent." Otherwise, output "inconsistent."
     If StrConv(baHash, vbUnicode) <> StrConv(baBuffer, vbUnicode) Then
@@ -1850,32 +1858,29 @@ Public Function CryptoAsn1DecodePrivateKey(baPrivKey() As Byte, uRetVal As UcsKe
             sApiSource = "CryptDecodeObjectEx(PKCS_RSA_PRIVATE_KEY)"
             GoTo QH
         End If
-        ReDim uRetVal.KeyBlob(0 To lKeySize - 1) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.KeyBlob", UBound(uRetVal.KeyBlob) + 1)
+        pvArrayAllocate uRetVal.KeyBlob, lKeySize, FUNC_NAME & ".uRetVal.KeyBlob"
         Call CopyMemory(uRetVal.KeyBlob(0), ByVal lKeyPtr, lKeySize)
         Debug.Assert UBound(uRetVal.KeyBlob) >= 16
         Call CopyMemory(uRetVal.BitLen, uRetVal.KeyBlob(12), 4)
         lSize = (uRetVal.BitLen + 7) \ 8
         lHalfSize = (uRetVal.BitLen + 15) \ 16
-        ReDim uRetVal.Modulus(0 To lSize - 1) As Byte
+        pvArrayAllocate uRetVal.Modulus, lSize, FUNC_NAME & ".uRetVal.Modulus"
         Debug.Assert UBound(uRetVal.KeyBlob) - 20 >= UBound(uRetVal.Modulus)
         Call CopyMemory(uRetVal.Modulus(0), uRetVal.KeyBlob(20), UBound(uRetVal.Modulus) + 1)
         pvArrayReverse uRetVal.Modulus
-        ReDim uRetVal.PrivExp(0 To lSize - 1) As Byte
+        pvArrayAllocate uRetVal.PrivExp, lSize, FUNC_NAME & ".uRetVal.PrivExp"
         Debug.Assert UBound(uRetVal.KeyBlob) >= 20 + lSize + 5 * lHalfSize + UBound(uRetVal.PrivExp)
         Call CopyMemory(uRetVal.PrivExp(0), uRetVal.KeyBlob(20 + lSize + 5 * lHalfSize), UBound(uRetVal.PrivExp) + 1)
         pvArrayReverse uRetVal.PrivExp
     ElseIf CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, VarPtr(uDecodePara), lKeyPtr, 0) <> 0 Then
         Call CopyMemory(uEccKeyInfo, ByVal lKeyPtr, Len(uEccKeyInfo))
-        ReDim uRetVal.KeyBlob(0 To uEccKeyInfo.PrivateKey.cbData - 1) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.KeyBlob", UBound(uRetVal.KeyBlob) + 1)
+        pvArrayAllocate uRetVal.KeyBlob, uEccKeyInfo.PrivateKey.cbData, FUNC_NAME & ".uRetVal.KeyBlob"
         Call CopyMemory(uRetVal.KeyBlob(0), ByVal uEccKeyInfo.PrivateKey.pbData, uEccKeyInfo.PrivateKey.cbData)
     ElseIf Err.LastDllError = ERROR_FILE_NOT_FOUND Then
         '--- no X509_ECC_PRIVATE_KEY struct type on NT4 -> decode manually
         Call CopyMemory(lSize, baPrivKey(6), 1)
         If 7 + lSize <= UBound(baPrivKey) Then
-            ReDim uRetVal.KeyBlob(0 To lSize - 1) As Byte
-            Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.KeyBlob", UBound(uRetVal.KeyBlob) + 1)
+            pvArrayAllocate uRetVal.KeyBlob, lSize, FUNC_NAME & ".uRetVal.KeyBlob"
             Call CopyMemory(uRetVal.KeyBlob(0), baPrivKey(7), lSize)
         Else
             hResult = ERROR_FILE_NOT_FOUND
@@ -1890,12 +1895,12 @@ Public Function CryptoAsn1DecodePrivateKey(baPrivKey() As Byte, uRetVal As UcsKe
     '--- success
     CryptoAsn1DecodePrivateKey = True
 QH:
-    If lPkiPtr <> 0 Then
-        Call LocalFree(lPkiPtr)
-    End If
-    If lKeyPtr <> 0 Then
-        Call LocalFree(lKeyPtr)
-    End If
+'    If lKeyPtr <> 0 Then
+'        Call LocalFree(lKeyPtr)
+'    End If
+'    If lPkiPtr <> 0 Then
+'        Call LocalFree(lPkiPtr)
+'    End If
     If LenB(sApiSource) <> 0 Then
         Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
@@ -1923,8 +1928,7 @@ Public Function CryptoAsn1DecodeCertificate(baCert() As Byte, uRetVal As UcsKeyI
     lPtr = UnsignedAdd(lPtr, 56)                                        '--- &pCertContext->pCertInfo->SubjectPublicKeyInfo
     Call CopyMemory(uPublicKeyInfo, ByVal lPtr, Len(uPublicKeyInfo))
     uRetVal.AlgoObjId = pvToString(uPublicKeyInfo.Algorithm.pszObjId)
-    ReDim uRetVal.KeyBlob(0 To uPublicKeyInfo.PublicKey.cbData - 1) As Byte
-    Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.KeyBlob", UBound(uRetVal.KeyBlob) + 1)
+    pvArrayAllocate uRetVal.KeyBlob, uPublicKeyInfo.PublicKey.cbData, FUNC_NAME & ".uRetVal.KeyBlob"
     Call CopyMemory(uRetVal.KeyBlob(0), ByVal uPublicKeyInfo.PublicKey.pbData, uPublicKeyInfo.PublicKey.cbData)
     If uRetVal.AlgoObjId = szOID_RSA_RSA Then
         If CryptAcquireContext(hProv, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) = 0 Then
@@ -1936,8 +1940,7 @@ Public Function CryptoAsn1DecodeCertificate(baCert() As Byte, uRetVal As UcsKeyI
         If CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, ByVal 0, lSize) = 0 Then
             GoTo QH
         End If
-        ReDim baBuffer(0 To lSize - 1) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".baBuffer", UBound(baBuffer) + 1)
+        pvArrayAllocate baBuffer, lSize, FUNC_NAME & ".baBuffer"
         If CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, baBuffer(0), lSize) = 0 Then
             GoTo QH
         End If
@@ -1946,14 +1949,12 @@ Public Function CryptoAsn1DecodeCertificate(baCert() As Byte, uRetVal As UcsKeyI
         Call CopyMemory(uRetVal.BitLen, baBuffer(12), 4)                                        '--- 12 = sizeof(PUBLICKEYSTRUC) + offset(RSAPUBKEY, bitlen)
         lSize = (uRetVal.BitLen + 7) \ 8
         '--- retrieve RSA public exponent
-        ReDim uRetVal.PubExp(0 To 3) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.PubExp", UBound(uRetVal.PubExp) + 1)
+        pvArrayAllocate uRetVal.PubExp, 4, FUNC_NAME & ".uRetVal.PubExp"
         Debug.Assert UBound(baBuffer) - 16 >= UBound(uRetVal.PubExp)
         Call CopyMemory(uRetVal.PubExp(0), baBuffer(16), UBound(uRetVal.PubExp) + 1)            '--- 16 = sizeof(PUBLICKEYSTRUC) + offset(RSAPUBKEY, pubexp)
         pvArrayReverse uRetVal.PubExp, lSize
         '--- retrieve RSA key modulus
-        ReDim uRetVal.Modulus(0 To lSize - 1) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".uRetVal.Modulus", UBound(uRetVal.Modulus) + 1)
+        pvArrayAllocate uRetVal.Modulus, lSize, FUNC_NAME & ".uRetVal.Modulus"
         Debug.Assert UBound(baBuffer) - 20 >= UBound(uRetVal.Modulus)
         Call CopyMemory(uRetVal.Modulus(0), baBuffer(20), UBound(uRetVal.Modulus) + 1)          '--- 20 = sizeof(PUBLICKEYSTRUC) + sizeof(RSAPUBKEY)
         pvArrayReverse uRetVal.Modulus
@@ -1976,6 +1977,7 @@ QH:
 End Function
 
 Private Function CryptoAsn1EncodePkcs1SignatureHash(baHash() As Byte, baRetVal() As Byte) As Boolean
+    Const FUNC_NAME     As String = "CryptoAsn1EncodePkcs1SignatureHash"
     Dim baPrefix()      As Byte
     
     Select Case UBound(baHash) + 1
@@ -1992,7 +1994,7 @@ Private Function CryptoAsn1EncodePkcs1SignatureHash(baHash() As Byte, baRetVal()
             GoTo QH
         End If
     End Select
-    ReDim baRetVal(0 To UBound(baPrefix) + UBound(baHash)) As Byte
+    pvArrayAllocate baRetVal, UBound(baPrefix) + UBound(baHash) + 1, FUNC_NAME & ".baRetVal"
     Call CopyMemory(baRetVal(0), baPrefix(0), UBound(baPrefix) + 1)
     Call CopyMemory(baRetVal(UBound(baPrefix) + 1), baHash(0), UBound(baHash) + 1)
     '--- success
@@ -2025,26 +2027,42 @@ QH:
 End Function
 
 Public Function FromBase64Array(sText As String) As Byte()
+    Const FUNC_NAME     As String = "FromBase64Array"
     Dim baRetVal()      As Byte
     Dim lSize           As Long
     
     lSize = (Len(sText) \ 4) * 3
-    ReDim baRetVal(0 To lSize - 1) As Byte
-    Debug.Assert RedimStats("FromBase64Array.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
     pvThunkAllocate sText, VarPtr(baRetVal(0))
     If Right$(sText, 2) = "==" Then
-        ReDim Preserve baRetVal(0 To lSize - 3)
-        Debug.Assert RedimStats("FromBase64Array.baRetVal", UBound(baRetVal) + 1)
+        pvArrayReallocate baRetVal, lSize - 2, FUNC_NAME & ".baRetVal"
     ElseIf Right$(sText, 1) = "=" Then
-        ReDim Preserve baRetVal(0 To lSize - 2)
-        Debug.Assert RedimStats("FromBase64Array.baRetVal", UBound(baRetVal) + 1)
+        pvArrayReallocate baRetVal, lSize - 1, FUNC_NAME & ".baRetVal"
     End If
     FromBase64Array = baRetVal
 End Function
 
 '= private ===============================================================
 
-Private Function pvArraySize(baArray() As Byte) As Long
+Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, Optional sFuncName As String)
+    If lSize > 0 Then
+        ReDim baArray(0 To lSize - 1) As Byte
+    Else
+        baArray = vbNullString
+    End If
+    Debug.Assert RedimStats(sFuncName, lSize)
+End Sub
+
+Private Sub pvArrayReallocate(baArray() As Byte, ByVal lSize As Long, Optional sFuncName As String)
+    If lSize > 0 Then
+        ReDim Preserve baArray(0 To lSize - 1) As Byte
+    Else
+        baArray = vbNullString
+    End If
+    Debug.Assert RedimStats(sFuncName, lSize)
+End Sub
+
+Private Property Get pvArraySize(baArray() As Byte) As Long
     Dim lPtr            As Long
     
     '--- peek long at ArrPtr(baArray)
@@ -2052,9 +2070,10 @@ Private Function pvArraySize(baArray() As Byte) As Long
     If lPtr <> 0 Then
         pvArraySize = UBound(baArray) + 1
     End If
-End Function
+End Property
 
 Private Sub pvArrayReverse(baData() As Byte, Optional ByVal NewSize As Long = -1)
+    Const FUNC_NAME     As String = "pvArrayReverse"
     Dim lIdx            As Long
     Dim bTemp           As Byte
     Dim baCopy()        As Byte
@@ -2063,7 +2082,7 @@ Private Sub pvArrayReverse(baData() As Byte, Optional ByVal NewSize As Long = -1
         baData = vbNullString
     ElseIf NewSize > 0 Then
         baCopy = baData
-        ReDim baData(0 To NewSize - 1) As Byte
+        pvArrayAllocate baData, NewSize, FUNC_NAME & ".baData"
         Call CopyMemory(baData(0), baCopy(0), IIf(NewSize < UBound(baCopy) + 1, NewSize, UBound(baCopy) + 1))
     End If
     For lIdx = 0 To UBound(baData) \ 2
@@ -2105,12 +2124,12 @@ Private Sub pvArrayIncCounter(baInput() As Byte, ByVal lPos As Long)
 End Sub
 
 Private Function pvArrayByte(baRetVal() As Byte, ParamArray A() As Variant) As Boolean
+    Const FUNC_NAME     As String = "pvArrayByte"
     Dim vElem           As Variant
     Dim lIdx            As Long
     
     If UBound(A) >= 0 Then
-        ReDim baRetVal(0 To UBound(A)) As Byte
-        Debug.Assert RedimStats("pvArrayByte.baRetVal", UBound(baRetVal) + 1)
+        pvArrayAllocate baRetVal, UBound(A) + 1, FUNC_NAME & ".baRetVal"
         For Each vElem In A
             baRetVal(lIdx) = vElem And &HFF
             lIdx = lIdx + 1
@@ -2207,6 +2226,7 @@ Private Function UnsignedAdd(ByVal lUnsignedPtr As Long, ByVal lSignedOffset As 
 End Function
 
 Public Function ReadBinaryFile(sFile As String) As Byte()
+    Const FUNC_NAME     As String = "ReadBinaryFile"
     Dim baBuffer()      As Byte
     Dim nFile           As Integer
     
@@ -2215,8 +2235,7 @@ Public Function ReadBinaryFile(sFile As String) As Byte()
         nFile = FreeFile
         Open sFile For Binary Access Read Shared As nFile
         If LOF(nFile) > 0 Then
-            ReDim baBuffer(0 To LOF(nFile) - 1) As Byte
-            Debug.Assert RedimStats("ReadBinaryFile.baBuffer", UBound(baBuffer) + 1)
+            pvArrayAllocate baBuffer, LOF(nFile), FUNC_NAME & ".baBuffer"
             Get nFile, , baBuffer
         End If
         Close nFile
@@ -3266,8 +3285,7 @@ Public Function PkiGenerSelfSignedCertificate(cCerts As Collection, baPrivKey() 
     If CertStrToName(X509_ASN_ENCODING, StrPtr(sName), CERT_OID_NAME_STR, 0, ByVal 0, lSize, 0) = 0 Then
         GoTo QH
     End If
-    ReDim baName(0 To lSize - 1) As Byte
-    Debug.Assert RedimStats(FUNC_NAME & ".baName", UBound(baName) + 1)
+    pvArrayAllocate baName, lSize, FUNC_NAME & ".baName"
     If CertStrToName(X509_ASN_ENCODING, StrPtr(sName), CERT_OID_NAME_STR, 0, baName(0), lSize, 0) = 0 Then
         GoTo QH
     End If
@@ -3302,13 +3320,13 @@ End Function
 '= private ===============================================================
 
 Private Function PkiAppendCertContext(ByVal pCertContext As Long, cCerts As Collection, baPrivKey() As Byte) As Boolean
+    Const FUNC_NAME     As String = "PkiAppendCertContext"
     Dim uCertContext    As CERT_CONTEXT
     Dim baBuffer()      As Byte
     
     Call CopyMemory(uCertContext, ByVal pCertContext, Len(uCertContext))
     If uCertContext.cbCertEncoded > 0 Then
-        ReDim baBuffer(0 To uCertContext.cbCertEncoded - 1) As Byte
-        Debug.Assert RedimStats("PkiAppendCertContext.baBuffer", UBound(baBuffer) + 1)
+        pvArrayAllocate baBuffer, uCertContext.cbCertEncoded, FUNC_NAME & ".baBuffer"
         Call CopyMemory(baBuffer(0), ByVal uCertContext.pbCertEncoded, uCertContext.cbCertEncoded)
         If cCerts Is Nothing Then
             Set cCerts = New Collection
@@ -3357,8 +3375,7 @@ Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As 
             sApiSource = "NCryptExportKey(PRIVATEBLOB)"
             GoTo QH
         End If
-        ReDim baBuffer(0 To lSize - 1) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".baBuffer", UBound(baBuffer) + 1)
+        pvArrayAllocate baBuffer, lSize, FUNC_NAME & ".baBuffer"
         hResult = NCryptExportKey(hNewKey, 0, StrPtr("PRIVATEBLOB"), ByVal 0, baBuffer(0), UBound(baBuffer) + 1, lSize, 0)
         If hResult < 0 Then
             sApiSource = "NCryptExportKey(PRIVATEBLOB)#2"
@@ -3372,8 +3389,7 @@ Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As 
                 sApiSource = "NCryptExportKey(RSAFULLPRIVATEBLOB)"
                 GoTo QH
             End If
-            ReDim baBuffer(0 To lSize - 1) As Byte
-            Debug.Assert RedimStats(FUNC_NAME & ".baBuffer", UBound(baBuffer) + 1)
+            pvArrayAllocate baBuffer, lSize, FUNC_NAME & ".baBuffer"
             hResult = NCryptExportKey(hNewKey, 0, StrPtr("RSAFULLPRIVATEBLOB"), ByVal 0, baBuffer(0), UBound(baBuffer) + 1, lSize, 0)
             If hResult < 0 Then
                 sApiSource = "NCryptExportKey(RSAFULLPRIVATEBLOB)#2"
@@ -3386,8 +3402,7 @@ Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As 
             Call CopyMemory(lSize, baBuffer(4), 4)
             Debug.Assert 8 + 3 * lSize <= UBound(baBuffer) + 1
             Call CopyMemory(baBuffer(0), baBuffer(8 + 2 * lSize), lSize)
-            ReDim Preserve baBuffer(0 To lSize - 1) As Byte
-            Debug.Assert RedimStats(FUNC_NAME & ".baBuffer", UBound(baBuffer) + 1)
+            pvArrayAllocate baBuffer, lSize, FUNC_NAME & ".baBuffer"
             If Not PkiExportEccPrivateKey(baPrivKey, baBuffer, lMagic) Then
                 GoTo QH
             End If
@@ -3400,8 +3415,7 @@ Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As 
             sApiSource = "CertGetCertificateContextProperty(CERT_KEY_PROV_INFO_PROP_ID)"
             GoTo QH
         End If
-        ReDim baBuffer(0 To lSize - 1) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".baBuffer", UBound(baBuffer) + 1)
+        pvArrayAllocate baBuffer, lSize, FUNC_NAME & ".baBuffer"
         If CertGetCertificateContextProperty(pCertContext, CERT_KEY_PROV_INFO_PROP_ID, baBuffer(0), lSize) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CertGetCertificateContextProperty(CERT_KEY_PROV_INFO_PROP_ID)#2"
@@ -3423,8 +3437,7 @@ Private Function PkiExportPrivateKey(ByVal pCertContext As Long, baPrivKey() As 
             sApiSource = "CryptExportKey(PRIVATEKEYBLOB)"
             GoTo QH
         End If
-        ReDim baBuffer(0 To lSize - 1) As Byte
-        Debug.Assert RedimStats(FUNC_NAME & ".baBuffer", UBound(baBuffer) + 1)
+        pvArrayAllocate baBuffer, lSize, FUNC_NAME & ".baBuffer"
         If CryptExportKey(hKey, 0, PRIVATEKEYBLOB, 0, baBuffer(0), lSize) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptExportKey(PRIVATEKEYBLOB)#2"
@@ -3481,8 +3494,7 @@ Private Function PkiExportRsaPrivateKey(baRetVal() As Byte, baPrivBlob() As Byte
         sApiSource = "CryptEncodeObjectEx"
         GoTo QH
     End If
-    ReDim baRsaPrivKey(0 To lSize - 1)
-    Debug.Assert RedimStats(FUNC_NAME & ".baRsaPrivKey", UBound(baRsaPrivKey) + 1)
+    pvArrayAllocate baRsaPrivKey, lSize, FUNC_NAME & ".baRsaPrivKey"
     If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, lStructType, baPrivBlob(0), 0, 0, baRsaPrivKey(0), lSize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptEncodeObjectEx#2"
@@ -3499,8 +3511,7 @@ Private Function PkiExportRsaPrivateKey(baRetVal() As Byte, baPrivBlob() As Byte
         sApiSource = "CryptEncodeObjectEx(PKCS_PRIVATE_KEY_INFO)"
         GoTo QH
     End If
-    ReDim baRetVal(0 To lSize - 1)
-    Debug.Assert RedimStats(FUNC_NAME & ".baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
     If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, uPrivKey, 0, 0, baRetVal(0), lSize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptEncodeObjectEx(PKCS_PRIVATE_KEY_INFO)#2"
@@ -3536,8 +3547,7 @@ Private Function PkiExportEccPrivateKey(baRetVal() As Byte, baPrivBlob() As Byte
         sApiSource = "CryptEncodeObjectEx(X509_ECC_PRIVATE_KEY)"
         GoTo QH
     End If
-    ReDim baRetVal(0 To lSize - 1)
-    Debug.Assert RedimStats(FUNC_NAME & ".baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
     If CryptEncodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, uEccPrivKey, 0, 0, baRetVal(0), lSize) = 0 Then
         hResult = Err.LastDllError
         sApiSource = "CryptEncodeObjectEx(X509_ECC_PRIVATE_KEY)#2"
@@ -3563,6 +3573,7 @@ Private Function PkiCloneKeyWithExportPolicy(ByVal hKey As Long, ByVal lPolicy A
     Dim hProv           As Long
     Dim sKeyName        As String
     Dim hRetVal         As Long
+    Dim baBuffer()      As Byte
     Dim hResult         As Long
     Dim sApiSource      As String
     
@@ -3595,8 +3606,7 @@ Private Function PkiCloneKeyWithExportPolicy(ByVal hKey As Long, ByVal lPolicy A
         sApiSource = "NCryptExportKey(PKCS8_PRIVATEKEY)"
         GoTo QH
     End If
-    ReDim baPkcs8(0 To lSize - 1) As Byte
-    Debug.Assert RedimStats(FUNC_NAME & ".baPkcs8", UBound(baPkcs8) + 1)
+    pvArrayAllocate baPkcs8, lSize, FUNC_NAME & ".baPkcs8"
     hResult = NCryptExportKey(hKey, 0, StrPtr("PKCS8_PRIVATEKEY"), uParams, baPkcs8(0), UBound(baPkcs8) + 1, lSize, 0)
     If hResult < 0 Then
         sApiSource = "NCryptExportKey(PKCS8_PRIVATEKEY)#2"
@@ -3613,8 +3623,7 @@ Private Function PkiCloneKeyWithExportPolicy(ByVal hKey As Long, ByVal lPolicy A
         sApiSource = "NCryptGetProperty(Name)"
         GoTo QH
     End If
-    ReDim baBuffer(0 To lSize - 1) As Byte
-    Debug.Assert RedimStats(FUNC_NAME & ".baBuffer", UBound(baBuffer) + 1)
+    pvArrayAllocate baBuffer, lSize, FUNC_NAME & ".baBuffer"
     hResult = NCryptGetProperty(hKey, StrPtr("Name"), baBuffer(0), UBound(baBuffer) + 1, lSize, 0)
     If hResult < 0 Then
         sApiSource = "NCryptGetProperty(Name)#2"
@@ -3745,7 +3754,7 @@ Public Function PkiCertChainValidate(sRemoteHostName As String, cCerts As Collec
                     End If
                 End If
             Next
-            Call LocalFree(lAltInfoPtr)
+'            Call LocalFree(lAltInfoPtr)
             lAltInfoPtr = 0
         End If
     Loop
@@ -3838,9 +3847,11 @@ Private Function pvGetAddr(ByVal lPtr As Long) As Long
 End Function
 
 Private Sub pvArenaInit(Optional ByVal lSize As Long = 1024& * 2048)
+    Const FUNC_NAME     As String = "pvArenaInit"
+    
     If pvArraySize(m_baBuffer) <> lSize Then
         Debug.Print "pvArenaInit, lSize=" & lSize
-        ReDim m_baBuffer(0 To lSize - 1) As Byte
+        pvArrayAllocate m_baBuffer, lSize, FUNC_NAME & ".m_baBuffer"
     End If
     m_lBuffPtr = UnsignedAdd(VarPtr(m_baBuffer(4)), LNG_ARENA_ALIGN - 1) And -LNG_ARENA_ALIGN
     m_lBuffPtr = UnsignedAdd(m_lBuffPtr, -VarPtr(m_baBuffer(0))) - 4

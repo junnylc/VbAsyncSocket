@@ -9,6 +9,14 @@ Begin VB.Form Form1
    ScaleHeight     =   5568
    ScaleWidth      =   11064
    StartUpPosition =   3  'Windows Default
+   Begin VB.ComboBox cobUrl 
+      Height          =   288
+      Left            =   1260
+      TabIndex        =   0
+      Text            =   "cert-test.sandbox.google.com"
+      Top             =   168
+      Width           =   7068
+   End
    Begin VB.CommandButton Command2 
       Caption         =   "ReDim Info"
       Height          =   348
@@ -43,14 +51,6 @@ Begin VB.Form Form1
       TabIndex        =   2
       Top             =   168
       Width           =   1356
-   End
-   Begin VB.TextBox txtUrl 
-      Height          =   348
-      Left            =   1260
-      TabIndex        =   0
-      Text            =   "cert-test.sandbox.google.com"
-      Top             =   168
-      Width           =   7068
    End
    Begin VB.Label Label1 
       Caption         =   "Address:"
@@ -125,10 +125,7 @@ Private Sub PrintError(sFunction As String)
 End Sub
 
 Private Sub Command2_Click()
-    txtResult.Text = DesignDumpRedimStats
-    If IsKeyPressed(vbKeyControl) Then
-        Set g_oRedimStats = Nothing
-    End If
+    txtResult.Text = DesignDumpRedimStats(Clear:=IsKeyPressed(vbKeyControl))
 End Sub
 
 '=========================================================================
@@ -139,6 +136,7 @@ Private Sub Form_Load()
     Const PEM_FILES     As String = "eccert.pem|ecprivkey.pem|fullchain2.pem"
     Const PFX_FILE      As String = "eccert.pfx"
     Const PFX_PASSWORD  As String = ""
+    Dim vElem           As Variant
     Dim sAddr           As String
     Dim lPort           As Long
     
@@ -146,9 +144,12 @@ Private Sub Form_Load()
     If txtResult.Font.Name = "Arial" Then
         txtResult.Font.Name = "Courier New"
     End If
-    sAddr = GetSetting(App.Title, "Form1", "txtUrl", txtUrl.Text)
+    For Each vElem In Split("cert-test.sandbox.google.com|tls13.1d.pw|localhost:44330|tls.ctf.network|www.mikestoolbox.org|swifttls.org|tls13.pinterjann.is|rsa8192.badssl.com|rsa4096.badssl.com|rsa2048.badssl.com|ecc384.badssl.com|ecc256.badssl.com|dir.bg|host.bg|bgdev.org|cnn.com|gmail.com|google.com", "|")
+        cobUrl.AddItem vElem
+    Next
+    sAddr = GetSetting(App.Title, "Form1", "Url", cobUrl.Text)
     If LenB(sAddr) <> 0 Then
-        txtUrl.Text = sAddr
+        cobUrl.Text = sAddr
     End If
     m_hRootStore = PkiPemImportRootCaCertStore(App.Path & "\ca-bundle.pem")
     ChDir App.Path
@@ -179,7 +180,7 @@ Private Sub Form_Resize()
 End Sub
 
 Private Sub Form_Unload(Cancel As Integer)
-    SaveSetting App.Title, "Form1", "txtUrl", txtUrl.Text
+    SaveSetting App.Title, "Form1", "Url", cobUrl.Text
     Set m_cRequestHandlers = Nothing
 End Sub
 
@@ -194,8 +195,7 @@ Private Sub Command1_Click()
     dblTimer = Timer
     Screen.MousePointer = vbHourglass
     bKeepDebug = IsKeyPressed(vbKeyControl)
-    ' tls13.1d.pw, localhost:44330, tls.ctf.network, www.mikestoolbox.org, swifttls.org, tls13.pinterjann.is, cert-test.sandbox.google.com
-    If Not ParseUrl(Trim$(txtUrl.Text), uRemote, DefProtocol:="https") Then
+    If Not ParseUrl(Trim$(cobUrl.Text), uRemote, DefProtocol:="https") Then
         txtResult.Text = "Error: Invalid URL"
         GoTo QH
     End If
@@ -397,18 +397,15 @@ Private Function ParseUrl(sUrl As String, uParsed As UcsParsedUrl, Optional DefP
     End With
 End Function
 
-Private Function pvArraySize(baArray() As Byte, Optional RetVal As Long) As Long
+Private Property Get pvArraySize(baArray() As Byte) As Long
     Dim lPtr            As Long
     
     '--- peek long at ArrPtr(baArray)
     Call CopyMemory(lPtr, ByVal ArrPtr(baArray), 4)
     If lPtr <> 0 Then
-        RetVal = UBound(baArray) + 1
-    Else
-        RetVal = 0
+        pvArraySize = UBound(baArray) + 1
     End If
-    pvArraySize = RetVal
-End Function
+End Property
 
 Private Sub pvAppendLogText(txtLog As TextBox, sValue As String)
     Call SendMessage(txtLog.hWnd, WM_SETREDRAW, 0, ByVal 0)

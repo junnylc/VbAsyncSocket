@@ -678,6 +678,7 @@ Private Function pvTlsBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte
 End Function
 
 Private Function pvTlsBuildClientLegacyKeyExchange(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
+    Const FUNC_NAME     As String = "pvTlsBuildClientLegacyKeyExchange"
     Dim baLocalIV()     As Byte
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
@@ -738,8 +739,7 @@ Private Function pvTlsBuildClientLegacyKeyExchange(uCtx As UcsTlsContext, baOutp
             pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baOutput(lMessagePos)), lPos - lMessagePos
             lPos = pvWriteReserved(baOutput, lPos, .TagSize)
             '--- encrypt message
-            ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
-            Debug.Assert RedimStats("pvTlsBuildClientLegacyKeyExchange.baAad", UBound(baAad) + 1)
+            pvArrayAllocate baAad, LNG_LEGACY_AAD_SIZE, FUNC_NAME & ".baAad"
             lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
             lAadPos = pvWriteLong(baAad, lAadPos, .LocalTrafficSeqNo, Size:=4)
             lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baOutput(lRecordPos)), 3)
@@ -956,6 +956,7 @@ QH:
 End Function
 
 Private Function pvTlsBuildApplicationData(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, baData() As Byte, ByVal lSize As Long, ByVal lContentType As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
+    Const FUNC_NAME     As String = "pvTlsBuildApplicationData"
     Dim lRecordPos      As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
@@ -988,8 +989,7 @@ Private Function pvTlsBuildApplicationData(uCtx As UcsTlsContext, baOutput() As 
         If .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS13 Then
             bResult = pvTlsAeadEncrypt(.AeadAlgo, baLocalIV, .LocalTrafficKey, baOutput, lRecordPos, LNG_AAD_SIZE, baOutput, lMessagePos, lMessageSize)
         ElseIf .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS12 Then
-            ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
-            Debug.Assert RedimStats("pvTlsBuildApplicationData.baAad", UBound(baAad) + 1)
+            pvArrayAllocate baAad, LNG_LEGACY_AAD_SIZE, FUNC_NAME & ".baAad"
             lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
             lAadPos = pvWriteLong(baAad, lAadPos, .LocalTrafficSeqNo, Size:=4)
             lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baOutput(lRecordPos)), 3)
@@ -1009,6 +1009,7 @@ QH:
 End Function
 
 Private Function pvTlsBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, ByVal eAlertDesc As UcsTlsAlertDescriptionsEnum, ByVal lAlertLevel As Long, Optional sError As String, Optional eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
+    Const FUNC_NAME     As String = "pvTlsBuildAlert"
     Dim lRecordPos      As Long
     Dim lMessagePos     As Long
     Dim lMessageSize    As Long
@@ -1019,8 +1020,7 @@ Private Function pvTlsBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVa
     With uCtx
         '--- for TLS 1.3 -> tunnel alert through application data encryption
         If .State = ucsTlsStatePostHandshake And .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS13 Then
-            ReDim baLocalIV(0 To 1) As Byte
-            Debug.Assert RedimStats("pvTlsBuildAlert.baLocalIV", UBound(baLocalIV) + 1)
+            pvArrayAllocate baLocalIV, 2, FUNC_NAME & ".baLocalIV"
             baLocalIV(0) = lAlertLevel
             baLocalIV(1) = eAlertDesc
             pvTlsBuildAlert = pvTlsBuildApplicationData(uCtx, baOutput, lPos, baLocalIV, UBound(baLocalIV) + 1, TLS_CONTENT_TYPE_ALERT, sError, eAlertCode)
@@ -1047,8 +1047,7 @@ Private Function pvTlsBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVa
         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
         If .State = ucsTlsStatePostHandshake And .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS12 Then
             '--- encrypt message
-            ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
-            Debug.Assert RedimStats("pvTlsBuildAlert.baAad", UBound(baAad) + 1)
+            pvArrayAllocate baAad, LNG_LEGACY_AAD_SIZE, FUNC_NAME & ".baAad"
             lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
             lAadPos = pvWriteLong(baAad, lAadPos, .LocalTrafficSeqNo, Size:=4)
             lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baOutput(lRecordPos)), 3)
@@ -1920,7 +1919,7 @@ Private Function pvTlsSetupExchRsaCertificate(uCtx As UcsTlsContext, baCert() As
                 eAlertCode = uscTlsAlertHandshakeFailure
                 GoTo QH
             End If
-            If Not CryptoEmePkcs1Encode(.LocalExchPrivate, uCertInfo.BitLen, baEnc) Then
+            If Not CryptoEmePkcs1Encode(baEnc, .LocalExchPrivate, uCertInfo.BitLen) Then
                 sError = Replace(ERR_CALL_FAILED, "%1", "CryptoEmePkcs1Encode")
                 eAlertCode = uscTlsAlertInternalError
                 GoTo QH
@@ -1995,6 +1994,7 @@ QH:
 End Function
 
 Private Function pvTlsPrepareLegacyDecryptParams(uCtx As UcsTlsContext, baInput() As Byte, ByVal lRecordPos As Long, ByVal lRecordSize As Long, lPos As Long, lEnd As Long, baRemoteIV() As Byte, baAad() As Byte) As Boolean
+    Const FUNC_NAME     As String = "pvTlsPrepareLegacyDecryptParams"
     Dim lAadPos         As Long
     
     With uCtx
@@ -2004,8 +2004,7 @@ Private Function pvTlsPrepareLegacyDecryptParams(uCtx As UcsTlsContext, baInput(
             pvWriteBuffer baRemoteIV, .IvSize - .IvDynamicSize, VarPtr(baInput(lPos)), .IvDynamicSize
             lPos = lPos + .IvDynamicSize
         End If
-        ReDim baAad(0 To LNG_LEGACY_AAD_SIZE - 1) As Byte
-        Debug.Assert RedimStats("pvTlsPrepareLegacyDecryptParams.baAad", UBound(baAad) + 1)
+        pvArrayAllocate baAad, LNG_LEGACY_AAD_SIZE, FUNC_NAME & ".baAad"
         lAadPos = pvWriteLong(baAad, 0, 0, Size:=4)
         lAadPos = pvWriteLong(baAad, lAadPos, .RemoteTrafficSeqNo, Size:=4)
         lAadPos = pvWriteBuffer(baAad, lAadPos, VarPtr(baInput(lRecordPos)), 3)
@@ -2190,6 +2189,7 @@ Private Function pvTlsHkdfExtract(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baK
 End Function
 
 Private Function pvTlsHkdfExpandLabel(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Byte()
+    Const FUNC_NAME     As String = "pvTlsHkdfExpandLabel"
     Dim baRetVal()      As Byte
     Dim lRetValPos      As Long
     Dim baInfo()        As Byte
@@ -2220,8 +2220,7 @@ Private Function pvTlsHkdfExpandLabel(ByVal eHash As UcsTlsCryptoAlgorithmsEnum,
         lIdx = lIdx + 1
     Loop
     If UBound(baRetVal) <> lSize - 1 Then
-        ReDim Preserve baRetVal(0 To lSize - 1) As Byte
-        Debug.Assert RedimStats("pvTlsHkdfExpandLabel.baRetVal", UBound(baRetVal) + 1)
+        pvArrayReallocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
     End If
     pvTlsHkdfExpandLabel = baRetVal
 End Function
@@ -2229,6 +2228,7 @@ End Function
 '= legacy PRF-based key derivation functions =============================
 
 Private Function pvTlsDeriveLegacySecrets(uCtx As UcsTlsContext, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
+    Const FUNC_NAME     As String = "pvTlsDeriveLegacySecrets"
     Dim baPreMasterSecret() As Byte
     Dim baRandom()      As Byte
     Dim baExpanded()    As Byte
@@ -2243,8 +2243,7 @@ Private Function pvTlsDeriveLegacySecrets(uCtx As UcsTlsContext, sError As Strin
         Debug.Assert pvArraySize(.LocalExchRandom) = TLS_HELLO_RANDOM_SIZE
         Debug.Assert pvArraySize(.RemoteExchRandom) = TLS_HELLO_RANDOM_SIZE
         baPreMasterSecret = pvTlsSharedSecret(.ExchAlgo, .LocalExchPrivate, .RemoteExchPublic)
-        ReDim baRandom(0 To pvArraySize(.LocalExchRandom) + pvArraySize(.RemoteExchRandom) - 1) As Byte
-        Debug.Assert RedimStats("pvTlsDeriveLegacySecrets.baRandom", UBound(baRandom) + 1)
+        pvArrayAllocate baRandom, pvArraySize(.LocalExchRandom) + pvArraySize(.RemoteExchRandom), FUNC_NAME & ".baRandom"
         lPos = pvWriteArray(baRandom, 0, .LocalExchRandom)
         lPos = pvWriteArray(baRandom, lPos, .RemoteExchRandom)
         .MasterSecret = pvTlsKdfLegacyPrf(.DigestAlgo, baPreMasterSecret, "master secret", baRandom, TLS_HELLO_RANDOM_SIZE + TLS_HELLO_RANDOM_SIZE \ 2) '--- always 48
@@ -2266,6 +2265,7 @@ QH:
 End Function
 
 Private Function pvTlsKdfLegacyPrf(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baSecret() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Byte()
+    Const FUNC_NAME     As String = "pvTlsKdfLegacyPrf"
     Dim baSeed()        As Byte
     Dim baRetVal()      As Byte
     Dim lRetValPos      As Long
@@ -2285,8 +2285,7 @@ Private Function pvTlsKdfLegacyPrf(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, ba
         lRetValPos = pvWriteArray(baRetVal, lRetValPos, baHmac)
     Loop
     If lRetValPos <> lSize Then
-        ReDim Preserve baRetVal(0 To lSize - 1) As Byte
-        Debug.Assert RedimStats("pvTlsKdfLegacyPrf.baRetVal", UBound(baRetVal) + 1)
+        pvArrayReallocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
     End If
     pvTlsKdfLegacyPrf = baRetVal
 End Function
@@ -2294,11 +2293,11 @@ End Function
 '= crypto wrappers =======================================================
 
 Private Function pvTlsArrayRandom(ByVal lSize As Long) As Byte()
+    Const FUNC_NAME     As String = "pvTlsArrayRandom"
     Dim baRetVal()      As Byte
     
     If lSize > 0 Then
-        ReDim baRetVal(0 To lSize - 1) As Byte
-        Debug.Assert RedimStats("pvTlsArrayRandom.baRetVal", UBound(baRetVal) + 1)
+        pvArrayAllocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
         CryptoRandomBytes VarPtr(baRetVal(0)), lSize
     End If
     pvTlsArrayRandom = baRetVal
@@ -2504,7 +2503,7 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
             End If
             baSignature = CryptoRsaSign(uRsaCtx, baVerifyData)
         #Else
-            If Not CryptoEmsaPkcs1Encode(baVerifyData, uKeyInfo.BitLen, lHashSize, baEnc) Then
+            If Not CryptoEmsaPkcs1Encode(baEnc, baVerifyData, uKeyInfo.BitLen, lHashSize) Then
                 sError = Replace(ERR_CALL_FAILED, "%1", "CryptoEmsaPkcs1Encode")
                 eAlertCode = uscTlsAlertInternalError
                 GoTo QH
@@ -2520,7 +2519,7 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
         #If ImplUseCryptoRsa Then
             baSignature = CryptoRsaPssSign(baPrivKey, baVerifyData, lSignatureType)
         #Else
-            If Not CryptoEmsaPssEncode(baVerifyData, uKeyInfo.BitLen, lHashSize, lHashSize, baEnc) Then
+            If Not CryptoEmsaPssEncode(baEnc, baVerifyData, uKeyInfo.BitLen, lHashSize, lHashSize) Then
                 sError = Replace(ERR_CALL_FAILED, "%1", "CryptoEmsaPssEncode")
                 eAlertCode = uscTlsAlertInternalError
                 GoTo QH
@@ -2575,6 +2574,7 @@ QH:
 End Function
 
 Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As Long, baVerifyData() As Byte, baSignature() As Byte, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
+    Const FUNC_NAME     As String = "pvTlsSignatureVerify"
     Dim uCertInfo       As UcsKeyInfo
     Dim lHashSize       As Long
     Dim baVerifyHash()  As Byte
@@ -2607,12 +2607,23 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
             End If
         #End If
     Case TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512
-        If Not CryptoRsaModExp(baSignature, uCertInfo.PubExp, uCertInfo.Modulus, baDecr) Then
-            GoTo InvalidSignature
-        End If
-        If Not CryptoEmsaPkcs1Decode(baVerifyData, baDecr, lHashSize) Then
-            GoTo InvalidSignature
-        End If
+        #If ImplUseCryptoRsa Then
+            If Not CryptoRsaInitContext(uRsaCtx, EmptyByteArray, baCert, EmptyByteArray, lSignatureType) Then
+                sError = Replace(ERR_CALL_FAILED, "%1", "CryptoRsaInitContext")
+                eAlertCode = uscTlsAlertInternalError
+                GoTo QH
+            End If
+            If Not CryptoRsaVerify(uRsaCtx, baVerifyData, baSignature) Then
+                GoTo InvalidSignature
+            End If
+        #Else
+            If Not CryptoRsaModExp(baSignature, uCertInfo.PubExp, uCertInfo.Modulus, baDecr) Then
+                GoTo InvalidSignature
+            End If
+            If Not CryptoEmsaPkcs1Decode(baVerifyData, baDecr, lHashSize) Then
+                GoTo InvalidSignature
+            End If
+        #End If
     Case TLS_SIGNATURE_RSA_PSS_RSAE_SHA256, TLS_SIGNATURE_RSA_PSS_RSAE_SHA384, TLS_SIGNATURE_RSA_PSS_RSAE_SHA512, _
             TLS_SIGNATURE_RSA_PSS_PSS_SHA256, TLS_SIGNATURE_RSA_PSS_PSS_SHA384, TLS_SIGNATURE_RSA_PSS_PSS_SHA512
         If Not CryptoIsSupported(ucsTlsAlgoSignaturePss) Then
@@ -2647,8 +2658,7 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
             '--- note: when hash size is less than curve size must left-pad w/ zeros (right-align hash) -> deprecated
             '---       incl. ECDSA_SECP384R1_SHA256 only
             baTemp = baVerifyHash
-            ReDim baVerifyHash(0 To lCurveSize - 1) As Byte
-            Debug.Assert RedimStats("pvTlsSignatureVerify.baVerifyHash", UBound(baVerifyHash) + 1)
+            pvArrayAllocate baVerifyHash, lCurveSize, FUNC_NAME & ".baRetVal"
             Call CopyMemory(baVerifyHash(lCurveSize - UBound(baTemp) - 1), baTemp(0), UBound(baTemp) + 1)
             bDeprecated = True
         ElseIf UBound(baVerifyHash) + 1 > lCurveSize Then
@@ -2728,6 +2738,7 @@ Private Function pvTlsSignatureHashSize(ByVal lSignatureType As Long) As Long
 End Function
 
 Private Function pvAsn1DecodeEccSignature(baDerSig() As Byte, ByVal lCurveSize As Long) As Byte()
+    Const FUNC_NAME     As String = "pvAsn1DecodeEccSignature"
     Dim baRetVal()      As Byte
     Dim lType           As Long
     Dim lPos            As Long
@@ -2735,8 +2746,7 @@ Private Function pvAsn1DecodeEccSignature(baDerSig() As Byte, ByVal lCurveSize A
     Dim cStack          As Collection
     Dim baTemp()        As Byte
     
-    ReDim baRetVal(0 To 63) As Byte
-    Debug.Assert RedimStats("pvAsn1DecodeEccSignature.baRetVal", UBound(baRetVal) + 1)
+    pvArrayAllocate baRetVal, 64, FUNC_NAME & ".baRetVal"
     '--- ECDSA-Sig-Value ::= SEQUENCE { r INTEGER, s INTEGER }
     lPos = pvReadLong(baDerSig, 0, lType)
     If lType <> LNG_ANS1_TYPE_SEQUENCE Then
@@ -2865,16 +2875,15 @@ Private Function pvWriteReserved(baBuffer() As Byte, ByVal lPos As Long, ByVal l
 End Function
 
 Private Function pvWriteBuffer(baBuffer() As Byte, ByVal lPos As Long, ByVal lPtr As Long, ByVal lSize As Long) As Long
+    Const FUNC_NAME     As String = "pvWriteBuffer"
     Dim lBufPtr         As Long
     
     '--- peek long at ArrPtr(baBuffer)
     Call CopyMemory(lBufPtr, ByVal ArrPtr(baBuffer), 4)
     If lBufPtr = 0 Then
-        ReDim baBuffer(0 To lPos + lSize - 1) As Byte
-        Debug.Assert RedimStats("pvWriteBuffer.baBuffer", UBound(baBuffer) + 1)
+        pvArrayAllocate baBuffer, lPos + lSize, FUNC_NAME & ".baBuffer"
     ElseIf UBound(baBuffer) < lPos + lSize - 1 Then
-        ReDim Preserve baBuffer(0 To lPos + lSize - 1) As Byte
-        Debug.Assert RedimStats("pvWriteBuffer.baBuffer", UBound(baBuffer) + 1)
+        pvArrayReallocate baBuffer, lPos + lSize, FUNC_NAME & ".baRetVal"
     End If
     If lSize > 0 And lPtr <> 0 Then
         Debug.Assert IsBadReadPtr(lPtr, lSize) = 0
@@ -2926,12 +2935,13 @@ Private Function pvReadLong(baBuffer() As Byte, ByVal lPos As Long, lValue As Lo
 End Function
 
 Private Function pvReadArray(baBuffer() As Byte, ByVal lPos As Long, baDest() As Byte, ByVal lSize As Long) As Long
+    Const FUNC_NAME     As String = "pvReadArray"
+    
     If lSize < 0 Then
         lSize = pvArraySize(baBuffer) - lPos
     End If
     If lSize > 0 Then
-        ReDim baDest(0 To lSize - 1) As Byte
-        Debug.Assert RedimStats("pvReadArray.baDest", UBound(baDest) + 1)
+        pvArrayAllocate baDest, lSize, FUNC_NAME & ".baDest"
         If lPos + lSize <= pvArraySize(baBuffer) Then
             Call CopyMemory(baDest(0), baBuffer(lPos), lSize)
         ElseIf lPos < pvArraySize(baBuffer) Then
@@ -2945,7 +2955,25 @@ End Function
 
 '= arrays helpers ========================================================
 
-Private Function pvArraySize(baArray() As Byte) As Long
+Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, Optional sFuncName As String)
+    If lSize > 0 Then
+        ReDim baArray(0 To lSize - 1) As Byte
+    Else
+        baArray = vbNullString
+    End If
+    Debug.Assert RedimStats(sFuncName, lSize)
+End Sub
+
+Private Sub pvArrayReallocate(baArray() As Byte, ByVal lSize As Long, Optional sFuncName As String)
+    If lSize > 0 Then
+        ReDim Preserve baArray(0 To lSize - 1) As Byte
+    Else
+        baArray = vbNullString
+    End If
+    Debug.Assert RedimStats(sFuncName, lSize)
+End Sub
+
+Private Property Get pvArraySize(baArray() As Byte) As Long
     Dim lPtr            As Long
     
     '--- peek long at ArrPtr(baArray)
@@ -2953,7 +2981,7 @@ Private Function pvArraySize(baArray() As Byte) As Long
     If lPtr <> 0 Then
         pvArraySize = UBound(baArray) + 1
     End If
-End Function
+End Property
 
 Private Function pvArrayXor(baArray() As Byte, ByVal lSeqNo As Long) As Byte()
     Dim baRetVal()      As Byte
@@ -2981,12 +3009,12 @@ Private Sub pvArraySwap(baBuffer() As Byte, lBufferPos As Long, baInput() As Byt
 End Sub
 
 Private Function pvArrayByte(baRetVal() As Byte, ParamArray A() As Variant) As Byte
+    Const FUNC_NAME     As String = "pvArrayByte"
     Dim vElem           As Variant
     Dim lIdx            As Long
     
     If UBound(A) >= 0 Then
-        ReDim baRetVal(0 To UBound(A)) As Byte
-        Debug.Assert RedimStats("pvArrayByte.baRetVal", UBound(baRetVal) + 1)
+        pvArrayAllocate baRetVal, UBound(A) + 1, FUNC_NAME & ".baRetVal"
         For Each vElem In A
             baRetVal(lIdx) = vElem And &HFF
             lIdx = lIdx + 1
@@ -2999,11 +3027,11 @@ End Function
 '= global helpers ========================================================
 
 Private Function EmptyByteArray(Optional ByVal Size As Long) As Byte()
+    Const FUNC_NAME     As String = "EmptyByteArray"
     Dim baRetVal()      As Byte
     
     If Size > 0 Then
-        ReDim baRetVal(0 To Size - 1) As Byte
-        Debug.Assert RedimStats("EmptyByteArray.baRetVal", UBound(baRetVal) + 1)
+        pvArrayAllocate baRetVal, Size, FUNC_NAME & ".baRetVal"
     End If
     EmptyByteArray = baRetVal
 End Function

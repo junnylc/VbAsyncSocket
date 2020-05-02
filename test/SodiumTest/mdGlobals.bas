@@ -9,7 +9,7 @@ Private Declare Function IsBadReadPtr Lib "kernel32" (ByVal lp As Long, ByVal uc
 Private Declare Function WideCharToMultiByte Lib "kernel32" (ByVal CodePage As Long, ByVal dwFlags As Long, ByVal lpWideCharStr As Long, ByVal cchWideChar As Long, lpMultiByteStr As Any, ByVal cchMultiByte As Long, ByVal lpDefaultChar As Long, ByVal lpUsedDefaultChar As Long) As Long
 Private Declare Function MultiByteToWideChar Lib "kernel32" (ByVal CodePage As Long, ByVal dwFlags As Long, lpMultiByteStr As Any, ByVal cchMultiByte As Long, ByVal lpWideCharStr As Long, ByVal cchWideChar As Long) As Long
 
-Public g_oRedimStats As Object
+Private m_oRedimStats               As Object
 
 Public Function DesignDumpArray(baData() As Byte, Optional ByVal lPos As Long, Optional ByVal lSize As Long = -1) As String
     If lSize < 0 Then
@@ -139,29 +139,35 @@ Public Function EmptyByteArray() As Byte()
 End Function
 
 Public Function RedimStats(sFuncName As String, ByVal lSize As Long) As Boolean
-    If g_oRedimStats Is Nothing Then
-        Set g_oRedimStats = CreateObject("Scripting.Dictionary")
+    If m_oRedimStats Is Nothing Then
+        Set m_oRedimStats = CreateObject("Scripting.Dictionary")
     End If
-    g_oRedimStats.Item(sFuncName) = g_oRedimStats.Item(sFuncName) + 1
-    g_oRedimStats.Item("#" & sFuncName) = g_oRedimStats.Item("#" & sFuncName) + lSize
+    If LenB(sFuncName) <> 0 Then
+        m_oRedimStats.Item(sFuncName) = m_oRedimStats.Item(sFuncName) + 1
+        m_oRedimStats.Item("#" & sFuncName) = m_oRedimStats.Item("#" & sFuncName) + lSize
+    End If
+    '--- success
     RedimStats = True
 End Function
 
-Public Function DesignDumpRedimStats() As String
+Public Function DesignDumpRedimStats(Optional ByVal Clear As Boolean) As String
     Dim vElem           As Variant
     Dim aText()         As String
     Dim lIdx            As Long
     
-    If g_oRedimStats Is Nothing Then
+    If m_oRedimStats Is Nothing Then
         Exit Function
     End If
-    ReDim aText(0 To g_oRedimStats.Count - 1) As String
-    For Each vElem In g_oRedimStats.Keys
-        aText(lIdx) = vElem & ": " & g_oRedimStats.Item(vElem)
+    ReDim aText(0 To m_oRedimStats.Count - 1) As String
+    For Each vElem In m_oRedimStats.Keys
+        aText(lIdx) = vElem & ": " & m_oRedimStats.Item(vElem)
         If Left$(vElem, 1) = "#" Then
-            aText(lIdx) = aText(lIdx) & " (avg. " & Format$(g_oRedimStats.Item(vElem) / g_oRedimStats.Item(Mid(vElem, 2)), "0.0") & ")"
+            aText(lIdx) = aText(lIdx) & " (avg. " & Format$(m_oRedimStats.Item(vElem) / m_oRedimStats.Item(Mid(vElem, 2)), "0.0") & ")"
         End If
         lIdx = lIdx + 1
     Next
     DesignDumpRedimStats = Join(aText, vbCrLf)
+    If Clear Then
+        Set m_oRedimStats = Nothing
+    End If
 End Function
