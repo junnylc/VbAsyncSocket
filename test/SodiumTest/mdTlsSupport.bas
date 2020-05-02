@@ -244,6 +244,7 @@ Public Type UcsTlsContext
     RemoteExchPublic()  As Byte
     RemoteCertificates  As Collection
     RemoteExtensions    As Collection
+    RemoteTickets       As Collection
     '--- crypto settings
     ProtocolVersion     As Long
     ExchGroup           As Long
@@ -1526,12 +1527,14 @@ Private Function pvTlsParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, l
                             GoTo QH
                         End If
                         .HandshakeMessages = vbNullString
+                        Set .RemoteTickets = New Collection
                     End If
                 Case ucsTlsStatePostHandshake
                     Select Case lMessageType
                     Case TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET
-                        If Not .IsServer Then
-                            '--- don't store tickets for now
+                        lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
+                        If Not .RemoteTickets Is Nothing Then
+                            .RemoteTickets.Add baMessage
                         End If
                     Case TLS_HANDSHAKE_TYPE_KEY_UPDATE
                         Debug.Print "Received TLS_HANDSHAKE_TYPE_KEY_UPDATE", Timer
@@ -1555,12 +1558,12 @@ Private Function pvTlsParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, l
                             End If
                             .SendPos = pvWriteArray(.SendBuffer, .SendPos, baMessage)
                         End If
+                        lPos = lPos + lMessageSize
                     Case Else
                         sError = Replace(Replace(ERR_UNEXPECTED_MSG_TYPE, "%1", "ucsTlsStatePostHandshake"), "%2", lMessageType)
                         eAlertCode = uscTlsAlertUnexpectedMessage
                         GoTo QH
                     End Select
-                    lPos = lPos + lMessageSize
                 Case Else
 InvalidState:
                     sError = Replace(ERR_INVALID_STATE_HANDSHAKE, "%1", .State)
@@ -2872,7 +2875,7 @@ Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, Optional sFu
     Else
         baArray = vbNullString
     End If
-    Debug.Assert RedimStats(sFuncName, lSize)
+    Debug.Assert RedimStats(sFuncName, UBound(baArray) + 1)
 End Sub
 
 Private Sub pvArrayReallocate(baArray() As Byte, ByVal lSize As Long, Optional sFuncName As String)
@@ -2881,7 +2884,7 @@ Private Sub pvArrayReallocate(baArray() As Byte, ByVal lSize As Long, Optional s
     Else
         baArray = vbNullString
     End If
-    Debug.Assert RedimStats(sFuncName, lSize)
+    Debug.Assert RedimStats(sFuncName, UBound(baArray) + 1)
 End Sub
 
 Private Property Get pvArraySize(baArray() As Byte) As Long
@@ -2903,7 +2906,7 @@ Private Function pvArrayXor(baArray() As Byte, ByVal lSeqNo As Long) As Byte()
     Do While lSeqNo <> 0 And lIdx > 0
         lIdx = lIdx - 1
         baRetVal(lIdx) = baRetVal(lIdx) Xor (lSeqNo And &HFF)
-        lSeqNo = (lSeqNo And -&H100) \ &H100
+        lSeqNo = (lSeqNo And -&H100&) \ &H100&
     Loop
     pvArrayXor = baRetVal
 End Function
