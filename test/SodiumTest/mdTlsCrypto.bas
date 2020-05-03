@@ -385,6 +385,8 @@ Private Const ERR_TRUST_IS_UNTRUSTED_ROOT As String = "The certificate or certif
 Private Const ERR_TRUST_IS_NOT_TIME_VALID As String = "The certificate has expired"
 Private Const ERR_TRUST_REVOCATION_STATUS_UNKNOWN As String = "The revocation status of the certificate or one of the certificates in the certificate chain is unknown"
 Private Const ERR_NO_MATCHING_ALT_NAME  As String = "No certificate subject name matches target host name"
+Private Const ERR_CALL_FAILED           As String = "Call failed (%1)"
+Private Const ERR_INVALID_HASH_SIZE     As String = "Invalid hash size (%1)"
 
 Private m_baBuffer()                As Byte
 Private m_lBuffIdx                  As Long
@@ -1636,21 +1638,23 @@ Private Sub pvArrayReverse(baData() As Byte, Optional ByVal NewSize As Long = -1
 End Sub
 
 Private Sub pvArrayHash(ByVal lHashSize As Long, baInput() As Byte, baRetVal() As Byte)
+    Const FUNC_NAME     As String = "pvArrayHash"
+    
     Select Case lHashSize
     Case 32
         If Not CryptoHashSha256(baRetVal, baInput, 0) Then
-            Err.Raise vbObjectError, "pvArrayHash", "CryptoHashSha256 failed"
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha256")
         End If
     Case 48
         If Not CryptoHashSha384(baRetVal, baInput, 0) Then
-            Err.Raise vbObjectError, "pvArrayHash", "CryptoHashSha384 failed"
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha384")
         End If
     Case 64
         If Not CryptoHashSha512(baRetVal, baInput, 0) Then
-            Err.Raise vbObjectError, "pvArrayHash", "CryptoHashSha512 failed"
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha512")
         End If
     Case Else
-        Err.Raise vbObjectError, "pvArrayHash", "Invalid hash size"
+        Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_INVALID_HASH_SIZE, "%1", lHashSize)
     End Select
 End Sub
 
@@ -3042,9 +3046,11 @@ Private Sub pvArenaInit(Optional ByVal lSize As Long = 1024& * 2048)
 End Sub
 
 Private Function pvArenaAlloc(ByVal lSize As Long) As Long
+    Const FUNC_NAME     As String = "pvArenaAlloc"
+    
     lSize = ((lSize + 4 + LNG_ARENA_ALIGN - 1) And -LNG_ARENA_ALIGN) - 4
     If UBound(m_baBuffer) < m_lBuffIdx + lSize + 4 Then
-        Err.Raise vbObjectError, "pvArenaAlloc", "Out of arena space"
+        Err.Raise vbObjectError, FUNC_NAME, "Out of arena space"
     End If
     Call CopyMemory(m_baBuffer(m_lBuffIdx), lSize, 4)
     pvArenaAlloc = VarPtr(m_baBuffer(m_lBuffIdx + 4))
@@ -3053,7 +3059,9 @@ Private Function pvArenaAlloc(ByVal lSize As Long) As Long
 End Function
 
 Private Function pvArenaRealloc(ByVal lPtr As Long, ByVal lSize As Long) As Long
-    Err.Raise vbObjectError, "pvArenaRealloc", "Not implemented"
+    Const FUNC_NAME     As String = "pvArenaRealloc"
+    
+    Err.Raise vbObjectError, FUNC_NAME, "Not implemented"
 End Function
 
 Private Function pvArenaFree(ByVal lPtr As Long) As Long

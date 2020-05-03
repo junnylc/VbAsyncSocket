@@ -377,7 +377,11 @@ Public Function TlsHandshake(uCtx As UcsTlsContext, baInput() As Byte, ByVal lSi
         '--- swap-in
         pvArraySwap .SendBuffer, .SendPos, baOutput, lPos
         If .State = ucsTlsStateHandshakeStart Then
-            .SendPos = pvTlsBuildClientHello(uCtx, .SendBuffer, .SendPos)
+            .SendPos = pvTlsBuildClientHello(uCtx, .SendBuffer, .SendPos, .LastError, .LastAlertCode)
+            If LenB(.LastError) <> 0 Then
+                pvTlsSetLastError uCtx, .LastError, .LastAlertCode
+                GoTo QH
+            End If
             .State = ucsTlsStateExpectServerHello
         Else
             If lSize < 0 Then
@@ -538,7 +542,7 @@ End Function
 
 '= private ===============================================================
 
-Private Function pvTlsBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long) As Long
+Private Function pvTlsBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
     Dim lMessagePos     As Long
     Dim vElem           As Variant
     Dim baTemp()        As Byte
@@ -559,7 +563,9 @@ Private Function pvTlsBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte
                     If pvArraySize(.LocalSessionID) = 0 And (.LocalFeatures And ucsTlsSupportTls12) <> 0 Then
                         '--- non-empty for TLS 1.2 compatibility
                         If Not pvTlsArrayRandom(baTemp, TLS_HELLO_RANDOM_SIZE) Then
-                            Err.Raise vbObjectError, "pvTlsBuildClientHello", Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayRandom")
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayRandom")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
                         End If
                         lPos = pvWriteArray(baOutput, lPos, baTemp)
                     Else
@@ -614,12 +620,16 @@ Private Function pvTlsBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte
                     If (.LocalFeatures And ucsTlsSupportTls12) <> 0 Then
                         '--- Extension - EC Point Formats
                         If Not pvArrayByte(baTemp, 0, TLS_EXTENSION_TYPE_EC_POINT_FORMAT, 0, 2, 1, 0) Then
-                            Err.Raise vbObjectError, "pvTlsBuildClientHello", Replace(ERR_CALL_FAILED, "%1", "pvArrayByte")
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvArrayByte")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
                         End If
                         lPos = pvWriteArray(baOutput, lPos, baTemp)     '--- uncompressed only
                         '--- Extension - Renegotiation Info
                         If Not pvArrayByte(baTemp, &HFF, 1, 0, 1, 0) Then
-                            Err.Raise vbObjectError, "pvTlsBuildClientHello", Replace(ERR_CALL_FAILED, "%1", "pvArrayByte")
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvArrayByte")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
                         End If
                         lPos = pvWriteArray(baOutput, lPos, baTemp)     '--- empty info
                     End If
@@ -685,6 +695,7 @@ Private Function pvTlsBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte
         pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baOutput(lMessagePos)), lPos - lMessagePos
     End With
     pvTlsBuildClientHello = lPos
+QH:
 End Function
 
 Private Function pvTlsBuildClientLegacyKeyExchange(uCtx As UcsTlsContext, baOutput() As Byte, ByVal lPos As Long, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Long
@@ -1398,7 +1409,10 @@ Private Function pvTlsParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, l
                     pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baInput(lMessagePos)), lMessageSize + 4
                     '--- post-process ucsTlsStateExpectServerHello
                     If .State = ucsTlsStateExpectServerHello And .HelloRetryRequest Then
-                        .SendPos = pvTlsBuildClientHello(uCtx, .SendBuffer, .SendPos)
+                        .SendPos = pvTlsBuildClientHello(uCtx, .SendBuffer, .SendPos, sError, eAlertCode)
+                        If LenB(sError) <> 0 Then
+                            GoTo QH
+                        End If
                     End If
                     If .State = ucsTlsStateExpectExtensions And .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS13 Then
                         If Not pvTlsDeriveHandshakeSecrets(uCtx, sError, eAlertCode) Then
@@ -2102,7 +2116,7 @@ Private Function pvTlsPrepareLegacyDecryptParams(uCtx As UcsTlsContext, baInput(
     With uCtx
         lEnd = lPos + lRecordSize - .TagSize
         If Not pvArrayXor(baRemoteIV, .RemoteTrafficIV, .RemoteTrafficSeqNo) Then
-            Err.Raise vbObjectError, "pvTlsPrepareLegacyDecryptParams", Replace(ERR_CALL_FAILED, "%1", "pvArrayXor")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "pvArrayXor")
         End If
         If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
             pvWriteBuffer baRemoteIV, .IvSize - .IvDynamicSize, VarPtr(baInput(lPos)), .IvDynamicSize
@@ -2403,7 +2417,7 @@ Private Function pvTlsHkdfExpandLabel(baRetVal() As Byte, ByVal eHash As UcsTlsC
         lInputPos = pvWriteArray(baInput, lInputPos, baInfo)
         lInputPos = pvWriteLong(baInput, lInputPos, lIdx)
         If Not pvTlsArrayHmac(baLast, eHash, baKey, baInput, 0, Size:=lInputPos) Then
-            Err.Raise vbObjectError, "pvTlsHkdfExpandLabel", Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHmac")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHmac")
         End If
         lRetValPos = pvWriteArray(baRetVal, lRetValPos, baLast)
         lIdx = lIdx + 1
@@ -2416,8 +2430,9 @@ Private Function pvTlsHkdfExpandLabel(baRetVal() As Byte, ByVal eHash As UcsTlsC
 End Function
 
 Private Function pvTlsHkdfExtract(baRetVal() As Byte, ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, baInput() As Byte) As Boolean
+    Const FUNC_NAME     As String = "pvTlsHkdfExtract"
     If Not pvTlsArrayHmac(baRetVal, eHash, baKey, baInput, 0) Then
-        Err.Raise vbObjectError, "pvTlsHkdfExtract", Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHmac")
+        Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHmac")
     End If
     pvTlsHkdfExtract = True
 End Function
@@ -2500,7 +2515,7 @@ Private Function pvTlsKdfLegacyPrf(baRetVal() As Byte, ByVal eHash As UcsTlsCryp
         baTemp = baLast
         If Not pvTlsArrayHmac(baLast, eHash, baSecret, baTemp, 0) Then
 HmacFailed:
-            Err.Raise vbObjectError, "pvTlsKdfLegacyPrf", Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHmac")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHmac")
         End If
         lInputPos = pvWriteArray(baInput, 0, baLast)
         lInputPos = pvWriteArray(baInput, lInputPos, baSeed)
@@ -2530,91 +2545,107 @@ Private Function pvTlsArrayRandom(baRetVal() As Byte, ByVal lSize As Long) As Bo
 End Function
 
 Private Function pvTlsArrayHash(baRetVal() As Byte, ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Boolean
+    Const FUNC_NAME     As String = "pvTlsArrayHash"
+    
     Select Case eHash
     Case 0
         pvReadArray baInput, lPos, baRetVal, Size
     Case ucsTlsAlgoDigestSha256
         If Not CryptoHashSha256(baRetVal, baInput, lPos, Size) Then
-            Err.Raise vbObjectError, "pvTlsArrayHash", Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha256")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha256")
         End If
     Case ucsTlsAlgoDigestSha384
         If Not CryptoHashSha384(baRetVal, baInput, lPos, Size) Then
-            Err.Raise vbObjectError, "pvTlsArrayHash", Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha384")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha384")
         End If
     Case ucsTlsAlgoDigestSha512
         If Not CryptoHashSha512(baRetVal, baInput, lPos, Size) Then
-            Err.Raise vbObjectError, "pvTlsArrayHash", Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha512")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha512")
         End If
     Case Else
-        Err.Raise vbObjectError, "pvTlsArrayHash", "Unsupported hash type " & eHash
+        Err.Raise vbObjectError, FUNC_NAME, "Unsupported hash type " & eHash
     End Select
     '--- success
     pvTlsArrayHash = True
 End Function
 
 Private Function pvTlsArrayHmac(baRetVal() As Byte, ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Boolean
+    Const FUNC_NAME     As String = "pvTlsArrayHmac"
+    
     Select Case eHash
     Case ucsTlsAlgoDigestSha256
         If Not CryptoHmacSha256(baRetVal, baKey, baInput, lPos, Size) Then
-            Err.Raise vbObjectError, "pvTlsArrayHmac", Replace(ERR_CALL_FAILED, "%1", "CryptoHmacSha256")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoHmacSha256")
         End If
     Case ucsTlsAlgoDigestSha384
         If Not CryptoHmacSha384(baRetVal, baKey, baInput, lPos, Size) Then
-            Err.Raise vbObjectError, "pvTlsArrayHmac", Replace(ERR_CALL_FAILED, "%1", "CryptoHmacSha384")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoHmacSha384")
         End If
     Case Else
-        Err.Raise vbObjectError, "pvTlsArrayHmac", "Unsupported hash type " & eHash
+        Err.Raise vbObjectError, FUNC_NAME, "Unsupported hash type " & eHash
     End Select
     '--- success
     pvTlsArrayHmac = True
 End Function
 
 Private Function pvTlsAeadDecrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, baRemoteIV() As Byte, baRemoteKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
+    Const FUNC_NAME     As String = "pvTlsAeadDecrypt"
+    
     Select Case eAead
     Case ucsTlsAlgoAeadChacha20Poly1305
         If Not CryptoAeadChacha20Poly1305Decrypt(baRemoteIV, baRemoteKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-            Err.Raise vbObjectError, "pvTlsAeadDecrypt", Replace(ERR_CALL_FAILED, "%1", "CryptoAeadChacha20Poly1305Decrypt")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoAeadChacha20Poly1305Decrypt")
         End If
     Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
         If Not CryptoAeadAesGcmDecrypt(baRemoteIV, baRemoteKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-            Err.Raise vbObjectError, "pvTlsAeadDecrypt", Replace(ERR_CALL_FAILED, "%1", "CryptoAeadAesGcmDecrypt")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoAeadAesGcmDecrypt")
         End If
     Case Else
-        Err.Raise vbObjectError, "pvTlsAeadDecrypt", "Unsupported AEAD type " & eAead
+        Err.Raise vbObjectError, FUNC_NAME, "Unsupported AEAD type " & eAead
     End Select
     '--- success
     pvTlsAeadDecrypt = True
 End Function
 
 Private Function pvTlsAeadEncrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, baLocalIV() As Byte, baLocalKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
+    Const FUNC_NAME     As String = "pvTlsAeadEncrypt"
+    
     Select Case eAead
     Case ucsTlsAlgoAeadChacha20Poly1305
         If Not CryptoAeadChacha20Poly1305Encrypt(baLocalIV, baLocalKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-            Err.Raise vbObjectError, "pvTlsAeadEncrypt", Replace(ERR_CALL_FAILED, "%1", "CryptoAeadChacha20Poly1305Encrypt")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoAeadChacha20Poly1305Encrypt")
         End If
     Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
         If Not CryptoAeadAesGcmEncrypt(baLocalIV, baLocalKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-            Err.Raise vbObjectError, "pvTlsAeadEncrypt", Replace(ERR_CALL_FAILED, "%1", "CryptoAeadAesGcmEncrypt")
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoAeadAesGcmEncrypt")
         End If
     Case Else
-        Err.Raise vbObjectError, "pvTlsAeadEncrypt", "Unsupported AEAD type " & eAead
+        Err.Raise vbObjectError, FUNC_NAME, "Unsupported AEAD type " & eAead
     End Select
     '--- success
     pvTlsAeadEncrypt = True
 End Function
 
 Private Function pvTlsSharedSecret(baRetVal() As Byte, ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum, baPriv() As Byte, baPub() As Byte) As Boolean
+    Const FUNC_NAME     As String = "pvTlsSharedSecret"
+    
     Select Case eKeyX
     Case ucsTlsAlgoExchX25519
-        CryptoEccCurve25519SharedSecret baRetVal, baPriv, baPub
+        If Not CryptoEccCurve25519SharedSecret(baRetVal, baPriv, baPub) Then
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoEccCurve25519SharedSecret")
+        End If
     Case ucsTlsAlgoExchSecp256r1
-        CryptoEccSecp256r1SharedSecret baRetVal, baPriv, baPub
+        If Not CryptoEccSecp256r1SharedSecret(baRetVal, baPriv, baPub) Then
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoEccSecp256r1SharedSecret")
+        End If
     Case ucsTlsAlgoExchSecp384r1
-        CryptoEccSecp384r1SharedSecret baRetVal, baPriv, baPub
+        If Not CryptoEccSecp384r1SharedSecret(baRetVal, baPriv, baPub) Then
+            Err.Raise vbObjectError, FUNC_NAME, Replace(ERR_CALL_FAILED, "%1", "CryptoEccSecp384r1SharedSecret")
+        End If
     Case ucsTlsAlgoExchCertificate
         baRetVal = baPriv
     Case Else
-        Err.Raise vbObjectError, "pvTlsSharedSecret", "Unsupported exchange curve " & eKeyX
+        Err.Raise vbObjectError, FUNC_NAME, "Unsupported exchange curve " & eKeyX
     End Select
     '--- success
     pvTlsSharedSecret = True
