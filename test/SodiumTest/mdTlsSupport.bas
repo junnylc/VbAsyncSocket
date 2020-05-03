@@ -306,7 +306,11 @@ Public Function TlsInitClient( _
         .State = ucsTlsStateHandshakeStart
         .RemoteHostName = RemoteHostName
         .LocalFeatures = LocalFeatures
-        .LocalExchRandom = pvTlsArrayRandom(TLS_HELLO_RANDOM_SIZE)
+        If Not pvTlsArrayRandom(.LocalExchRandom, TLS_HELLO_RANDOM_SIZE) Then
+            .LastError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayRandom")
+            .LastAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
         If (LocalFeatures And ucsTlsSupportTls13) <> 0 Then
             '--- note: uCtx.ClientPublic has to be ready for pvTlsBuildClientHello
             If Not pvTlsSetupExchEccGroup(uEmpty, TLS_GROUP_X25519, .LastError, .LastAlertCode) Then
@@ -346,7 +350,11 @@ Public Function TlsInitServer( _
         If Not IsMissing(PrivateKey) Then
             .LocalPrivateKey = PrivateKey
         End If
-        .LocalExchRandom = pvTlsArrayRandom(TLS_HELLO_RANDOM_SIZE)
+        If Not pvTlsArrayRandom(.LocalExchRandom, TLS_HELLO_RANDOM_SIZE) Then
+            .LastError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayRandom")
+            .LastAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
     End With
     uCtx = uEmpty
     '--- success
@@ -550,7 +558,10 @@ Private Function pvTlsBuildClientHello(uCtx As UcsTlsContext, baOutput() As Byte
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack)
                     If pvArraySize(.LocalSessionID) = 0 And (.LocalFeatures And ucsTlsSupportTls12) <> 0 Then
                         '--- non-empty for TLS 1.2 compatibility
-                        lPos = pvWriteArray(baOutput, lPos, pvTlsArrayRandom(TLS_HELLO_RANDOM_SIZE))
+                        If Not pvTlsArrayRandom(baTemp, TLS_HELLO_RANDOM_SIZE) Then
+                            Err.Raise vbObjectError, "pvTlsBuildClientHello", Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayRandom")
+                        End If
+                        lPos = pvWriteArray(baOutput, lPos, baTemp)
                     Else
                         lPos = pvWriteArray(baOutput, lPos, .LocalSessionID)
                     End If
@@ -721,7 +732,11 @@ Private Function pvTlsBuildClientLegacyKeyExchange(uCtx As UcsTlsContext, baOutp
         lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_HANDSHAKE)
         lPos = pvWriteLong(baOutput, lPos, TLS_RECORD_VERSION, Size:=2)
         lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-            baLocalIV = pvArrayXor(.LocalTrafficIV, .LocalTrafficSeqNo)
+            If Not pvArrayXor(baLocalIV, .LocalTrafficIV, .LocalTrafficSeqNo) Then
+                sError = Replace(ERR_CALL_FAILED, "%1", "pvArrayXor")
+                eAlertCode = uscTlsAlertInternalError
+                GoTo QH
+            End If
             If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
                 lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baLocalIV(.IvSize - .IvDynamicSize)), .IvDynamicSize)
             End If
@@ -729,8 +744,16 @@ Private Function pvTlsBuildClientLegacyKeyExchange(uCtx As UcsTlsContext, baOutp
             lMessagePos = lPos
             lPos = pvWriteLong(baOutput, lPos, TLS_HANDSHAKE_TYPE_FINISHED)
             lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=3)
-                baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
-                baVerifyData = pvTlsKdfLegacyPrf(.DigestAlgo, .MasterSecret, "client finished", baHandshakeHash, 12)
+                If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+                    sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
+                If Not pvTlsKdfLegacyPrf(baVerifyData, .DigestAlgo, .MasterSecret, "client finished", baHandshakeHash, 12) Then
+                    sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsKdfLegacyPrf")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
                 lPos = pvWriteArray(baOutput, lPos, baVerifyData)
             lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
             lMessageSize = lPos - lMessagePos
@@ -765,6 +788,7 @@ Private Function pvTlsBuildClientHandshakeFinished(uCtx As UcsTlsContext, baOutp
     Dim baHandshakeHash() As Byte
     Dim baVerifyData()  As Byte
     Dim baTemp()        As Byte
+    Dim baEmpty()       As Byte
     
     With uCtx
         '--- Legacy Change Cipher Spec
@@ -783,9 +807,21 @@ Private Function pvTlsBuildClientHandshakeFinished(uCtx As UcsTlsContext, baOutp
             lMessagePos = lPos
             lPos = pvWriteLong(baOutput, lPos, TLS_HANDSHAKE_TYPE_FINISHED)
             lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=3)
-                baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
-                baVerifyData = pvTlsHkdfExpandLabel(.DigestAlgo, .LocalTrafficSecret, "finished", EmptyByteArray, .DigestSize)
-                baVerifyData = pvTlsHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
+                If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+                    sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
+                If Not pvTlsHkdfExpandLabel(baTemp, .DigestAlgo, .LocalTrafficSecret, "finished", baEmpty, .DigestSize) Then
+                    sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExpandLabel")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
+                If Not pvTlsHkdfExtract(baVerifyData, .DigestAlgo, baTemp, baHandshakeHash) Then
+                    sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExtract")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
                 lPos = pvWriteArray(baOutput, lPos, baVerifyData)
             lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
             '--- Record Type
@@ -793,7 +829,11 @@ Private Function pvTlsBuildClientHandshakeFinished(uCtx As UcsTlsContext, baOutp
             lMessageSize = lPos - lMessagePos
             lPos = pvWriteReserved(baOutput, lPos, .TagSize)
         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
-        baLocalIV = pvArrayXor(.LocalTrafficIV, .LocalTrafficSeqNo)
+        If Not pvArrayXor(baLocalIV, .LocalTrafficIV, .LocalTrafficSeqNo) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvArrayXor")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
         If Not pvTlsAeadEncrypt(.AeadAlgo, baLocalIV, .LocalTrafficKey, baOutput, lRecordPos, LNG_AAD_SIZE, baOutput, lMessagePos, lMessageSize) Then
             sError = ERR_ENCRYPTION_FAILED
             eAlertCode = uscTlsAlertInternalError
@@ -867,6 +907,7 @@ Private Function pvTlsBuildServerHandshakeFinished(uCtx As UcsTlsContext, baOutp
     Dim baCert()        As Byte
     Dim baSignature()   As Byte
     Dim baTemp()        As Byte
+    Dim baEmpty()       As Byte
     
     With uCtx
         '--- Legacy Change Cipher Spec
@@ -917,7 +958,11 @@ Private Function pvTlsBuildServerHandshakeFinished(uCtx As UcsTlsContext, baOutp
             lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=3)
                 lPos = pvWriteLong(baOutput, lPos, .LocalSignatureType, Size:=2)
                 lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-                    baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
+                    If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+                        sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+                        eAlertCode = uscTlsAlertInternalError
+                        GoTo QH
+                    End If
                     lVerifyPos = pvWriteString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
                     lVerifyPos = pvWriteArray(baVerifyData, lVerifyPos, baHandshakeHash)
                     If Not pvTlsSignatureSign(.LocalPrivateKey, .LocalSignatureType, baVerifyData, baSignature, sError, eAlertCode) Then
@@ -931,9 +976,21 @@ Private Function pvTlsBuildServerHandshakeFinished(uCtx As UcsTlsContext, baOutp
             lHandshakePos = lPos
             lPos = pvWriteLong(baOutput, lPos, TLS_HANDSHAKE_TYPE_FINISHED)
             lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=3)
-                baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
-                baVerifyData = pvTlsHkdfExpandLabel(.DigestAlgo, .LocalTrafficSecret, "finished", EmptyByteArray, .DigestSize)
-                baVerifyData = pvTlsHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
+                If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+                    sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
+                If Not pvTlsHkdfExpandLabel(baTemp, .DigestAlgo, .LocalTrafficSecret, "finished", baEmpty, .DigestSize) Then
+                    sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExpandLabel")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
+                If Not pvTlsHkdfExtract(baVerifyData, .DigestAlgo, baTemp, baHandshakeHash) Then
+                    sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExtract")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
                 lPos = pvWriteArray(baOutput, lPos, baVerifyData)
             lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
             pvWriteBuffer .HandshakeMessages, pvArraySize(.HandshakeMessages), VarPtr(baOutput(lHandshakePos)), lPos - lHandshakePos
@@ -942,7 +999,11 @@ Private Function pvTlsBuildServerHandshakeFinished(uCtx As UcsTlsContext, baOutp
             lMessageSize = lPos - lMessagePos
             lPos = pvWriteReserved(baOutput, lPos, .TagSize)
         lPos = pvWriteEndOfBlock(baOutput, lPos, .BlocksStack)
-        baLocalIV = pvArrayXor(.LocalTrafficIV, .LocalTrafficSeqNo)
+        If Not pvArrayXor(baLocalIV, .LocalTrafficIV, .LocalTrafficSeqNo) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvArrayXor")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
         If Not pvTlsAeadEncrypt(.AeadAlgo, baLocalIV, .LocalTrafficKey, baOutput, lRecordPos, LNG_AAD_SIZE, baOutput, lMessagePos, lMessageSize) Then
             sError = ERR_ENCRYPTION_FAILED
             eAlertCode = uscTlsAlertInternalError
@@ -970,7 +1031,11 @@ Private Function pvTlsBuildApplicationData(uCtx As UcsTlsContext, baOutput() As 
         lPos = pvWriteLong(baOutput, lPos, TLS_CONTENT_TYPE_APPDATA)
         lPos = pvWriteLong(baOutput, lPos, TLS_RECORD_VERSION, Size:=2)
         lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
-            baLocalIV = pvArrayXor(.LocalTrafficIV, .LocalTrafficSeqNo)
+            If Not pvArrayXor(baLocalIV, .LocalTrafficIV, .LocalTrafficSeqNo) Then
+                sError = Replace(ERR_CALL_FAILED, "%1", "pvArrayXor")
+                eAlertCode = uscTlsAlertInternalError
+                GoTo QH
+            End If
             If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
                 lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baLocalIV(.IvSize - .IvDynamicSize)), .IvDynamicSize)
             End If
@@ -1031,7 +1096,11 @@ Private Function pvTlsBuildAlert(uCtx As UcsTlsContext, baOutput() As Byte, ByVa
         lPos = pvWriteLong(baOutput, lPos, TLS_RECORD_VERSION, Size:=2)
         lPos = pvWriteBeginOfBlock(baOutput, lPos, .BlocksStack, Size:=2)
             If .State = ucsTlsStatePostHandshake And .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS12 Then
-                baLocalIV = pvArrayXor(.LocalTrafficIV, .LocalTrafficSeqNo)
+                If Not pvArrayXor(baLocalIV, .LocalTrafficIV, .LocalTrafficSeqNo) Then
+                    sError = Replace(ERR_CALL_FAILED, "%1", "pvArrayXor")
+                    eAlertCode = uscTlsAlertInternalError
+                    GoTo QH
+                End If
                 If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
                     lPos = pvWriteBuffer(baOutput, lPos, VarPtr(baLocalIV(.IvSize - .IvDynamicSize)), .IvDynamicSize)
                 End If
@@ -1210,7 +1279,11 @@ HandleHandshakeContent:
                 lPos = lRecordPos + lRecordSize + 5
             Case TLS_CONTENT_TYPE_APPDATA
                 If .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS13 Then
-                    baRemoteIV = pvArrayXor(.RemoteTrafficIV, .RemoteTrafficSeqNo)
+                    If Not pvArrayXor(baRemoteIV, .RemoteTrafficIV, .RemoteTrafficSeqNo) Then
+                        sError = Replace(ERR_CALL_FAILED, "%1", "pvArrayXor")
+                        eAlertCode = uscTlsAlertInternalError
+                        GoTo QH
+                    End If
                     bResult = pvTlsAeadDecrypt(.AeadAlgo, baRemoteIV, .RemoteTrafficKey, baInput, lRecordPos, LNG_AAD_SIZE, baInput, lPos, lRecordSize)
                 ElseIf .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS12 Then
                     If Not pvTlsPrepareLegacyDecryptParams(uCtx, baInput, lRecordPos, lRecordSize, lPos, lEnd, baRemoteIV, baAad) Then
@@ -1283,6 +1356,7 @@ Private Function pvTlsParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, l
     Dim lSignPos        As Long
     Dim lSignSize       As Long
     Dim baTemp()        As Byte
+    Dim baEmpty()       As Byte
     
     With uCtx
         Do While lPos < lEnd
@@ -1304,7 +1378,11 @@ Private Function pvTlsParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, l
                         End If
                         If .HelloRetryRequest Then
                             '--- after HelloRetryRequest -> replace HandshakeMessages w/ 'synthetic handshake message'
-                            baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
+                            If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+                                sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+                                eAlertCode = uscTlsAlertInternalError
+                                GoTo QH
+                            End If
                             Erase .HandshakeMessages
                             lVerifyPos = pvWriteLong(.HandshakeMessages, 0, TLS_HANDSHAKE_TYPE_MESSAGE_HASH)
                             lVerifyPos = pvWriteLong(.HandshakeMessages, lVerifyPos, .DigestSize, Size:=3)
@@ -1361,7 +1439,11 @@ Private Function pvTlsParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, l
                             eAlertCode = uscTlsAlertHandshakeFailure
                             GoTo QH
                         End If
-                        baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
+                        If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
+                        End If
                         lVerifyPos = pvWriteString(baVerifyData, 0, Space$(64) & "TLS 1.3, server CertificateVerify" & Chr$(0))
                         lVerifyPos = pvWriteArray(baVerifyData, lVerifyPos, baHandshakeHash)
                         If Not pvTlsSignatureVerify(baCert, lSignatureType, baVerifyData, baSignature, sError, eAlertCode) Then
@@ -1369,9 +1451,21 @@ Private Function pvTlsParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, l
                         End If
                     Case TLS_HANDSHAKE_TYPE_FINISHED
                         lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
-                        baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
-                        baVerifyData = pvTlsHkdfExpandLabel(.DigestAlgo, .RemoteTrafficSecret, "finished", EmptyByteArray, .DigestSize)
-                        baVerifyData = pvTlsHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
+                        If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
+                        End If
+                        If Not pvTlsHkdfExpandLabel(baTemp, .DigestAlgo, .RemoteTrafficSecret, "finished", baEmpty, .DigestSize) Then
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExpandLabel")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
+                        End If
+                        If Not pvTlsHkdfExtract(baVerifyData, .DigestAlgo, baTemp, baHandshakeHash) Then
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExtract")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
+                        End If
                         If StrConv(baVerifyData, vbUnicode) <> StrConv(baMessage, vbUnicode) Then
                             sError = ERR_SERVER_HANDSHAKE_FAILED
                             eAlertCode = uscTlsAlertHandshakeFailure
@@ -1461,8 +1555,16 @@ Private Function pvTlsParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, l
                     Case TLS_HANDSHAKE_TYPE_FINISHED
                         If .ProtocolVersion = TLS_PROTOCOL_VERSION_TLS12 Then
                             lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
-                            baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
-                            baVerifyData = pvTlsKdfLegacyPrf(.DigestAlgo, .MasterSecret, "server finished", baHandshakeHash, 12)
+                            If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+                                sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+                                eAlertCode = uscTlsAlertInternalError
+                                GoTo QH
+                            End If
+                            If Not pvTlsKdfLegacyPrf(baVerifyData, .DigestAlgo, .MasterSecret, "server finished", baHandshakeHash, 12) Then
+                                sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsKdfLegacyPrf")
+                                eAlertCode = uscTlsAlertInternalError
+                                GoTo QH
+                            End If
                             If StrConv(baVerifyData, vbUnicode) <> StrConv(baMessage, vbUnicode) Then
                                 sError = ERR_SERVER_HANDSHAKE_FAILED
                                 eAlertCode = uscTlsAlertHandshakeFailure
@@ -1507,9 +1609,21 @@ Private Function pvTlsParseHandshake(uCtx As UcsTlsContext, baInput() As Byte, l
                     Select Case lMessageType
                     Case TLS_HANDSHAKE_TYPE_FINISHED
                         lPos = pvReadArray(baInput, lPos, baMessage, lMessageSize)
-                        baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
-                        baVerifyData = pvTlsHkdfExpandLabel(.DigestAlgo, .RemoteTrafficSecret, "finished", EmptyByteArray, .DigestSize)
-                        baVerifyData = pvTlsHkdfExtract(.DigestAlgo, baVerifyData, baHandshakeHash)
+                        If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
+                        End If
+                        If Not pvTlsHkdfExpandLabel(baTemp, .DigestAlgo, .RemoteTrafficSecret, "finished", baEmpty, .DigestSize) Then
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExpandLabel")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
+                        End If
+                        If Not pvTlsHkdfExtract(baVerifyData, .DigestAlgo, baTemp, baHandshakeHash) Then
+                            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExtract")
+                            eAlertCode = uscTlsAlertInternalError
+                            GoTo QH
+                        End If
                         If StrConv(baVerifyData, vbUnicode) <> StrConv(baMessage, vbUnicode) Then
                             sError = ERR_SERVER_HANDSHAKE_FAILED
                             eAlertCode = uscTlsAlertHandshakeFailure
@@ -1902,7 +2016,11 @@ Private Function pvTlsSetupExchRsaCertificate(uCtx As UcsTlsContext, baCert() As
     On Error GoTo EH
     With uCtx
         .ExchAlgo = ucsTlsAlgoExchCertificate
-        .LocalExchPrivate = pvTlsArrayRandom(TLS_HELLO_RANDOM_SIZE + TLS_HELLO_RANDOM_SIZE \ 2) '--- always 48
+        If Not pvTlsArrayRandom(.LocalExchPrivate, TLS_HELLO_RANDOM_SIZE + TLS_HELLO_RANDOM_SIZE \ 2) Then '--- always 48
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayRandom")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
         pvWriteLong .LocalExchPrivate, 0, TLS_LOCAL_LEGACY_VERSION, Size:=2
         If Not CryptoAsn1DecodeCertificate(baCert, uCertInfo) Then
             sError = ERR_UNSUPPORTED_CERTIFICATE
@@ -1983,7 +2101,9 @@ Private Function pvTlsPrepareLegacyDecryptParams(uCtx As UcsTlsContext, baInput(
     
     With uCtx
         lEnd = lPos + lRecordSize - .TagSize
-        baRemoteIV = pvArrayXor(.RemoteTrafficIV, .RemoteTrafficSeqNo)
+        If Not pvArrayXor(baRemoteIV, .RemoteTrafficIV, .RemoteTrafficSeqNo) Then
+            Err.Raise vbObjectError, "pvTlsPrepareLegacyDecryptParams", Replace(ERR_CALL_FAILED, "%1", "pvArrayXor")
+        End If
         If .IvDynamicSize > 0 Then '--- AES in TLS 1.2
             pvWriteBuffer baRemoteIV, .IvSize - .IvDynamicSize, VarPtr(baInput(lPos)), .IvDynamicSize
             lPos = lPos + .IvDynamicSize
@@ -2079,11 +2199,14 @@ End Sub
 '= HMAC-based key derivation functions ===================================
 
 Private Function pvTlsDeriveHandshakeSecrets(uCtx As UcsTlsContext, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
+    Const FUNC_NAME     As String = "pvTlsDeriveHandshakeSecrets"
     Dim baHandshakeHash() As Byte
     Dim baEarlySecret() As Byte
     Dim baEmptyHash()   As Byte
     Dim baDerivedSecret() As Byte
     Dim baSharedSecret() As Byte
+    Dim baEmpty()       As Byte
+    Dim baEmpty2()      As Byte
     
     With uCtx
         If pvArraySize(.HandshakeMessages) = 0 Then
@@ -2091,19 +2214,55 @@ Private Function pvTlsDeriveHandshakeSecrets(uCtx As UcsTlsContext, sError As St
             eAlertCode = uscTlsAlertInternalError
             GoTo QH
         End If
-        baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
-        baEarlySecret = pvTlsHkdfExtract(.DigestAlgo, EmptyByteArray(.DigestSize), EmptyByteArray(.DigestSize))
-        baEmptyHash = pvTlsArrayHash(.DigestAlgo, EmptyByteArray, 0)
-        baDerivedSecret = pvTlsHkdfExpandLabel(.DigestAlgo, baEarlySecret, "derived", baEmptyHash, .DigestSize)
-        baSharedSecret = pvTlsSharedSecret(.ExchAlgo, .LocalExchPrivate, .RemoteExchPublic)
-        .HandshakeSecret = pvTlsHkdfExtract(.DigestAlgo, baDerivedSecret, baSharedSecret)
-        .RemoteTrafficSecret = pvTlsHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, IIf(.IsServer, "c", "s") & " hs traffic", baHandshakeHash, .DigestSize)
-        .RemoteTrafficKey = pvTlsHkdfExpandLabel(.DigestAlgo, .RemoteTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .RemoteTrafficIV = pvTlsHkdfExpandLabel(.DigestAlgo, .RemoteTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+HashFailed:
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        pvArrayAllocate baEmpty2, .DigestSize, FUNC_NAME & ".DigestSize"
+        If Not pvTlsHkdfExtract(baEarlySecret, .DigestAlgo, baEmpty2, baEmpty2) Then
+ExtractFailed:
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExtract")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        If Not pvTlsArrayHash(baEmptyHash, .DigestAlgo, baEmpty, 0) Then
+            GoTo HashFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(baDerivedSecret, .DigestAlgo, baEarlySecret, "derived", baEmptyHash, .DigestSize) Then
+ExpandFailed:
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExpandLabel")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        If Not pvTlsSharedSecret(baSharedSecret, .ExchAlgo, .LocalExchPrivate, .RemoteExchPublic) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsSharedSecret")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        If Not pvTlsHkdfExtract(.HandshakeSecret, .DigestAlgo, baDerivedSecret, baSharedSecret) Then
+            GoTo ExtractFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.RemoteTrafficSecret, .DigestAlgo, .HandshakeSecret, IIf(.IsServer, "c", "s") & " hs traffic", baHandshakeHash, .DigestSize) Then
+            GoTo ExpandFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.RemoteTrafficKey, .DigestAlgo, .RemoteTrafficSecret, "key", baEmpty, .KeySize) Then
+            GoTo ExpandFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.RemoteTrafficIV, .DigestAlgo, .RemoteTrafficSecret, "iv", baEmpty, .IvSize) Then
+            GoTo ExpandFailed
+        End If
         .RemoteTrafficSeqNo = 0
-        .LocalTrafficSecret = pvTlsHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, IIf(.IsServer, "s", "c") & " hs traffic", baHandshakeHash, .DigestSize)
-        .LocalTrafficKey = pvTlsHkdfExpandLabel(.DigestAlgo, .LocalTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .LocalTrafficIV = pvTlsHkdfExpandLabel(.DigestAlgo, .LocalTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        If Not pvTlsHkdfExpandLabel(.LocalTrafficSecret, .DigestAlgo, .HandshakeSecret, IIf(.IsServer, "s", "c") & " hs traffic", baHandshakeHash, .DigestSize) Then
+            GoTo ExpandFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.LocalTrafficKey, .DigestAlgo, .LocalTrafficSecret, "key", baEmpty, .KeySize) Then
+            GoTo ExpandFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.LocalTrafficIV, .DigestAlgo, .LocalTrafficSecret, "iv", baEmpty, .IvSize) Then
+            GoTo ExpandFailed
+        End If
         .LocalTrafficSeqNo = 0
     End With
     '--- success
@@ -2112,9 +2271,12 @@ QH:
 End Function
 
 Private Function pvTlsDeriveApplicationSecrets(uCtx As UcsTlsContext, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
+    Const FUNC_NAME     As String = "pvTlsDeriveApplicationSecrets"
     Dim baHandshakeHash() As Byte
     Dim baEmptyHash()   As Byte
     Dim baDerivedSecret() As Byte
+    Dim baEmpty()       As Byte
+    Dim baEmpty2()       As Byte
     
     With uCtx
         If pvArraySize(.HandshakeMessages) = 0 Then
@@ -2122,17 +2284,46 @@ Private Function pvTlsDeriveApplicationSecrets(uCtx As UcsTlsContext, sError As 
             eAlertCode = uscTlsAlertInternalError
             GoTo QH
         End If
-        baHandshakeHash = pvTlsArrayHash(.DigestAlgo, .HandshakeMessages, 0)
-        baEmptyHash = pvTlsArrayHash(.DigestAlgo, EmptyByteArray, 0)
-        baDerivedSecret = pvTlsHkdfExpandLabel(.DigestAlgo, .HandshakeSecret, "derived", baEmptyHash, .DigestSize)
-        .MasterSecret = pvTlsHkdfExtract(.DigestAlgo, baDerivedSecret, EmptyByteArray(.DigestSize))
-        .RemoteTrafficSecret = pvTlsHkdfExpandLabel(.DigestAlgo, .MasterSecret, IIf(.IsServer, "c", "s") & " ap traffic", baHandshakeHash, .DigestSize)
-        .RemoteTrafficKey = pvTlsHkdfExpandLabel(.DigestAlgo, .RemoteTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .RemoteTrafficIV = pvTlsHkdfExpandLabel(.DigestAlgo, .RemoteTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        If Not pvTlsArrayHash(baHandshakeHash, .DigestAlgo, .HandshakeMessages, 0) Then
+HashFailed:
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        If Not pvTlsArrayHash(baEmptyHash, .DigestAlgo, baEmpty, 0) Then
+            GoTo HashFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(baDerivedSecret, .DigestAlgo, .HandshakeSecret, "derived", baEmptyHash, .DigestSize) Then
+ExpandFailed:
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExpandLabel")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        pvArrayAllocate baEmpty2, .DigestSize, FUNC_NAME & ".baEmpty2"
+        If Not pvTlsHkdfExtract(.MasterSecret, .DigestAlgo, baDerivedSecret, baEmpty2) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExtract")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        If Not pvTlsHkdfExpandLabel(.RemoteTrafficSecret, .DigestAlgo, .MasterSecret, IIf(.IsServer, "c", "s") & " ap traffic", baHandshakeHash, .DigestSize) Then
+            GoTo ExpandFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.RemoteTrafficKey, .DigestAlgo, .RemoteTrafficSecret, "key", baEmpty, .KeySize) Then
+            GoTo ExpandFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.RemoteTrafficIV, .DigestAlgo, .RemoteTrafficSecret, "iv", baEmpty, .IvSize) Then
+            GoTo ExpandFailed
+        End If
         .RemoteTrafficSeqNo = 0
-        .LocalTrafficSecret = pvTlsHkdfExpandLabel(.DigestAlgo, .MasterSecret, IIf(.IsServer, "s", "c") & " ap traffic", baHandshakeHash, .DigestSize)
-        .LocalTrafficKey = pvTlsHkdfExpandLabel(.DigestAlgo, .LocalTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .LocalTrafficIV = pvTlsHkdfExpandLabel(.DigestAlgo, .LocalTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        If Not pvTlsHkdfExpandLabel(.LocalTrafficSecret, .DigestAlgo, .MasterSecret, IIf(.IsServer, "s", "c") & " ap traffic", baHandshakeHash, .DigestSize) Then
+            GoTo ExpandFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.LocalTrafficKey, .DigestAlgo, .LocalTrafficSecret, "key", baEmpty, .KeySize) Then
+            GoTo ExpandFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.LocalTrafficIV, .DigestAlgo, .LocalTrafficSecret, "iv", baEmpty, .IvSize) Then
+            GoTo ExpandFailed
+        End If
         .LocalTrafficSeqNo = 0
     End With
     '--- success
@@ -2141,15 +2332,26 @@ QH:
 End Function
 
 Private Function pvTlsDeriveKeyUpdate(uCtx As UcsTlsContext, ByVal bLocalUpdate As Boolean, sError As String, eAlertCode As UcsTlsAlertDescriptionsEnum) As Boolean
+    Dim baEmpty()       As Byte
+    
     With uCtx
         If pvArraySize(.RemoteTrafficSecret) = 0 Then
             sError = ERR_NO_PREV_REMOTE_SECRET
             eAlertCode = uscTlsAlertInternalError
             GoTo QH
         End If
-        .RemoteTrafficSecret = pvTlsHkdfExpandLabel(.DigestAlgo, .RemoteTrafficSecret, "traffic upd", EmptyByteArray, .DigestSize)
-        .RemoteTrafficKey = pvTlsHkdfExpandLabel(.DigestAlgo, .RemoteTrafficSecret, "key", EmptyByteArray, .KeySize)
-        .RemoteTrafficIV = pvTlsHkdfExpandLabel(.DigestAlgo, .RemoteTrafficSecret, "iv", EmptyByteArray, .IvSize)
+        If Not pvTlsHkdfExpandLabel(.RemoteTrafficSecret, .DigestAlgo, .RemoteTrafficSecret, "traffic upd", baEmpty, .DigestSize) Then
+ExpandFailed:
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsHkdfExpandLabel")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        If Not pvTlsHkdfExpandLabel(.RemoteTrafficKey, .DigestAlgo, .RemoteTrafficSecret, "key", baEmpty, .KeySize) Then
+            GoTo ExpandFailed
+        End If
+        If Not pvTlsHkdfExpandLabel(.RemoteTrafficIV, .DigestAlgo, .RemoteTrafficSecret, "iv", baEmpty, .IvSize) Then
+            GoTo ExpandFailed
+        End If
         .RemoteTrafficSeqNo = 0
         If bLocalUpdate Then
             If pvArraySize(.LocalTrafficSecret) = 0 Then
@@ -2157,9 +2359,15 @@ Private Function pvTlsDeriveKeyUpdate(uCtx As UcsTlsContext, ByVal bLocalUpdate 
                 eAlertCode = uscTlsAlertInternalError
                 GoTo QH
             End If
-            .LocalTrafficSecret = pvTlsHkdfExpandLabel(.DigestAlgo, .LocalTrafficSecret, "traffic upd", EmptyByteArray, .DigestSize)
-            .LocalTrafficKey = pvTlsHkdfExpandLabel(.DigestAlgo, .LocalTrafficSecret, "key", EmptyByteArray, .KeySize)
-            .LocalTrafficIV = pvTlsHkdfExpandLabel(.DigestAlgo, .LocalTrafficSecret, "iv", EmptyByteArray, .IvSize)
+            If Not pvTlsHkdfExpandLabel(.LocalTrafficSecret, .DigestAlgo, .LocalTrafficSecret, "traffic upd", baEmpty, .DigestSize) Then
+                GoTo ExpandFailed
+            End If
+            If Not pvTlsHkdfExpandLabel(.LocalTrafficKey, .DigestAlgo, .LocalTrafficSecret, "key", baEmpty, .KeySize) Then
+                GoTo ExpandFailed
+            End If
+            If Not pvTlsHkdfExpandLabel(.LocalTrafficIV, .DigestAlgo, .LocalTrafficSecret, "iv", baEmpty, .IvSize) Then
+                GoTo ExpandFailed
+            End If
             .LocalTrafficSeqNo = 0
         End If
     End With
@@ -2168,13 +2376,8 @@ Private Function pvTlsDeriveKeyUpdate(uCtx As UcsTlsContext, ByVal bLocalUpdate 
 QH:
 End Function
 
-Private Function pvTlsHkdfExtract(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, baInput() As Byte) As Byte()
-    pvTlsHkdfExtract = pvTlsArrayHmac(eHash, baKey, baInput, 0)
-End Function
-
-Private Function pvTlsHkdfExpandLabel(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Byte()
+Private Function pvTlsHkdfExpandLabel(baRetVal() As Byte, ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Boolean
     Const FUNC_NAME     As String = "pvTlsHkdfExpandLabel"
-    Dim baRetVal()      As Byte
     Dim lRetValPos      As Long
     Dim baInfo()        As Byte
     Dim lInfoPos        As Long
@@ -2199,14 +2402,24 @@ Private Function pvTlsHkdfExpandLabel(ByVal eHash As UcsTlsCryptoAlgorithmsEnum,
         lInputPos = pvWriteArray(baInput, 0, baLast)
         lInputPos = pvWriteArray(baInput, lInputPos, baInfo)
         lInputPos = pvWriteLong(baInput, lInputPos, lIdx)
-        baLast = pvTlsArrayHmac(eHash, baKey, baInput, 0, Size:=lInputPos)
+        If Not pvTlsArrayHmac(baLast, eHash, baKey, baInput, 0, Size:=lInputPos) Then
+            Err.Raise vbObjectError, "pvTlsHkdfExpandLabel", Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHmac")
+        End If
         lRetValPos = pvWriteArray(baRetVal, lRetValPos, baLast)
         lIdx = lIdx + 1
     Loop
     If UBound(baRetVal) <> lSize - 1 Then
         pvArrayReallocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
     End If
-    pvTlsHkdfExpandLabel = baRetVal
+    '--- success
+    pvTlsHkdfExpandLabel = True
+End Function
+
+Private Function pvTlsHkdfExtract(baRetVal() As Byte, ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, baInput() As Byte) As Boolean
+    If Not pvTlsArrayHmac(baRetVal, eHash, baKey, baInput, 0) Then
+        Err.Raise vbObjectError, "pvTlsHkdfExtract", Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHmac")
+    End If
+    pvTlsHkdfExtract = True
 End Function
 
 '= legacy PRF-based key derivation functions =============================
@@ -2217,6 +2430,7 @@ Private Function pvTlsDeriveLegacySecrets(uCtx As UcsTlsContext, sError As Strin
     Dim baRandom()      As Byte
     Dim baExpanded()    As Byte
     Dim lPos            As Long
+    Dim baEmpty()       As Byte
     
     With uCtx
         If pvArraySize(.RemoteExchRandom) = 0 Then
@@ -2226,70 +2440,96 @@ Private Function pvTlsDeriveLegacySecrets(uCtx As UcsTlsContext, sError As Strin
         End If
         Debug.Assert pvArraySize(.LocalExchRandom) = TLS_HELLO_RANDOM_SIZE
         Debug.Assert pvArraySize(.RemoteExchRandom) = TLS_HELLO_RANDOM_SIZE
-        baPreMasterSecret = pvTlsSharedSecret(.ExchAlgo, .LocalExchPrivate, .RemoteExchPublic)
+        If Not pvTlsSharedSecret(baPreMasterSecret, .ExchAlgo, .LocalExchPrivate, .RemoteExchPublic) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsSharedSecret")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
         pvArrayAllocate baRandom, pvArraySize(.LocalExchRandom) + pvArraySize(.RemoteExchRandom), FUNC_NAME & ".baRandom"
         lPos = pvWriteArray(baRandom, 0, .LocalExchRandom)
         lPos = pvWriteArray(baRandom, lPos, .RemoteExchRandom)
-        .MasterSecret = pvTlsKdfLegacyPrf(.DigestAlgo, baPreMasterSecret, "master secret", baRandom, TLS_HELLO_RANDOM_SIZE + TLS_HELLO_RANDOM_SIZE \ 2) '--- always 48
+        If Not pvTlsKdfLegacyPrf(.MasterSecret, .DigestAlgo, baPreMasterSecret, "master secret", baRandom, TLS_HELLO_RANDOM_SIZE + TLS_HELLO_RANDOM_SIZE \ 2) Then   '--- always 48
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsKdfLegacyPrf")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
         lPos = pvWriteArray(baRandom, 0, .RemoteExchRandom)
         lPos = pvWriteArray(baRandom, lPos, .LocalExchRandom)
-        baExpanded = pvTlsKdfLegacyPrf(.DigestAlgo, .MasterSecret, "key expansion", baRandom, 2 * (.MacSize + .KeySize + .IvSize))
-        lPos = pvReadArray(baExpanded, 0, EmptyByteArray, .MacSize) '--- LocalMacKey not used w/ AEAD
-        lPos = pvReadArray(baExpanded, lPos, EmptyByteArray, .MacSize) '--- RemoteMacKey not used w/ AEAD
+        If Not pvTlsKdfLegacyPrf(baExpanded, .DigestAlgo, .MasterSecret, "key expansion", baRandom, 2 * (.MacSize + .KeySize + .IvSize)) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsKdfLegacyPrf")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        lPos = pvReadArray(baExpanded, 0, baEmpty, .MacSize) '--- LocalMacKey not used w/ AEAD
+        lPos = pvReadArray(baExpanded, lPos, baEmpty, .MacSize) '--- RemoteMacKey not used w/ AEAD
         lPos = pvReadArray(baExpanded, lPos, .LocalTrafficKey, .KeySize)
         lPos = pvReadArray(baExpanded, lPos, .RemoteTrafficKey, .KeySize)
         lPos = pvReadArray(baExpanded, lPos, .LocalTrafficIV, .IvSize - .IvDynamicSize)
-        pvWriteArray .LocalTrafficIV, .IvSize - .IvDynamicSize, pvTlsArrayRandom(.IvDynamicSize)
+        If Not pvTlsArrayRandom(baRandom, .IvDynamicSize) Then
+RandomFailed:
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayRandom")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
+        pvWriteArray .LocalTrafficIV, .IvSize - .IvDynamicSize, baRandom
         lPos = pvReadArray(baExpanded, lPos, .RemoteTrafficIV, .IvSize - .IvDynamicSize)
-        pvWriteArray .RemoteTrafficIV, .IvSize - .IvDynamicSize, pvTlsArrayRandom(.IvDynamicSize)
+        If Not pvTlsArrayRandom(baRandom, .IvDynamicSize) Then
+            GoTo RandomFailed
+        End If
+        pvWriteArray .RemoteTrafficIV, .IvSize - .IvDynamicSize, baRandom
     End With
     '--- success
     pvTlsDeriveLegacySecrets = True
 QH:
 End Function
 
-Private Function pvTlsKdfLegacyPrf(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baSecret() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Byte()
+Private Function pvTlsKdfLegacyPrf(baRetVal() As Byte, ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baSecret() As Byte, ByVal sLabel As String, baContext() As Byte, ByVal lSize As Long) As Boolean
     Const FUNC_NAME     As String = "pvTlsKdfLegacyPrf"
     Dim baSeed()        As Byte
-    Dim baRetVal()      As Byte
     Dim lRetValPos      As Long
     Dim baInput()       As Byte
     Dim lInputPos       As Long
     Dim baLast()        As Byte
     Dim baHmac()        As Byte
+    Dim baTemp()        As Byte
     
     lInputPos = pvWriteString(baSeed, 0, sLabel)
     lInputPos = pvWriteArray(baSeed, lInputPos, baContext)
     baLast = baSeed
     Do While lRetValPos < lSize
-        baLast = pvTlsArrayHmac(eHash, baSecret, baLast, 0)
+        baTemp = baLast
+        If Not pvTlsArrayHmac(baLast, eHash, baSecret, baTemp, 0) Then
+HmacFailed:
+            Err.Raise vbObjectError, "pvTlsKdfLegacyPrf", Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHmac")
+        End If
         lInputPos = pvWriteArray(baInput, 0, baLast)
         lInputPos = pvWriteArray(baInput, lInputPos, baSeed)
-        baHmac = pvTlsArrayHmac(eHash, baSecret, baInput, 0, Size:=lInputPos)
+        If Not pvTlsArrayHmac(baHmac, eHash, baSecret, baInput, 0, Size:=lInputPos) Then
+            GoTo HmacFailed
+        End If
         lRetValPos = pvWriteArray(baRetVal, lRetValPos, baHmac)
     Loop
     If lRetValPos <> lSize Then
         pvArrayReallocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
     End If
-    pvTlsKdfLegacyPrf = baRetVal
+    '--- success
+    pvTlsKdfLegacyPrf = True
 End Function
 
 '= crypto wrappers =======================================================
 
-Private Function pvTlsArrayRandom(ByVal lSize As Long) As Byte()
+Private Function pvTlsArrayRandom(baRetVal() As Byte, ByVal lSize As Long) As Boolean
     Const FUNC_NAME     As String = "pvTlsArrayRandom"
-    Dim baRetVal()      As Byte
     
     If lSize > 0 Then
         pvArrayAllocate baRetVal, lSize, FUNC_NAME & ".baRetVal"
         CryptoRandomBytes VarPtr(baRetVal(0)), lSize
     End If
-    pvTlsArrayRandom = baRetVal
+    '--- success
+    pvTlsArrayRandom = True
 End Function
 
-Private Function pvTlsArrayHash(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
-    Dim baRetVal()      As Byte
-    
+Private Function pvTlsArrayHash(baRetVal() As Byte, ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Boolean
     Select Case eHash
     Case 0
         pvReadArray baInput, lPos, baRetVal, Size
@@ -2308,12 +2548,11 @@ Private Function pvTlsArrayHash(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baInp
     Case Else
         Err.Raise vbObjectError, "pvTlsArrayHash", "Unsupported hash type " & eHash
     End Select
-    pvTlsArrayHash = baRetVal
+    '--- success
+    pvTlsArrayHash = True
 End Function
 
-Private Function pvTlsArrayHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Byte()
-    Dim baRetVal()      As Byte
-    
+Private Function pvTlsArrayHmac(baRetVal() As Byte, ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey() As Byte, baInput() As Byte, ByVal lPos As Long, Optional ByVal Size As Long = -1) As Boolean
     Select Case eHash
     Case ucsTlsAlgoDigestSha256
         If Not CryptoHmacSha256(baRetVal, baKey, baInput, lPos, Size) Then
@@ -2326,48 +2565,45 @@ Private Function pvTlsArrayHmac(ByVal eHash As UcsTlsCryptoAlgorithmsEnum, baKey
     Case Else
         Err.Raise vbObjectError, "pvTlsArrayHmac", "Unsupported hash type " & eHash
     End Select
-    pvTlsArrayHmac = baRetVal
+    '--- success
+    pvTlsArrayHmac = True
 End Function
 
 Private Function pvTlsAeadDecrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, baRemoteIV() As Byte, baRemoteKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
     Select Case eAead
     Case ucsTlsAlgoAeadChacha20Poly1305
         If Not CryptoAeadChacha20Poly1305Decrypt(baRemoteIV, baRemoteKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-            GoTo QH
+            Err.Raise vbObjectError, "pvTlsAeadDecrypt", Replace(ERR_CALL_FAILED, "%1", "CryptoAeadChacha20Poly1305Decrypt")
         End If
     Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
         If Not CryptoAeadAesGcmDecrypt(baRemoteIV, baRemoteKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-            GoTo QH
+            Err.Raise vbObjectError, "pvTlsAeadDecrypt", Replace(ERR_CALL_FAILED, "%1", "CryptoAeadAesGcmDecrypt")
         End If
     Case Else
         Err.Raise vbObjectError, "pvTlsAeadDecrypt", "Unsupported AEAD type " & eAead
     End Select
     '--- success
     pvTlsAeadDecrypt = True
-QH:
 End Function
 
 Private Function pvTlsAeadEncrypt(ByVal eAead As UcsTlsCryptoAlgorithmsEnum, baLocalIV() As Byte, baLocalKey() As Byte, baAad() As Byte, ByVal lAadPos As Long, ByVal lAdSize As Long, baBuffer() As Byte, ByVal lPos As Long, ByVal lSize As Long) As Boolean
     Select Case eAead
     Case ucsTlsAlgoAeadChacha20Poly1305
         If Not CryptoAeadChacha20Poly1305Encrypt(baLocalIV, baLocalKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-            GoTo QH
+            Err.Raise vbObjectError, "pvTlsAeadEncrypt", Replace(ERR_CALL_FAILED, "%1", "CryptoAeadChacha20Poly1305Encrypt")
         End If
     Case ucsTlsAlgoAeadAes128, ucsTlsAlgoAeadAes256
         If Not CryptoAeadAesGcmEncrypt(baLocalIV, baLocalKey, baAad, lAadPos, lAdSize, baBuffer, lPos, lSize) Then
-            GoTo QH
+            Err.Raise vbObjectError, "pvTlsAeadEncrypt", Replace(ERR_CALL_FAILED, "%1", "CryptoAeadAesGcmEncrypt")
         End If
     Case Else
         Err.Raise vbObjectError, "pvTlsAeadEncrypt", "Unsupported AEAD type " & eAead
     End Select
     '--- success
     pvTlsAeadEncrypt = True
-QH:
 End Function
 
-Private Function pvTlsSharedSecret(ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum, baPriv() As Byte, baPub() As Byte) As Byte()
-    Dim baRetVal()      As Byte
-    
+Private Function pvTlsSharedSecret(baRetVal() As Byte, ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum, baPriv() As Byte, baPub() As Byte) As Boolean
     Select Case eKeyX
     Case ucsTlsAlgoExchX25519
         CryptoEccCurve25519SharedSecret baRetVal, baPriv, baPub
@@ -2380,7 +2616,8 @@ Private Function pvTlsSharedSecret(ByVal eKeyX As UcsTlsCryptoAlgorithmsEnum, ba
     Case Else
         Err.Raise vbObjectError, "pvTlsSharedSecret", "Unsupported exchange curve " & eKeyX
     End Select
-    pvTlsSharedSecret = baRetVal
+    '--- success
+    pvTlsSharedSecret = True
 End Function
 
 Private Function pvTlsCipherSuiteName(ByVal lCipherSuite As Long) As String
@@ -2500,7 +2737,12 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
             eAlertCode = uscTlsAlertInternalError
             GoTo QH
         End If
-        baSignature = pvAsn1EncodeEccSignature(baSignature, TLS_SECP256R1_KEY_SIZE)
+        If Not pvAsn1EncodeEccSignature(baSignature, baSignature, TLS_SECP256R1_KEY_SIZE) Then
+EncodeEccSignatureFailed:
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvAsn1EncodeEccSignature")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
     Case TLS_SIGNATURE_ECDSA_SECP384R1_SHA384
         If Not CryptoHashSha384(baVerifyHash, baVerifyData, 0) Then
             sError = Replace(ERR_CALL_FAILED, "%1", "CryptoHashSha384")
@@ -2512,7 +2754,9 @@ Private Function pvTlsSignatureSign(baPrivKey() As Byte, ByVal lSignatureType As
             eAlertCode = uscTlsAlertInternalError
             GoTo QH
         End If
-        baSignature = pvAsn1EncodeEccSignature(baSignature, TLS_SECP384R1_KEY_SIZE)
+        If Not pvAsn1EncodeEccSignature(baSignature, baSignature, TLS_SECP384R1_KEY_SIZE) Then
+            GoTo EncodeEccSignatureFailed
+        End If
     Case Else
         sError = Replace(ERR_UNSUPPORTED_SIGNATURE_TYPE, "%1", "0x" & Hex$(lSignatureType))
         eAlertCode = uscTlsAlertInternalError
@@ -2548,7 +2792,10 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
     Select Case lSignatureType
     Case TLS_SIGNATURE_RSA_PKCS1_SHA256, TLS_SIGNATURE_RSA_PKCS1_SHA384, TLS_SIGNATURE_RSA_PKCS1_SHA512
         If Not CryptoRsaModExp(baSignature, uCertInfo.PubExp, uCertInfo.Modulus, baDecr) Then
-            GoTo InvalidSignature
+InvalidSignature:
+            sError = ERR_INVALID_SIGNATURE
+            eAlertCode = uscTlsAlertHandshakeFailure
+            GoTo QH
         End If
         If Not CryptoEmsaPkcs1Decode(baVerifyData, baDecr, lHashSize) Then
             GoTo InvalidSignature
@@ -2567,10 +2814,13 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
             eAlertCode = uscTlsAlertHandshakeFailure
             GoTo QH
         End If
-        baVerifyHash = pvTlsArrayHash(pvTlsSignatureDigestAlgo(lSignatureType), baVerifyData, 0)
+        If Not pvTlsArrayHash(baVerifyHash, pvTlsSignatureDigestAlgo(lSignatureType), baVerifyData, 0) Then
+            sError = Replace(ERR_CALL_FAILED, "%1", "pvTlsArrayHash")
+            eAlertCode = uscTlsAlertInternalError
+            GoTo QH
+        End If
         lCurveSize = UBound(uCertInfo.KeyBlob) \ 2
-        baPlainSig = pvAsn1DecodeEccSignature(baSignature, lCurveSize)
-        If pvArraySize(baPlainSig) = 0 Then
+        If Not pvAsn1DecodeEccSignature(baPlainSig, baSignature, lCurveSize) Then
             GoTo InvalidSignature
         End If
         If UBound(baVerifyHash) + 1 < lCurveSize Then
@@ -2608,11 +2858,6 @@ Private Function pvTlsSignatureVerify(baCert() As Byte, ByVal lSignatureType As 
     pvTlsSignatureVerify = True
 QH:
     Debug.Print IIf(pvTlsSignatureVerify, IIf(bSkip, "Skipping ", IIf(bDeprecated, "Deprecated ", "Valid ")), "Invalid ") & pvTlsSignatureTypeName(lSignatureType) & " signature" & IIf(bDeprecated, " (lCurveSize=" & lCurveSize & " from server's public key)", vbNullString), Timer
-    Exit Function
-InvalidSignature:
-    sError = ERR_INVALID_SIGNATURE
-    eAlertCode = uscTlsAlertHandshakeFailure
-    GoTo QH
 End Function
 
 Private Function pvTlsSignatureDigestAlgo(ByVal lSignatureType As Long) As UcsTlsCryptoAlgorithmsEnum
@@ -2651,9 +2896,8 @@ Private Function pvTlsSignatureHashSize(ByVal lSignatureType As Long) As Long
     End Select
 End Function
 
-Private Function pvAsn1DecodeEccSignature(baDerSig() As Byte, ByVal lCurveSize As Long) As Byte()
+Private Function pvAsn1DecodeEccSignature(baRetVal() As Byte, baDerSig() As Byte, ByVal lCurveSize As Long) As Boolean
     Const FUNC_NAME     As String = "pvAsn1DecodeEccSignature"
-    Dim baRetVal()      As Byte
     Dim lType           As Long
     Dim lPos            As Long
     Dim lSize           As Long
@@ -2690,12 +2934,12 @@ Private Function pvAsn1DecodeEccSignature(baDerSig() As Byte, ByVal lCurveSize A
             pvWriteBuffer baRetVal, lCurveSize, VarPtr(baTemp(lSize - lCurveSize)), lCurveSize
         End If
     lPos = pvReadEndOfBlock(baDerSig, lPos, cStack)
-    pvAsn1DecodeEccSignature = baRetVal
+    '--- success
+    pvAsn1DecodeEccSignature = True
 QH:
 End Function
 
-Private Function pvAsn1EncodeEccSignature(baPlainSig() As Byte, ByVal lPartSize As Long) As Byte()
-    Dim baRetVal()      As Byte
+Private Function pvAsn1EncodeEccSignature(baRetVal() As Byte, baPlainSig() As Byte, ByVal lPartSize As Long) As Boolean
     Dim lPos            As Long
     Dim cStack          As Collection
     Dim lStart          As Long
@@ -2728,6 +2972,8 @@ Private Function pvAsn1EncodeEccSignature(baPlainSig() As Byte, ByVal lPartSize 
         lPos = pvWriteEndOfBlock(baRetVal, lPos, cStack)
     lPos = pvWriteEndOfBlock(baRetVal, lPos, cStack)
     pvAsn1EncodeEccSignature = baRetVal
+    '--- success
+    pvAsn1EncodeEccSignature = True
 End Function
 
 '= buffer management =====================================================
@@ -2869,7 +3115,7 @@ End Function
 
 '= arrays helpers ========================================================
 
-Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, Optional sFuncName As String)
+Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, sFuncName As String)
     If lSize > 0 Then
         ReDim baArray(0 To lSize - 1) As Byte
     Else
@@ -2878,7 +3124,7 @@ Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, Optional sFu
     Debug.Assert RedimStats(sFuncName, UBound(baArray) + 1)
 End Sub
 
-Private Sub pvArrayReallocate(baArray() As Byte, ByVal lSize As Long, Optional sFuncName As String)
+Private Sub pvArrayReallocate(baArray() As Byte, ByVal lSize As Long, sFuncName As String)
     If lSize > 0 Then
         ReDim Preserve baArray(0 To lSize - 1) As Byte
     Else
@@ -2897,8 +3143,7 @@ Private Property Get pvArraySize(baArray() As Byte) As Long
     End If
 End Property
 
-Private Function pvArrayXor(baArray() As Byte, ByVal lSeqNo As Long) As Byte()
-    Dim baRetVal()      As Byte
+Private Function pvArrayXor(baRetVal() As Byte, baArray() As Byte, ByVal lSeqNo As Long) As Boolean
     Dim lIdx            As Long
     
     baRetVal = baArray
@@ -2908,7 +3153,8 @@ Private Function pvArrayXor(baArray() As Byte, ByVal lSeqNo As Long) As Byte()
         baRetVal(lIdx) = baRetVal(lIdx) Xor (lSeqNo And &HFF)
         lSeqNo = (lSeqNo And -&H100&) \ &H100&
     Loop
-    pvArrayXor = baRetVal
+    '--- success
+    pvArrayXor = True
 End Function
 
 Private Sub pvArraySwap(baBuffer() As Byte, lBufferPos As Long, baInput() As Byte, lInputPos As Long)
@@ -2939,16 +3185,6 @@ Private Function pvArrayByte(baRetVal() As Byte, ParamArray A() As Variant) As B
 End Function
 
 '= global helpers ========================================================
-
-Private Function EmptyByteArray(Optional ByVal Size As Long) As Byte()
-    Const FUNC_NAME     As String = "EmptyByteArray"
-    Dim baRetVal()      As Byte
-    
-    If Size > 0 Then
-        pvArrayAllocate baRetVal, Size, FUNC_NAME & ".baRetVal"
-    End If
-    EmptyByteArray = baRetVal
-End Function
 
 Private Function SplitOrReindex(Expression As String, Delimiter As String) As Variant
     Dim vResult         As Variant

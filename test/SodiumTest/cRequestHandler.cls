@@ -119,7 +119,7 @@ Private Sub m_oSocket_OnReceive()
         If m_uCtx.DecrPos = 0 Then
             GoTo QH
         End If
-        baRecv = EmptyByteArray
+        Erase baRecv
     End If
     lSize = 0
     If Not TlsReceive(m_uCtx, baRecv, -1, baBuffer, lSize) Then

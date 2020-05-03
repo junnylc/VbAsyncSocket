@@ -1587,7 +1587,7 @@ End Function
 
 '= private ===============================================================
 
-Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, Optional sFuncName As String)
+Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, sFuncName As String)
     If lSize > 0 Then
         ReDim baArray(0 To lSize - 1) As Byte
     Else
@@ -1596,7 +1596,7 @@ Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, Optional sFu
     Debug.Assert RedimStats(sFuncName, lSize)
 End Sub
 
-Private Sub pvArrayReallocate(baArray() As Byte, ByVal lSize As Long, Optional sFuncName As String)
+Private Sub pvArrayReallocate(baArray() As Byte, ByVal lSize As Long, sFuncName As String)
     If lSize > 0 Then
         ReDim Preserve baArray(0 To lSize - 1) As Byte
     Else

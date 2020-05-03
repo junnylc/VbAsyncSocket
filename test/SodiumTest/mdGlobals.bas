@@ -134,10 +134,6 @@ Public Function FromUtf8Array(baText() As Byte) As String
     End If
 End Function
 
-Public Function EmptyByteArray() As Byte()
-
-End Function
-
 Public Function RedimStats(sFuncName As String, ByVal lSize As Long) As Boolean
     If m_oRedimStats Is Nothing Then
         Set m_oRedimStats = CreateObject("Scripting.Dictionary")
