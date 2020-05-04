@@ -107,8 +107,9 @@ Private Declare Function ArrPtr Lib "msvbvm60" Alias "VarPtr" (Ptr() As Any) As 
 Private Declare Function VirtualAlloc Lib "kernel32" (ByVal lpAddress As Long, ByVal dwSize As Long, ByVal flAllocationType As Long, ByVal flProtect As Long) As Long
 Private Declare Function VirtualProtect Lib "kernel32" (ByVal lpAddress As Long, ByVal dwSize As Long, ByVal flNewProtect As Long, ByRef lpflOldProtect As Long) As Long
 Private Declare Function GetModuleHandle Lib "kernel32" Alias "GetModuleHandleA" (ByVal lpModuleName As String) As Long
+Private Declare Function GetProcAddress Lib "kernel32" (ByVal hModule As Long, ByVal lpProcName As String) As Long
 Private Declare Function LoadLibrary Lib "kernel32" Alias "LoadLibraryA" (ByVal lpLibFileName As String) As Long
-'Private Declare Function LocalFree Lib "kernel32" (ByVal hMem As Long) As Long
+Private Declare Function LocalFree Lib "kernel32" (ByVal hMem As Long) As Long
 Private Declare Function GetVersionEx Lib "kernel32" Alias "GetVersionExA" (lpVersionInformation As Any) As Long
 Private Declare Function lstrlen Lib "kernel32" Alias "lstrlenA" (ByVal lpString As Long) As Long
 Private Declare Function GetFileAttributes Lib "kernel32" Alias "GetFileAttributesA" (ByVal lpFileName As String) As Long
@@ -275,12 +276,6 @@ Private Type CERT_EXTENSION
     Value               As CRYPT_BLOB_DATA
 End Type
 
-Private Type CRYPT_DECODE_PARA
-    cbSize              As Long
-    pfnAlloc            As Long
-    pfnFree             As Long
-End Type
-
 Private Type NCryptBuffer
     cbBuffer            As Long
     BufferType          As Long
@@ -376,7 +371,6 @@ Private Const LNG_AES256_KEYSZ          As Long = 32
 Private Const LNG_AESGCM_IVSZ           As Long = 12
 Private Const LNG_AESGCM_TAGSZ          As Long = 16
 Private Const LNG_LIBSODIUM_SHA512_CONTEXTSZ As Long = 64 + 16 + 128
-Private Const LNG_ARENA_ALIGN           As Long = 16
 '--- errors
 Private Const ERR_OUT_OF_MEMORY         As Long = 8
 Private Const ERR_TRUST_IS_REVOKED      As String = "Trust for this certificate or one of the certificates in the certificate chain has been revoked"
@@ -544,9 +538,9 @@ Public Function CryptoInit() As Boolean
             Call pvPatchTrampoline(AddressOf pvCallRsaModExp)
             '--- init thunk's first 4 bytes -> global data in C/C++
             Call CopyMemory(ByVal .Thunk, VarPtr(.Glob(0)), 4)
-            Call CopyMemory(.Glob(0), pvGetAddr(AddressOf pvArenaAlloc), 4)
-            Call CopyMemory(.Glob(4), pvGetAddr(AddressOf pvArenaRealloc), 4)
-            Call CopyMemory(.Glob(8), pvGetAddr(AddressOf pvArenaFree), 4)
+            Call CopyMemory(.Glob(0), GetProcAddress(GetModuleHandle("ole32"), "CoTaskMemAlloc"), 4)
+            Call CopyMemory(.Glob(4), GetProcAddress(GetModuleHandle("ole32"), "CoTaskMemRealloc"), 4)
+            Call CopyMemory(.Glob(8), GetProcAddress(GetModuleHandle("ole32"), "CoTaskMemFree"), 4)
         End If
     End With
     '--- success
@@ -1145,12 +1139,9 @@ End Sub
 Public Function CryptoRsaModExp(baBase() As Byte, baExp() As Byte, baModulus() As Byte, baRetVal() As Byte) As Boolean
     Const FUNC_NAME     As String = "CryptoRsaModExp"
     
-    '--- note: allocates 32MB for 8192 bit keys
-    pvArenaInit 1024& * 2048 * (pvArraySize(baBase) / 256) ^ 2
     pvArrayAllocate baRetVal, UBound(baBase) + 1, FUNC_NAME & ".baRetVal"
     Debug.Assert pvPatchTrampoline(AddressOf pvCallRsaModExp)
     Call pvCallRsaModExp(m_uData.Pfn(ucsPfnRsaModExp), UBound(baBase) + 1, baBase(0), baExp(0), baModulus(0), baRetVal(0))
-    Debug.Print "bitlen=" & pvArraySize(baBase) * 8 & ", allocated=" & pvArraySize(m_baBuffer) & ", peak=" & m_lBuffIdx & ", free=" & pvArraySize(m_baBuffer) - m_lBuffIdx
     '--- success
     CryptoRsaModExp = True
 End Function
@@ -1388,17 +1379,12 @@ Public Function CryptoAsn1DecodePrivateKey(baPrivKey() As Byte, uRetVal As UcsKe
     Dim lSize           As Long
     Dim lHalfSize       As Long
     Dim uEccKeyInfo     As CRYPT_ECC_PRIVATE_KEY_INFO
-    Dim uDecodePara     As CRYPT_DECODE_PARA
     Dim hResult         As Long
     Dim sApiSource      As String
         
-    pvArenaInit
-    uDecodePara.cbSize = Len(uDecodePara)
-    uDecodePara.pfnAlloc = pvGetAddr(AddressOf pvArenaAlloc)
-    uDecodePara.pfnFree = pvGetAddr(AddressOf pvArenaFree)
-    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, VarPtr(uDecodePara), lPkiPtr, 0) <> 0 Then
+    If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_PRIVATE_KEY_INFO, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lPkiPtr, 0) <> 0 Then
         Call CopyMemory(uKeyBlob, ByVal UnsignedAdd(lPkiPtr, 16), Len(uKeyBlob)) '--- dereference PCRYPT_PRIVATE_KEY_INFO->PrivateKey
-        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, VarPtr(uDecodePara), lKeyPtr, lKeySize) = 0 Then
+        If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, PKCS_RSA_PRIVATE_KEY, ByVal uKeyBlob.pbData, uKeyBlob.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, lKeySize) = 0 Then
             hResult = Err.LastDllError
             sApiSource = "CryptDecodeObjectEx(PKCS_RSA_PRIVATE_KEY)"
             GoTo QH
@@ -1417,7 +1403,7 @@ Public Function CryptoAsn1DecodePrivateKey(baPrivKey() As Byte, uRetVal As UcsKe
         Debug.Assert UBound(uRetVal.KeyBlob) >= 20 + lSize + 5 * lHalfSize + UBound(uRetVal.PrivExp)
         Call CopyMemory(uRetVal.PrivExp(0), uRetVal.KeyBlob(20 + lSize + 5 * lHalfSize), UBound(uRetVal.PrivExp) + 1)
         pvArrayReverse uRetVal.PrivExp
-    ElseIf CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, VarPtr(uDecodePara), lKeyPtr, 0) <> 0 Then
+    ElseIf CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, X509_ECC_PRIVATE_KEY, baPrivKey(0), UBound(baPrivKey) + 1, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lKeyPtr, 0) <> 0 Then
         Call CopyMemory(uEccKeyInfo, ByVal lKeyPtr, Len(uEccKeyInfo))
         pvArrayAllocate uRetVal.KeyBlob, uEccKeyInfo.PrivateKey.cbData, FUNC_NAME & ".uRetVal.KeyBlob"
         Call CopyMemory(uRetVal.KeyBlob(0), ByVal uEccKeyInfo.PrivateKey.pbData, uEccKeyInfo.PrivateKey.cbData)
@@ -1440,12 +1426,12 @@ Public Function CryptoAsn1DecodePrivateKey(baPrivKey() As Byte, uRetVal As UcsKe
     '--- success
     CryptoAsn1DecodePrivateKey = True
 QH:
-'    If lKeyPtr <> 0 Then
-'        Call LocalFree(lKeyPtr)
-'    End If
-'    If lPkiPtr <> 0 Then
-'        Call LocalFree(lPkiPtr)
-'    End If
+    If lKeyPtr <> 0 Then
+        Call LocalFree(lKeyPtr)
+    End If
+    If lPkiPtr <> 0 Then
+        Call LocalFree(lPkiPtr)
+    End If
     If LenB(sApiSource) <> 0 Then
         Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
     End If
@@ -1589,11 +1575,11 @@ End Function
 
 '= private ===============================================================
 
-Private Sub pvArrayAllocate(baArray() As Byte, ByVal lSize As Long, sFuncName As String)
+Private Sub pvArrayAllocate(baRetVal() As Byte, ByVal lSize As Long, sFuncName As String)
     If lSize > 0 Then
-        ReDim baArray(0 To lSize - 1) As Byte
+        ReDim baRetVal(0 To lSize - 1) As Byte
     Else
-        baArray = vbNullString
+        baRetVal = vbNullString
     End If
     Debug.Assert RedimStats(sFuncName, lSize)
 End Sub
@@ -2882,14 +2868,9 @@ Public Function PkiCertChainValidate(sRemoteHostName As String, cCerts As Collec
     Dim hChainEngine    As Long
     Dim uChainElem      As CERT_CHAIN_ELEMENT
     Dim pExistContext   As Long
-    Dim uDecodePara     As CRYPT_DECODE_PARA
     Dim hResult         As Long
     Dim sApiSource      As String
     
-    pvArenaInit
-    uDecodePara.cbSize = Len(uDecodePara)
-    uDecodePara.pfnAlloc = pvGetAddr(AddressOf pvArenaAlloc)
-    uDecodePara.pfnFree = pvGetAddr(AddressOf pvArenaFree)
     '--- load server X.509 certificates to an in-memory certificate store
     hCertStore = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, 0)
     If hCertStore = 0 Then
@@ -2918,7 +2899,7 @@ Public Function PkiCertChainValidate(sRemoteHostName As String, cCerts As Collec
         If lPtr <> 0 Then
             Call CopyMemory(uExtension, ByVal lPtr, Len(uExtension))
             If CryptDecodeObjectEx(X509_ASN_ENCODING Or PKCS_7_ASN_ENCODING, szOID_SUBJECT_ALT_NAME2, ByVal uExtension.Value.pbData, _
-                        uExtension.Value.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, VarPtr(uDecodePara), lAltInfoPtr, 0) = 0 Then
+                        uExtension.Value.cbData, CRYPT_DECODE_ALLOC_FLAG Or CRYPT_DECODE_NOCOPY_FLAG, 0, lAltInfoPtr, 0) = 0 Then
                 hResult = Err.LastDllError
                 sApiSource = "CryptDecodeObjectEx(szOID_SUBJECT_ALT_NAME2)"
                 GoTo QH
@@ -2942,7 +2923,7 @@ Public Function PkiCertChainValidate(sRemoteHostName As String, cCerts As Collec
                     End If
                 End If
             Next
-'            Call LocalFree(lAltInfoPtr)
+            Call LocalFree(lAltInfoPtr)
             lAltInfoPtr = 0
         End If
     Loop
@@ -3028,42 +3009,4 @@ Private Function pvToStringW(ByVal lPtr As Long) As String
         pvToStringW = String$(lstrlenW(lPtr), 0)
         Call CopyMemory(ByVal StrPtr(pvToStringW), ByVal lPtr, LenB(pvToStringW))
     End If
-End Function
-
-Private Function pvGetAddr(ByVal lPtr As Long) As Long
-    pvGetAddr = lPtr
-End Function
-
-Private Sub pvArenaInit(Optional ByVal lSize As Long = 1024& * 2048)
-    Const FUNC_NAME     As String = "pvArenaInit"
-    
-    If pvArraySize(m_baBuffer) <> lSize Then
-        Debug.Print "pvArenaInit, lSize=" & lSize
-        pvArrayAllocate m_baBuffer, lSize, FUNC_NAME & ".m_baBuffer"
-    End If
-    m_lBuffIdx = UnsignedAdd(VarPtr(m_baBuffer(4)), LNG_ARENA_ALIGN - 1) And -LNG_ARENA_ALIGN
-    m_lBuffIdx = UnsignedAdd(m_lBuffIdx, -VarPtr(m_baBuffer(0))) - 4
-End Sub
-
-Private Function pvArenaAlloc(ByVal lSize As Long) As Long
-    Const FUNC_NAME     As String = "pvArenaAlloc"
-    
-    lSize = ((lSize + 4 + LNG_ARENA_ALIGN - 1) And -LNG_ARENA_ALIGN) - 4
-    If UBound(m_baBuffer) < m_lBuffIdx + lSize + 4 Then
-        Err.Raise vbObjectError, FUNC_NAME, "Out of arena space"
-    End If
-    Call CopyMemory(m_baBuffer(m_lBuffIdx), lSize, 4)
-    pvArenaAlloc = VarPtr(m_baBuffer(m_lBuffIdx + 4))
-    Debug.Assert pvArenaAlloc = ((pvArenaAlloc + LNG_ARENA_ALIGN - 1) And -LNG_ARENA_ALIGN)
-    m_lBuffIdx = m_lBuffIdx + lSize + 4
-End Function
-
-Private Function pvArenaRealloc(ByVal lPtr As Long, ByVal lSize As Long) As Long
-    Const FUNC_NAME     As String = "pvArenaRealloc"
-    
-    Err.Raise vbObjectError, FUNC_NAME, "Not implemented"
-End Function
-
-Private Function pvArenaFree(ByVal lPtr As Long) As Long
-    '--- do nothing
 End Function
