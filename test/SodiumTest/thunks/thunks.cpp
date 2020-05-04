@@ -8,6 +8,7 @@
 #define IMPL_AESGCM_THUNK
 //#define IMPL_GMPRSA_THUNK
 #define IMPL_SSHRSA_THUNK
+//#define IMPL_TINF_THUNK
 
 #include <stdio.h>
 #include <string.h>
@@ -191,6 +192,9 @@ extern "C" {
 #ifdef IMPL_SSHRSA_THUNK
     #include "sshbn.c"
     #include "rsa.c"
+#endif
+#ifdef IMPL_TINF_THUNK
+    #include "tinflate.c"
 #endif
 
 #ifdef __cplusplus
@@ -480,6 +484,9 @@ void __cdecl main()
 #endif
 #ifdef IMPL_SSHRSA_THUNK
     ((int *)hThunk)[idx++] = ((uint8_t *)rsa_modexp - (uint8_t *)beginOfThunk);
+#endif
+#ifdef IMPL_TINF_THUNK
+    ((int *)hThunk)[idx++] = ((uint8_t *)tinf_uncompress - (uint8_t *)beginOfThunk);
 #endif
     printf("i=%d, needed=0x%02X, allocated=0x%02X\n", idx, (idx*4 + 15) & -16, ((uint8_t *)getContext) - ((uint8_t *)beginOfThunk));
 
