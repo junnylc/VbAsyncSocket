@@ -40,6 +40,7 @@ Private Const MODULE_NAME As String = "mdTlsThunks"
 #Const ImplUseLibSodium = (ASYNCSOCKET_USE_LIBSODIUM <> 0)
 #Const ImplUseShared = (ASYNCSOCKET_USE_SHARED <> 0)
 #Const ImplUseDebugLog = (USE_DEBUG_LOG <> 0)
+#Const ImplUseBCrypt = True
 
 '=========================================================================
 ' API
@@ -112,6 +113,33 @@ Private Declare Function CertFreeCertificateContext Lib "crypt32" (ByVal pCertCo
     Private Declare Function crypto_aead_aes256gcm_decrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, ByVal nSec As Long, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, lpConstNonce As Any, lpConstKey As Any) As Long
     Private Declare Function crypto_aead_aes256gcm_encrypt Lib "libsodium" (lpOut As Any, lOutSize As Any, lConstIn As Any, ByVal lInSize As Long, ByVal lHighInSize As Long, lpConstAd As Any, ByVal lAdSize As Long, ByVal lHighAdSize As Long, ByVal nSec As Long, lpConstNonce As Any, lpConstKey As Any) As Long
     Private Declare Function crypto_hash_sha512_statebytes Lib "libsodium" () As Long
+#End If
+#If ImplUseBCrypt Then
+    Private Declare Function BCryptOpenAlgorithmProvider Lib "bcrypt" (hAlgorithm As Long, ByVal pszAlgId As Long, ByVal pszImplementation As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptCloseAlgorithmProvider Lib "bcrypt" (ByVal hAlgorithm As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptDestroyKey Lib "bcrypt" (ByVal hKey As Long) As Long
+    Private Declare Function BCryptSetProperty Lib "bcrypt" (ByVal hObject As Long, ByVal pszProperty As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptGenerateSymmetricKey Lib "bcrypt" (ByVal hAlgorithm As Long, hKey As Long, ByVal pbKeyObject As Long, ByVal cbKeyObject As Long, ByVal pbSecret As Long, ByVal cbSecret As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptEncrypt Lib "bcrypt" (ByVal hKey As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal pPaddingInfo As Long, ByVal pbIV As Long, ByVal cbIV As Long, ByVal pbOutput As Long, ByVal cbOutput As Long, cbResult As Long, ByVal dwFlags As Long) As Long
+    Private Declare Function BCryptDecrypt Lib "bcrypt" (ByVal hKey As Long, ByVal pbInput As Long, ByVal cbInput As Long, ByVal pPaddingInfo As Long, ByVal pbIV As Long, ByVal cbIV As Long, ByVal pbOutput As Long, ByVal cbOutput As Long, cbResult As Long, ByVal dwFlags As Long) As Long
+    
+    Private Type BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO
+        cbSize          As Long
+        dwInfoVersion   As Long
+        pbNonce         As Long
+        cbNonce         As Long
+        pbAuthData      As Long
+        cbAuthData      As Long
+        pbTag           As Long
+        cbTag           As Long
+        pbMacContext    As Long
+        cbMacContext    As Long
+        cbAAD           As Long
+        lPad            As Long
+        cbData(7)       As Byte
+        dwFlags         As Long
+        lPad2           As Long
+    End Type
 #End If
 
 Private Type CRYPT_BLOB_DATA
@@ -4483,6 +4511,56 @@ Private Function pvCryptoAeadAesGcmEncrypt( _
         End If
         #If ImplUseLibSodium Then
             Call crypto_aead_aes256gcm_encrypt(baBuffer(lPos), ByVal 0, baBuffer(lPos), lSize, 0, ByVal lAdPtr, lAdSize, 0, 0, baNonce(0), baKey(0))
+        #ElseIf ImplUseBCrypt Then
+            Const FUNC_NAME     As String = "pvCryptoAeadAesGcmEncrypt"
+            Dim hResult         As Long
+            Dim sApiSource      As String
+            Dim hAlg            As Long
+            Dim hKey            As Long
+            Dim uInfo           As BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO
+            Dim lResult         As Long
+            
+            hResult = BCryptOpenAlgorithmProvider(hAlg, StrPtr("AES"), 0, 0)
+            If hResult < 0 Then
+                sApiSource = "BCryptOpenAlgorithmProvider"
+                GoTo QH
+            End If
+            hResult = BCryptSetProperty(hAlg, StrPtr("ChainingMode"), StrPtr("ChainingModeGCM"), LenB("ChainingModeGCM"), 0)
+            If hResult < 0 Then
+                sApiSource = "BCryptSetProperty(ChainingMode)"
+                GoTo QH
+            End If
+            hResult = BCryptGenerateSymmetricKey(hAlg, hKey, 0, 0, VarPtr(baKey(0)), UBound(baKey) + 1, 0)
+            If hResult < 0 Then
+                sApiSource = "BCryptGenerateSymmetricKey"
+                GoTo QH
+            End If
+            With uInfo
+                .cbSize = Len(uInfo)
+                .dwInfoVersion = 1
+                .pbNonce = VarPtr(baNonce(0))
+                .cbNonce = UBound(baNonce) + 1
+                .pbAuthData = lAdPtr
+                .cbAuthData = lAdSize
+                .pbTag = VarPtr(baBuffer(lPos + lSize))
+                .cbTag = LNG_AESGCM_TAGSZ
+            End With
+            hResult = BCryptEncrypt(hKey, VarPtr(baBuffer(lPos)), lSize, VarPtr(uInfo), 0, 0, VarPtr(baBuffer(lPos)), lSize, lResult, 0)
+            Debug.Assert lResult = lSize
+            If hResult < 0 Then
+                sApiSource = "BCryptEncrypt"
+                GoTo QH
+            End If
+QH:
+            If hKey <> 0 Then
+                Call BCryptDestroyKey(hKey)
+            End If
+            If hAlg <> 0 Then
+                Call BCryptCloseAlgorithmProvider(hAlg, 0)
+            End If
+            If LenB(sApiSource) <> 0 Then
+                Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
+            End If
         #Else
             Debug.Assert pvPatchTrampoline(AddressOf pvCallAesGcmEncrypt)
             Call pvCallAesGcmEncrypt(m_uData.Pfn(ucsPfnAesGcmEncrypt), _
@@ -4511,6 +4589,57 @@ Private Function pvCryptoAeadAesGcmDecrypt( _
         If crypto_aead_aes256gcm_decrypt(baBuffer(lPos), ByVal 0, 0, baBuffer(lPos), lSize, 0, baAad(lAadPos), lAdSize, 0, baNonce(0), baKey(0)) = 0 Then
             '--- success
             pvCryptoAeadAesGcmDecrypt = True
+        End If
+    #ElseIf ImplUseBCrypt Then
+        Const FUNC_NAME     As String = "pvCryptoAeadAesGcmDecrypt"
+        Dim hResult         As Long
+        Dim sApiSource      As String
+        Dim hAlg            As Long
+        Dim hKey            As Long
+        Dim uInfo           As BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO
+        Dim lResult         As Long
+        
+        hResult = BCryptOpenAlgorithmProvider(hAlg, StrPtr("AES"), 0, 0)
+        If hResult < 0 Then
+            sApiSource = "BCryptOpenAlgorithmProvider"
+            GoTo QH
+        End If
+        hResult = BCryptSetProperty(hAlg, StrPtr("ChainingMode"), StrPtr("ChainingModeGCM"), LenB("ChainingModeGCM"), 0)
+        If hResult < 0 Then
+            sApiSource = "BCryptSetProperty(ChainingMode)"
+            GoTo QH
+        End If
+        hResult = BCryptGenerateSymmetricKey(hAlg, hKey, 0, 0, VarPtr(baKey(0)), UBound(baKey) + 1, 0)
+        If hResult < 0 Then
+            sApiSource = "BCryptGenerateSymmetricKey"
+            GoTo QH
+        End If
+        With uInfo
+            .cbSize = Len(uInfo)
+            .dwInfoVersion = 1
+            .pbNonce = VarPtr(baNonce(0))
+            .cbNonce = UBound(baNonce) + 1
+            .pbAuthData = VarPtr(baAad(lAadPos))
+            .cbAuthData = lAdSize
+            .pbTag = VarPtr(baBuffer(lPos + lSize - LNG_AESGCM_TAGSZ))
+            .cbTag = LNG_AESGCM_TAGSZ
+        End With
+        hResult = BCryptDecrypt(hKey, VarPtr(baBuffer(lPos)), lSize - LNG_AESGCM_TAGSZ, VarPtr(uInfo), 0, 0, VarPtr(baBuffer(lPos)), lSize - LNG_AESGCM_TAGSZ, lResult, 0)
+        If hResult < 0 Then
+            GoTo QH
+        End If
+        Debug.Assert lResult = lSize - LNG_AESGCM_TAGSZ
+        '--- success
+        pvCryptoAeadAesGcmDecrypt = True
+QH:
+        If hKey <> 0 Then
+            Call BCryptDestroyKey(hKey)
+        End If
+        If hAlg <> 0 Then
+            Call BCryptCloseAlgorithmProvider(hAlg, 0)
+        End If
+        If LenB(sApiSource) <> 0 Then
+            Err.Raise IIf(hResult < 0, hResult, hResult Or LNG_FACILITY_WIN32), FUNC_NAME & "." & sApiSource
         End If
     #Else
         Debug.Assert pvPatchTrampoline(AddressOf pvCallAesGcmDecrypt)
