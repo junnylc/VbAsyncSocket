@@ -626,6 +626,7 @@ Private Sub m_oSocket_OnReceive()
     If m_eState = 0 Then
         m_oSocket_OnConnect
     End If
+    DoEvents'2022-6-22
     RaiseEvent DataArrival(pvSocket.AvailableBytes)
 End Sub
 
@@ -637,6 +638,7 @@ Private Sub m_oSocket_OnSend()
     If m_eState = 0 Then
         m_oSocket_OnConnect
     End If
+    DoEvents'2022-6-22
     Do While m_lSendPos <= UBound(m_baSendBuffer)
         lSent = pvSocket.Send(VarPtr(m_baSendBuffer(m_lSendPos)), UBound(m_baSendBuffer) + 1 - m_lSendPos, m_sRemoteHost, m_lRemotePort)
         If lSent < 0 Then
